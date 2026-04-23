@@ -44,10 +44,30 @@ function setCurrentFile(file) {
     return;
   }
 
-  const url = URL.createObjectURL(file);
-  previewImage.src = url;
-  previewImage.style.display = 'block';
-  previewLabel.textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const imageDataUrl = String(reader.result || '');
+    const isSafeDataUrl =
+      imageDataUrl.startsWith('data:image/jpeg;base64,') ||
+      imageDataUrl.startsWith('data:image/png;base64,');
+
+    if (!isSafeDataUrl) {
+      setCurrentFile(null);
+      setError('Unsupported image preview format.');
+      return;
+    }
+
+    previewImage.src = imageDataUrl;
+    previewImage.style.display = 'block';
+    previewLabel.textContent = file.name;
+  };
+
+  reader.onerror = () => {
+    setCurrentFile(null);
+    setError('Unable to preview this file.');
+  };
+
+  reader.readAsDataURL(file);
 }
 
 function validateFile(file) {
