@@ -1,0 +1,161 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Groups documents that share the same vehicle number and date
+model DocumentGroup {
+  id         String     @id @default(uuid())
+  vehicleNo  String
+  date       String
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  documents  Document[]
+  bundles    DocumentBundle[]
+
+  @@unique([vehicleNo, date])
+  @@map("document_groups")
+}
+
+model Document {
+  id               String         @id @default(uuid())
+  type             DocumentType
+  status           DocumentStatus @default(PENDING_REVIEW)
+  originalFilename String
+  rawFilePath      String
+  mimeType         String
+  uploadedAt       DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  groupId       String?
+  group         DocumentGroup? @relation(fields: [groupId], references: [id])
+
+  extractedData ExtractedData?
+
+  bundleItems   BundleItem[]
+
+  @@map("documents")
+}
+
+model ExtractedData {
+  id         String   @id @default(uuid())
+  documentId String   @unique
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  // Core logistics fields
+  lrNo         String?
+  invoiceNo    String?
+  vehicleNo    String?
+  quantity     String?
+  date         String?
+  partyNames   String?  // JSON array stored as string in SQLite
+  tollAmount   String?
+  weightInfo   String?
+
+  // OCR metadata
+  rawOcrResponse  String  // Full JSON response from OpenAI stored as string
+  confidence      Float?
+  ocrProcessedAt  DateTime @default(now())
+
+  // User review
+  userReviewed    Boolean  @default(false)
+  reviewedAt      DateTime?
+  userEdits       String?  // JSON object with fields the user changed
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("extracted_data")
+}
+
+// Document bundle for a specific recipient type
+model DocumentBundle {
+  id            String        @id @default(uuid())
+  recipientType RecipientType
+  status        BundleStatus  @default(DRAFT)
+  notes         String?
+  groupId       String
+  group         DocumentGroup @relation(fields: [groupId], references: [id])
+  items         BundleItem[]
+  dispatchLogs  DispatchLog[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@map("document_bundles")
+}
+
+// Individual document items within a bundle
+model BundleItem {
+  id         String         @id @default(uuid())
+  bundleId   String
+  bundle     DocumentBundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  documentId String
+  document   Document       @relation(fields: [documentId], references: [id])
+  isOverride Boolean        @default(false) // true if manually toggled vs. auto-selected
+
+  @@unique([bundleId, documentId])
+  @@map("bundle_items")
+}
+
+enum DocumentType {
+  LR
+  INVOICE
+  TOLL
+  WEIGHMENT
+  EWAYBILL
+  RECEIVING
+  UNKNOWN
+}
+
+enum DocumentStatus {
+  PENDING_OCR
+  PENDING_REVIEW
+  REVIEWED
+  SAVED
+}
+
+enum RecipientType {
+  ACCOUNTS
+  PARTY
+  TRANSPORTER
+}
+
+enum BundleStatus {
+  DRAFT
+  READY
+  SENT
+}
+
+// Dispatch log: tracks every send attempt (email or WhatsApp) for a bundle
+model DispatchLog {
+  id          String          @id @default(uuid())
+  bundleId    String
+  bundle      DocumentBundle  @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  channel     DispatchChannel
+  recipient   String          // email address or phone number
+  ccRecipient String?         // auto-CC'd email/phone
+  message     String          // generated message body
+  status      DispatchStatus  @default(PENDING)
+  errorMsg    String?
+  sentAt      DateTime        @default(now())
+
+  @@map("dispatch_logs")
+}
+
+enum DispatchChannel {
+  EMAIL
+  WHATSAPP
+}
+
+enum DispatchStatus {
+  PENDING
+  SENT
+  FAILED
+}
