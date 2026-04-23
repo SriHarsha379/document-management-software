@@ -18,6 +18,7 @@ model DocumentGroup {
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
   documents  Document[]
+  bundles    DocumentBundle[]
 
   @@unique([vehicleNo, date])
   @@map("document_groups")
@@ -37,6 +38,8 @@ model Document {
   group         DocumentGroup? @relation(fields: [groupId], references: [id])
 
   extractedData ExtractedData?
+
+  bundleItems   BundleItem[]
 
   @@map("documents")
 }
@@ -72,11 +75,41 @@ model ExtractedData {
   @@map("extracted_data")
 }
 
+// Document bundle for a specific recipient type
+model DocumentBundle {
+  id            String        @id @default(uuid())
+  recipientType RecipientType
+  status        BundleStatus  @default(DRAFT)
+  notes         String?
+  groupId       String
+  group         DocumentGroup @relation(fields: [groupId], references: [id])
+  items         BundleItem[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@map("document_bundles")
+}
+
+// Individual document items within a bundle
+model BundleItem {
+  id         String         @id @default(uuid())
+  bundleId   String
+  bundle     DocumentBundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  documentId String
+  document   Document       @relation(fields: [documentId], references: [id])
+  isOverride Boolean        @default(false) // true if manually toggled vs. auto-selected
+
+  @@unique([bundleId, documentId])
+  @@map("bundle_items")
+}
+
 enum DocumentType {
   LR
   INVOICE
   TOLL
   WEIGHMENT
+  EWAYBILL
+  RECEIVING
   UNKNOWN
 }
 
@@ -85,4 +118,16 @@ enum DocumentStatus {
   PENDING_REVIEW
   REVIEWED
   SAVED
+}
+
+enum RecipientType {
+  ACCOUNTS
+  PARTY
+  TRANSPORTER
+}
+
+enum BundleStatus {
+  DRAFT
+  READY
+  SENT
 }

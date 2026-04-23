@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { DocumentUpload } from './components/DocumentUpload';
 import { OCRReview } from './components/OCRReview';
 import { DocumentList } from './components/DocumentList';
-import type { Document } from './types';
+import { DocumentBundler } from './components/DocumentBundler';
+import type { Document, Bundle } from './types';
 
-type View = 'list' | 'upload' | 'review';
+type View = 'list' | 'upload' | 'review' | 'bundle';
 
 function App() {
   const [view, setView] = useState<View>('list');
@@ -27,6 +28,10 @@ function App() {
     setView('review');
   };
 
+  const handleBundleSaved = (_bundle: Bundle) => {
+    // Stay on bundle view; the bundler shows a success state
+  };
+
   return (
     <div style={styles.app}>
       {/* Header */}
@@ -44,6 +49,12 @@ function App() {
             onClick={() => setView('upload')}
           >
             ➕ Upload
+          </button>
+          <button
+            style={{ ...styles.navBtn, ...(view === 'bundle' ? styles.navBtnActive : {}) }}
+            onClick={() => setView('bundle')}
+          >
+            📦 Bundle
           </button>
         </nav>
       </header>
@@ -68,6 +79,10 @@ function App() {
               setSelectedDoc(null);
             }}
           />
+        )}
+
+        {view === 'bundle' && (
+          <DocumentBundler onBundleSaved={handleBundleSaved} />
         )}
       </main>
     </div>

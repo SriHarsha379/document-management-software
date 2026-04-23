@@ -1,5 +1,7 @@
-export type DocumentType = 'LR' | 'INVOICE' | 'TOLL' | 'WEIGHMENT' | 'UNKNOWN';
+export type DocumentType = 'LR' | 'INVOICE' | 'TOLL' | 'WEIGHMENT' | 'EWAYBILL' | 'RECEIVING' | 'UNKNOWN';
 export type DocumentStatus = 'PENDING_OCR' | 'PENDING_REVIEW' | 'REVIEWED' | 'SAVED';
+export type RecipientType = 'ACCOUNTS' | 'PARTY' | 'TRANSPORTER';
+export type BundleStatus = 'DRAFT' | 'READY' | 'SENT';
 
 export interface ExtractedData {
   id: string;
@@ -54,6 +56,53 @@ export interface ReviewPayload {
 
 export interface PaginatedDocuments {
   documents: Document[];
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    pages: number;
+  };
+}
+
+// ── Bundling types ─────────────────────────────────────────────────────────────
+
+export interface BundleDocumentItem {
+  documentId: string;
+  type: DocumentType;
+  originalFilename: string;
+  status: DocumentStatus;
+  isOverride: boolean;
+}
+
+export interface BundlePreview {
+  groupId: string;
+  recipientType: RecipientType;
+  requiredTypes: DocumentType[];
+  autoSelectedDocuments: BundleDocumentItem[];
+  missingTypes: DocumentType[];
+}
+
+export interface BundleItem {
+  id: string;
+  documentId: string;
+  isOverride: boolean;
+  document?: Document;
+}
+
+export interface Bundle {
+  id: string;
+  recipientType: RecipientType;
+  status: BundleStatus;
+  notes: string | null;
+  groupId: string;
+  createdAt: string;
+  updatedAt: string;
+  group?: DocumentGroup;
+  items: BundleItem[];
+}
+
+export interface PaginatedBundles {
+  bundles: Bundle[];
   pagination: {
     total: number;
     page: number;

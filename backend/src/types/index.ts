@@ -1,5 +1,7 @@
-export type DocumentType = 'LR' | 'INVOICE' | 'TOLL' | 'WEIGHMENT' | 'UNKNOWN';
+export type DocumentType = 'LR' | 'INVOICE' | 'TOLL' | 'WEIGHMENT' | 'EWAYBILL' | 'RECEIVING' | 'UNKNOWN';
 export type DocumentStatus = 'PENDING_OCR' | 'PENDING_REVIEW' | 'REVIEWED' | 'SAVED';
+export type RecipientType = 'ACCOUNTS' | 'PARTY' | 'TRANSPORTER';
+export type BundleStatus = 'DRAFT' | 'READY' | 'SENT';
 
 export interface ExtractedFields {
   lrNo?: string;
@@ -60,4 +62,22 @@ export interface ReviewPayload {
   tollAmount?: string;
   weightInfo?: string;
   documentType?: DocumentType;
+}
+
+export interface BundlePreviewRequest {
+  groupId: string;
+  recipientType: RecipientType;
+}
+
+export interface CreateBundlePayload {
+  groupId: string;
+  recipientType: RecipientType;
+  documentIds: string[];  // manually selected / overridden list
+  notes?: string;
+}
+
+export interface UpdateBundlePayload {
+  documentIds?: string[];
+  status?: BundleStatus;
+  notes?: string;
 }

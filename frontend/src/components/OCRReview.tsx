@@ -8,13 +8,15 @@ interface Props {
   onCancel: () => void;
 }
 
-const DOCUMENT_TYPES: DocumentType[] = ['LR', 'INVOICE', 'TOLL', 'WEIGHMENT', 'UNKNOWN'];
+const DOCUMENT_TYPES: DocumentType[] = ['LR', 'INVOICE', 'TOLL', 'WEIGHMENT', 'EWAYBILL', 'RECEIVING', 'UNKNOWN'];
 
 const TYPE_LABELS: Record<DocumentType, string> = {
   LR: '📦 Lorry Receipt (LR)',
   INVOICE: '🧾 Invoice',
   TOLL: '🛣️ Toll Receipt',
   WEIGHMENT: '⚖️ Weighment Slip',
+  EWAYBILL: '🔖 E-Way Bill',
+  RECEIVING: '📬 Receiving Copy',
   UNKNOWN: '❓ Unknown',
 };
 

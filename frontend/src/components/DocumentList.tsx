@@ -12,6 +12,8 @@ const TYPE_COLORS: Record<DocumentType, string> = {
   INVOICE: '#06b6d4',
   TOLL: '#f59e0b',
   WEIGHMENT: '#8b5cf6',
+  EWAYBILL: '#10b981',
+  RECEIVING: '#ec4899',
   UNKNOWN: '#9ca3af',
 };
 
@@ -84,6 +86,8 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
           <option value="INVOICE">Invoice</option>
           <option value="TOLL">Toll</option>
           <option value="WEIGHMENT">Weighment</option>
+          <option value="EWAYBILL">E-Way Bill</option>
+          <option value="RECEIVING">Receiving Copy</option>
           <option value="UNKNOWN">Unknown</option>
         </select>
         <select style={styles.filter} value={filterStatus} onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}>

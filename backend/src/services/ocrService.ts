@@ -8,6 +8,8 @@ const DOCUMENT_TYPE_KEYWORDS: Record<DocumentType, string[]> = {
   INVOICE: ['invoice', 'bill', 'gst invoice', 'tax invoice', 'proforma', 'invoice no', 'invoice number'],
   TOLL: ['toll', 'toll tax', 'toll receipt', 'national highway', 'fastag', 'toll plaza'],
   WEIGHMENT: ['weighment', 'weight slip', 'gross weight', 'tare weight', 'net weight', 'weighbridge'],
+  EWAYBILL: ['e-way bill', 'eway bill', 'e way bill', 'ewb no', 'ewb number', 'eway'],
+  RECEIVING: ['receiving', 'delivery receipt', 'pod', 'proof of delivery', 'receiving copy', 'unloading report'],
   UNKNOWN: [],
 };
 
@@ -16,7 +18,7 @@ Analyze the provided document image and extract structured data.
 
 Always respond with a valid JSON object with these exact fields:
 {
-  "documentType": "<LR|INVOICE|TOLL|WEIGHMENT|UNKNOWN>",
+  "documentType": "<LR|INVOICE|TOLL|WEIGHMENT|EWAYBILL|RECEIVING|UNKNOWN>",
   "confidence": <0.0-1.0>,
   "lrNo": "<LR number or null>",
   "invoiceNo": "<invoice number or null>",
@@ -34,6 +36,8 @@ Document type detection rules:
 - INVOICE: Has invoice number, buyer/seller details, item list, GST number, amounts
 - TOLL: Has toll plaza name, vehicle number, amount, date/time
 - WEIGHMENT: Has weighbridge details, vehicle number, gross/tare/net weight
+- EWAYBILL: Has E-way Bill number, GSTIN, HSN code, transporter details
+- RECEIVING: Has receiving/delivery acknowledgement, POD, signature, unloading details
 
 Extract vehicle numbers carefully - they follow Indian format like MH12AB1234, GJ05CD5678.
 For dates, normalize to YYYY-MM-DD format.
@@ -46,6 +50,8 @@ function detectDocumentTypeFromText(text: string): DocumentType {
     INVOICE: 0,
     TOLL: 0,
     WEIGHMENT: 0,
+    EWAYBILL: 0,
+    RECEIVING: 0,
     UNKNOWN: 0,
   };
 
@@ -124,7 +130,7 @@ export async function processDocumentOcr(filePath: string, mimeType: string): Pr
   const rawText = typeof parsed.rawText === 'string' ? parsed.rawText : rawContent;
   let documentType = (parsed.documentType as DocumentType) ?? 'UNKNOWN';
 
-  const validTypes: DocumentType[] = ['LR', 'INVOICE', 'TOLL', 'WEIGHMENT', 'UNKNOWN'];
+  const validTypes: DocumentType[] = ['LR', 'INVOICE', 'TOLL', 'WEIGHMENT', 'EWAYBILL', 'RECEIVING', 'UNKNOWN'];
   if (!validTypes.includes(documentType)) {
     documentType = detectDocumentTypeFromText(rawText);
   }

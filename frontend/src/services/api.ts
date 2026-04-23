@@ -1,5 +1,8 @@
 import axios from 'axios';
-import type { Document, PaginatedDocuments, ReviewPayload, DocumentType, DocumentStatus, DocumentGroup } from '../types';
+import type {
+  Document, PaginatedDocuments, ReviewPayload, DocumentType, DocumentStatus, DocumentGroup,
+  Bundle, PaginatedBundles, BundlePreview, RecipientType, BundleStatus,
+} from '../types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -47,5 +50,58 @@ export const documentsApi = {
   getGroup: async (groupId: string): Promise<DocumentGroup> => {
     const res = await api.get<{ group: DocumentGroup }>(`/documents/groups/${groupId}`);
     return res.data.group;
+  },
+
+  listGroups: async (): Promise<DocumentGroup[]> => {
+    const res = await api.get<{ groups: DocumentGroup[] }>('/documents/groups');
+    return res.data.groups;
+  },
+};
+
+export interface ListBundlesParams {
+  recipientType?: RecipientType;
+  status?: BundleStatus;
+  groupId?: string;
+  page?: number;
+  limit?: number;
+}
+
+export const bundlesApi = {
+  preview: async (groupId: string, recipientType: RecipientType): Promise<BundlePreview> => {
+    const res = await api.post<{ preview: BundlePreview }>('/bundles/preview', { groupId, recipientType });
+    return res.data.preview;
+  },
+
+  create: async (payload: {
+    groupId: string;
+    recipientType: RecipientType;
+    documentIds: string[];
+    notes?: string;
+  }): Promise<Bundle> => {
+    const res = await api.post<{ bundle: Bundle }>('/bundles', payload);
+    return res.data.bundle;
+  },
+
+  list: async (params?: ListBundlesParams): Promise<PaginatedBundles> => {
+    const res = await api.get<PaginatedBundles>('/bundles', { params });
+    return res.data;
+  },
+
+  getById: async (id: string): Promise<Bundle> => {
+    const res = await api.get<{ bundle: Bundle }>(`/bundles/${id}`);
+    return res.data.bundle;
+  },
+
+  update: async (id: string, payload: {
+    documentIds?: string[];
+    status?: BundleStatus;
+    notes?: string;
+  }): Promise<Bundle> => {
+    const res = await api.put<{ bundle: Bundle }>(`/bundles/${id}`, payload);
+    return res.data.bundle;
+  },
+
+  remove: async (id: string): Promise<void> => {
+    await api.delete(`/bundles/${id}`);
   },
 };
