@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import documentRoutes from './routes/documents.js';
 import bundleRoutes from './routes/bundles.js';
 import searchRoutes from './routes/search.js';
+import dispatchRoutes from './routes/dispatch.js';
 
 const app = express();
 
@@ -30,6 +31,7 @@ app.use('/uploads', express.static(path.resolve(uploadDir)));
 app.use('/api/documents', documentRoutes);
 app.use('/api/bundles', bundleRoutes);
 app.use('/api/search', searchRoutes);
+app.use('/api/dispatch', dispatchRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

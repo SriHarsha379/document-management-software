@@ -153,3 +153,39 @@ export interface SearchResponse {
   results: SearchDocumentResult[];
   total: number;
 }
+
+// ── Dispatch types ─────────────────────────────────────────────────────────────
+
+export type DispatchChannel = 'EMAIL' | 'WHATSAPP';
+export type DispatchStatus = 'PENDING' | 'SENT' | 'FAILED';
+
+export interface DispatchLog {
+  id: string;
+  bundleId: string;
+  channel: DispatchChannel;
+  recipient: string;
+  ccRecipient: string | null;
+  message: string;
+  status: DispatchStatus;
+  errorMsg: string | null;
+  sentAt: string;
+  bundle?: {
+    recipientType: RecipientType;
+    group: { vehicleNo: string; date: string };
+  };
+}
+
+export interface DispatchResult {
+  success: boolean;
+  logId: string;
+  message?: string;
+  error?: string;
+}
+
+export interface PaginatedDispatchLogs {
+  logs: DispatchLog[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
+}

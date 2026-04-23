@@ -4,9 +4,11 @@ import { OCRReview } from './components/OCRReview';
 import { DocumentList } from './components/DocumentList';
 import { DocumentBundler } from './components/DocumentBundler';
 import { SmartSearch } from './components/SmartSearch';
+import { DispatchModal } from './components/DispatchModal';
+import { DispatchHistory } from './components/DispatchHistory';
 import type { Document, Bundle } from './types';
 
-type View = 'list' | 'upload' | 'review' | 'bundle' | 'search';
+type View = 'list' | 'upload' | 'review' | 'bundle' | 'search' | 'dispatch';
 
 function App() {
   const [view, setView] = useState<View>('list');
@@ -29,8 +31,11 @@ function App() {
     setView('review');
   };
 
-  const handleBundleSaved = (_bundle: Bundle) => {
-    // Stay on bundle view; the bundler shows a success state
+  const [dispatchBundle, setDispatchBundle] = useState<Bundle | null>(null);
+
+  const handleBundleSaved = (bundle: Bundle) => {
+    // Offer to dispatch the newly created bundle immediately
+    setDispatchBundle(bundle);
   };
 
   return (
@@ -63,6 +68,12 @@ function App() {
           >
             🔍 Search
           </button>
+          <button
+            style={{ ...styles.navBtn, ...(view === 'dispatch' ? styles.navBtnActive : {}) }}
+            onClick={() => setView('dispatch')}
+          >
+            📤 Dispatch
+          </button>
         </nav>
       </header>
 
@@ -94,6 +105,19 @@ function App() {
 
         {view === 'search' && (
           <SmartSearch />
+        )}
+
+        {view === 'dispatch' && (
+          <DispatchHistory />
+        )}
+
+        {/* Dispatch modal — rendered on top of any view */}
+        {dispatchBundle && (
+          <DispatchModal
+            bundle={dispatchBundle}
+            onClose={() => setDispatchBundle(null)}
+            onSent={() => { /* log recorded on backend */ }}
+          />
         )}
       </main>
     </div>

@@ -84,6 +84,7 @@ model DocumentBundle {
   groupId       String
   group         DocumentGroup @relation(fields: [groupId], references: [id])
   items         BundleItem[]
+  dispatchLogs  DispatchLog[]
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -130,4 +131,31 @@ enum BundleStatus {
   DRAFT
   READY
   SENT
+}
+
+// Dispatch log: tracks every send attempt (email or WhatsApp) for a bundle
+model DispatchLog {
+  id          String          @id @default(uuid())
+  bundleId    String
+  bundle      DocumentBundle  @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  channel     DispatchChannel
+  recipient   String          // email address or phone number
+  ccRecipient String?         // auto-CC'd email/phone
+  message     String          // generated message body
+  status      DispatchStatus  @default(PENDING)
+  errorMsg    String?
+  sentAt      DateTime        @default(now())
+
+  @@map("dispatch_logs")
+}
+
+enum DispatchChannel {
+  EMAIL
+  WHATSAPP
+}
+
+enum DispatchStatus {
+  PENDING
+  SENT
+  FAILED
 }

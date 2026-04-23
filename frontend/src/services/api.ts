@@ -114,3 +114,29 @@ export const searchApi = {
     return res.data;
   },
 };
+
+import type { DispatchResult, PaginatedDispatchLogs, DispatchChannel } from '../types';
+
+export interface DispatchSendParams {
+  bundleId: string;
+  channel: DispatchChannel;
+  recipient: string;
+  ccRecipient?: string;
+}
+
+export const dispatchApi = {
+  send: async (params: DispatchSendParams): Promise<DispatchResult> => {
+    const res = await api.post<DispatchResult>('/dispatch/send', params);
+    return res.data;
+  },
+
+  listLogs: async (params?: { page?: number; limit?: number }): Promise<PaginatedDispatchLogs> => {
+    const res = await api.get<PaginatedDispatchLogs>('/dispatch/logs', { params });
+    return res.data;
+  },
+
+  getLogsForBundle: async (bundleId: string): Promise<PaginatedDispatchLogs> => {
+    const res = await api.get<PaginatedDispatchLogs>(`/dispatch/logs/${bundleId}`);
+    return res.data;
+  },
+};
