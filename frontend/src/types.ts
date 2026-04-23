@@ -110,3 +110,46 @@ export interface PaginatedBundles {
     pages: number;
   };
 }
+
+// ── AI Search types ────────────────────────────────────────────────────────────
+
+export interface SearchFilters {
+  vehicleNo?: string;
+  documentType?: DocumentType;
+  lrNo?: string;
+  invoiceNo?: string;
+  partyName?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+export interface SearchDocumentResult {
+  id: string;
+  type: DocumentType;
+  status: DocumentStatus;
+  originalFilename: string;
+  mimeType: string;
+  filePath: string;
+  uploadedAt: string;
+  updatedAt: string;
+  groupId: string | null;
+  extractedData?: {
+    lrNo: string | null;
+    invoiceNo: string | null;
+    vehicleNo: string | null;
+    quantity: string | null;
+    date: string | null;
+    partyNames: string[] | null;
+    tollAmount: string | null;
+    weightInfo: string | null;
+    confidence: number | null;
+    userReviewed: boolean;
+  };
+}
+
+export interface SearchResponse {
+  query: string;
+  filters: SearchFilters;
+  results: SearchDocumentResult[];
+  total: number;
+}

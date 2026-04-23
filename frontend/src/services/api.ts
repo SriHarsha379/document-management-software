@@ -105,3 +105,12 @@ export const bundlesApi = {
     await api.delete(`/bundles/${id}`);
   },
 };
+
+import type { SearchResponse } from '../types';
+
+export const searchApi = {
+  query: async (query: string): Promise<SearchResponse> => {
+    const res = await api.post<SearchResponse>('/search', { query });
+    return res.data;
+  },
+};

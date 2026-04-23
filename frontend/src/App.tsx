@@ -3,9 +3,10 @@ import { DocumentUpload } from './components/DocumentUpload';
 import { OCRReview } from './components/OCRReview';
 import { DocumentList } from './components/DocumentList';
 import { DocumentBundler } from './components/DocumentBundler';
+import { SmartSearch } from './components/SmartSearch';
 import type { Document, Bundle } from './types';
 
-type View = 'list' | 'upload' | 'review' | 'bundle';
+type View = 'list' | 'upload' | 'review' | 'bundle' | 'search';
 
 function App() {
   const [view, setView] = useState<View>('list');
@@ -56,6 +57,12 @@ function App() {
           >
             📦 Bundle
           </button>
+          <button
+            style={{ ...styles.navBtn, ...(view === 'search' ? styles.navBtnActive : {}) }}
+            onClick={() => setView('search')}
+          >
+            🔍 Search
+          </button>
         </nav>
       </header>
 
@@ -83,6 +90,10 @@ function App() {
 
         {view === 'bundle' && (
           <DocumentBundler onBundleSaved={handleBundleSaved} />
+        )}
+
+        {view === 'search' && (
+          <SmartSearch />
         )}
       </main>
     </div>
