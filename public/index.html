@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OCR Extractor</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 0; background: #f5f7fb; color: #1f2937; }
+      .container { max-width: 900px; margin: 24px auto; background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 6px 22px rgba(0,0,0,0.08); }
+      button { margin: 6px 8px 6px 0; padding: 10px 14px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; cursor: pointer; }
+      button:disabled { opacity: 0.6; cursor: not-allowed; }
+      #spinner { display: none; margin-top: 12px; }
+      #previewArea { margin-top: 16px; min-height: 120px; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 12px; background: #fafafa; }
+      #previewImage { max-width: 100%; max-height: 320px; display: none; border-radius: 8px; }
+      #videoPreview { max-width: 100%; max-height: 320px; display: none; border-radius: 8px; margin-top: 12px; }
+      #resultText { width: 100%; min-height: 220px; margin-top: 12px; }
+      .error { color: #b91c1c; margin-top: 8px; }
+      .meta { margin-top: 8px; color: #334155; }
+      .muted { color: #64748b; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>OCR Module</h1>
+      <p class="muted">Capture from camera or upload JPG/PNG/PDF (max 5MB), then extract text.</p>
+
+      <button id="useCameraBtn" type="button">Use Camera</button>
+      <button id="captureBtn" type="button" disabled>Capture Photo</button>
+      <input id="fileInput" type="file" accept=".jpg,.jpeg,.png,.pdf" />
+      <button id="extractBtn" type="button" disabled>Extract Text</button>
+
+      <video id="videoPreview" autoplay playsinline></video>
+      <canvas id="captureCanvas" style="display:none"></canvas>
+
+      <div id="previewArea">
+        <strong>Preview:</strong>
+        <p id="previewLabel" class="muted">No file selected.</p>
+        <img id="previewImage" alt="Selected preview" />
+      </div>
+
+      <div id="spinner">Extracting text...</div>
+      <div id="errorMsg" class="error"></div>
+
+      <label for="resultText"><strong>Extracted Text</strong></label>
+      <textarea id="resultText" placeholder="OCR output appears here"></textarea>
+
+      <div class="meta">
+        <div><strong>Timestamp:</strong> <span id="metaTimestamp">-</span></div>
+        <div><strong>File Name:</strong> <span id="metaFileName">-</span></div>
+      </div>
+    </div>
+
+    <script src="/main.js"></script>
+  </body>
+</html>
