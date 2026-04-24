@@ -17,8 +17,9 @@ model DocumentGroup {
   date       String
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
-  documents  Document[]
-  bundles    DocumentBundle[]
+  documents           Document[]
+  bundles             DocumentBundle[]
+  driverUploadedDocs  DriverUploadDocument[]
 
   @@unique([vehicleNo, date])
   @@map("document_groups")
@@ -158,4 +159,58 @@ enum DispatchStatus {
   PENDING
   SENT
   FAILED
+}
+
+// ── Temporary Driver Access ────────────────────────────────────────────────────
+
+model TemporaryDriverAccess {
+  id           String    @id @default(uuid())
+  phone        String    @unique
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  expiresAt    DateTime
+  lastLoginAt  DateTime?
+  isRevoked    Boolean   @default(false)
+
+  uploadedDocs DriverUploadDocument[]
+
+  @@map("temporary_driver_accesses")
+}
+
+enum DriverDocType {
+  LR
+  TOLL
+  WEIGHMENT_SLIP
+}
+
+enum DriverUploadStatus {
+  PENDING_OCR
+  PROCESSED
+  UNLINKED
+}
+
+model DriverUploadDocument {
+  id               String             @id @default(uuid())
+  docType          DriverDocType
+  storageKey       String
+  originalFilename String
+  mimeType         String
+  uploadedAt       DateTime           @default(now())
+  status           DriverUploadStatus @default(PENDING_OCR)
+
+  // OCR outputs
+  ocrText       String?
+  ocrData       String?  // full JSON from OpenAI
+  vehicleNumber String?
+  documentDate  String?
+
+  // Linking
+  linkedGroupId String?
+  linkedGroup   DocumentGroup? @relation(fields: [linkedGroupId], references: [id])
+
+  // Ownership
+  tempDriverAccessId String
+  tempDriverAccess   TemporaryDriverAccess @relation(fields: [tempDriverAccessId], references: [id])
+
+  @@map("driver_upload_documents")
 }
