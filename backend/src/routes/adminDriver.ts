@@ -41,6 +41,10 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       });
     }
 
+    const uploadCount = await prisma.driverUploadDocument.count({
+      where: { tempDriverAccessId: access.id },
+    });
+
     res.status(201).json({
       message: existing ? 'Driver access renewed' : 'Driver access created',
       driverAccess: {
@@ -48,7 +52,10 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
         phone: access.phone,
         expiresAt: access.expiresAt,
         createdAt: access.createdAt,
+        lastLoginAt: access.lastLoginAt,
         isRevoked: access.isRevoked,
+        isExpired: access.expiresAt < new Date(),
+        uploadCount,
       },
       // Return plain password ONCE — admin must share with driver
       generatedPassword: plainPassword,
