@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DocumentUpload } from './components/DocumentUpload';
 import { OCRReview } from './components/OCRReview';
 import { DocumentList } from './components/DocumentList';
@@ -6,11 +6,31 @@ import { DocumentBundler } from './components/DocumentBundler';
 import { SmartSearch } from './components/SmartSearch';
 import { DispatchModal } from './components/DispatchModal';
 import { DispatchHistory } from './components/DispatchHistory';
+import { AdminDriverAccess } from './components/AdminDriverAccess';
+import { DriverPortal } from './components/DriverPortal';
 import type { Document, Bundle } from './types';
 
-type View = 'list' | 'upload' | 'review' | 'bundle' | 'search' | 'dispatch';
+type View = 'list' | 'upload' | 'review' | 'bundle' | 'search' | 'dispatch' | 'drivers';
 
 function App() {
+  const [isDriverPortal, setIsDriverPortal] = useState(false);
+
+  // Route /driver path to the driver portal
+  useEffect(() => {
+    const path = window.location.pathname;
+    if (path.startsWith('/driver')) {
+      setIsDriverPortal(true);
+    }
+  }, []);
+
+  if (isDriverPortal) {
+    return <DriverPortal />;
+  }
+
+  return <AdminApp />;
+}
+
+function AdminApp() {
   const [view, setView] = useState<View>('list');
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -74,6 +94,12 @@ function App() {
           >
             📤 Dispatch
           </button>
+          <button
+            style={{ ...styles.navBtn, ...(view === 'drivers' ? styles.navBtnActive : {}) }}
+            onClick={() => setView('drivers')}
+          >
+            🚛 Drivers
+          </button>
         </nav>
       </header>
 
@@ -109,6 +135,10 @@ function App() {
 
         {view === 'dispatch' && (
           <DispatchHistory />
+        )}
+
+        {view === 'drivers' && (
+          <AdminDriverAccess />
         )}
 
         {/* Dispatch modal — rendered on top of any view */}

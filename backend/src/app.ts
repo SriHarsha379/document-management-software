@@ -7,6 +7,8 @@ import documentRoutes from './routes/documents.js';
 import bundleRoutes from './routes/bundles.js';
 import searchRoutes from './routes/search.js';
 import dispatchRoutes from './routes/dispatch.js';
+import adminDriverRoutes from './routes/adminDriver.js';
+import driverPortalRoutes from './routes/driverPortal.js';
 
 const app = express();
 
@@ -32,6 +34,8 @@ app.use('/api/documents', documentRoutes);
 app.use('/api/bundles', bundleRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/dispatch', dispatchRoutes);
+app.use('/api/admin/driver-access', adminDriverRoutes);
+app.use('/api/driver', driverPortalRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

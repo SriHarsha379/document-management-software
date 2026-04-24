@@ -16,4 +16,6 @@ export default defineConfig({
       },
     },
   },
+  // Serve index.html for all routes (SPA mode — /driver is handled client-side)
+  appType: 'spa',
 });

@@ -140,3 +140,106 @@ export const dispatchApi = {
     return res.data;
   },
 };
+
+// ── Driver Portal API ─────────────────────────────────────────────────────────
+
+export type DriverDocType = 'LR' | 'TOLL' | 'WEIGHMENT_SLIP';
+
+export interface DriverAccess {
+  id: string;
+  phone: string;
+  createdAt: string;
+  expiresAt: string;
+  lastLoginAt: string | null;
+  isRevoked: boolean;
+  isExpired: boolean;
+  uploadCount: number;
+}
+
+export interface DriverUploadDoc {
+  id: string;
+  docType: DriverDocType;
+  status: 'PENDING_OCR' | 'PROCESSED' | 'UNLINKED';
+  originalFilename: string;
+  uploadedAt: string;
+  vehicleNumber: string | null;
+  documentDate: string | null;
+  linkedGroupId: string | null;
+}
+
+export interface DriverLoginResponse {
+  token: string;
+  expiresAt: string;
+  phone: string;
+}
+
+export interface DriverStatusResponse {
+  phone: string;
+  expiresAt: string;
+  uploadCount: number;
+}
+
+const driverApi = axios.create({
+  baseURL: '/api/driver',
+  timeout: 60000,
+});
+
+const adminDriverApi = axios.create({
+  baseURL: '/api/admin/driver-access',
+  timeout: 30000,
+});
+
+export const driverPortalApi = {
+  login: async (phone: string, password: string): Promise<DriverLoginResponse> => {
+    const res = await driverApi.post<DriverLoginResponse>('/login', { phone, password });
+    return res.data;
+  },
+
+  status: async (token: string): Promise<DriverStatusResponse> => {
+    const res = await driverApi.get<DriverStatusResponse>('/status', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return res.data;
+  },
+
+  upload: async (token: string, file: File, docType: DriverDocType): Promise<DriverUploadDoc> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('docType', docType);
+    const res = await driverApi.post<{ document: DriverUploadDoc }>('/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return res.data.document;
+  },
+
+  listUploads: async (token: string): Promise<DriverUploadDoc[]> => {
+    const res = await driverApi.get<{ uploads: DriverUploadDoc[] }>('/uploads', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return res.data.uploads;
+  },
+};
+
+export const adminDriverAccessApi = {
+  create: async (phone: string): Promise<{ driverAccess: DriverAccess; generatedPassword: string }> => {
+    const res = await adminDriverApi.post<{ driverAccess: DriverAccess; generatedPassword: string }>('/', { phone });
+    return res.data;
+  },
+
+  list: async (): Promise<DriverAccess[]> => {
+    const res = await adminDriverApi.get<{ accesses: DriverAccess[] }>('/');
+    return res.data.accesses;
+  },
+
+  revoke: async (id: string): Promise<void> => {
+    await adminDriverApi.put(`/${id}/revoke`);
+  },
+
+  getUploads: async (id: string): Promise<DriverUploadDoc[]> => {
+    const res = await adminDriverApi.get<{ uploads: DriverUploadDoc[] }>(`/${id}/uploads`);
+    return res.data.uploads;
+  },
+};
