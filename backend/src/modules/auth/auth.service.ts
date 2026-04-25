@@ -3,8 +3,12 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../../services/documentService.js';
 import type { UserContext } from '../rbac/userContext.js';
 
-const JWT_SECRET = process.env.JWT_SECRET ?? 'change-me-in-production';
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN ?? '8h';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('JWT_SECRET environment variable must be set in production');
+}
+const JWT_SECRET_VALUE = JWT_SECRET ?? 'change-me-in-development-only';
+const JWT_EXPIRES_IN = (process.env.JWT_EXPIRES_IN ?? '8h') as jwt.SignOptions['expiresIn'];
 
 // ── loadUserContext ────────────────────────────────────────────────────────────
 // Builds the full UserContext for a user by loading roles, permissions, branch
