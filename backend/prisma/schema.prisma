@@ -10,6 +10,140 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ── RBAC + Org models ─────────────────────────────────────────────────────────
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users    User[]
+  branches Branch[]
+  lrs      Lr[]
+
+  @@map("companies")
+}
+
+model Branch {
+  id        String   @id @default(uuid())
+  name      String
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userBranchAccess UserBranchAccess[]
+  lrs              Lr[]
+
+  @@map("branches")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id])
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  userRoles        UserRole[]
+  userBranchAccess UserBranchAccess[]
+  userSourceAccess UserSourceAccess[]
+
+  @@map("users")
+}
+
+model Role {
+  id       String  @id @default(uuid())
+  key      String  @unique
+  name     String
+  isSystem Boolean @default(false)
+
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String  @id @default(uuid())
+  key         String  @unique
+  resource    String
+  action      String
+  description String?
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model UserBranchAccess {
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@id([userId, branchId])
+  @@map("user_branch_access")
+}
+
+model UserSourceAccess {
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  source String
+
+  @@id([userId, source])
+  @@map("user_source_access")
+}
+
+// ── LR (Lorry Receipt) stub entity for RBAC demonstration ─────────────────────
+
+model Lr {
+  id        String   @id @default(uuid())
+  lrNo      String
+  status    String   @default("DRAFT")
+  consignor String?
+  consignee String?
+  vehicleNo String?
+  date      String?
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Row-level access scope columns
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  branchId  String
+  branch    Branch  @relation(fields: [branchId], references: [id])
+  source    String  @default("INTERNAL")
+
+  @@map("lrs")
+}
+
 // Groups documents that share the same vehicle number and date
 model DocumentGroup {
   id         String     @id @default(uuid())
