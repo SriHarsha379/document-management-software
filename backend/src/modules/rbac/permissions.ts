@@ -42,6 +42,15 @@ export const ROLES = {
 
 export type RoleKey = typeof ROLES[keyof typeof ROLES];
 
+// ── Domain enumerations ────────────────────────────────────────────────────────
+// Centralised here so validation and DB writes use the same set of values.
+
+export const ALLOWED_SOURCES = ['INTERNAL', 'PORTAL', 'API', 'EMAIL_IMPORT'] as const;
+export type Source = typeof ALLOWED_SOURCES[number];
+
+export const ALLOWED_LR_STATUSES = ['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED'] as const;
+export type LrStatus = typeof ALLOWED_LR_STATUSES[number];
+
 // ── Role → permission matrix ───────────────────────────────────────────────────
 // This is the canonical source of truth; it is used by the seed script to
 // populate the role_permissions table.

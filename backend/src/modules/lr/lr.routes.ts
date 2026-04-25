@@ -1,11 +1,32 @@
 import { Router, type Request, type Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import { requireAuth } from '../auth/auth.routes.js';
 import { requirePermission, buildScopeWhere } from '../rbac/rbac.middleware.js';
+import { ALLOWED_SOURCES, ALLOWED_LR_STATUSES } from '../rbac/permissions.js';
 import { lrRepo } from './lr.repo.js';
 
 const router = Router();
 
-// All LR routes require a valid user JWT
+// ── Rate limiters ─────────────────────────────────────────────────────────────
+
+const readLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down.' },
+});
+
+const writeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down.' },
+});
+
+// Apply rate limiting and auth to all LR routes
+router.use(readLimiter);
 router.use(requireAuth);
 
 // ── GET /api/lrs ───────────────────────────────────────────────────────────────
@@ -14,20 +35,20 @@ router.use(requireAuth);
 
 router.get(
   '/',
+  readLimiter,
   requirePermission('lr.read'),
   async (req: Request, res: Response): Promise<void> => {
     try {
       const user = req.user!;
       const where = buildScopeWhere(user);
 
-      const limit  = Math.min(Number(req.query.limit  ?? 50), 200);
-      const offset = Number(req.query.offset ?? 0);
+      const limit  = parsePaginationInt(req.query.limit,  50, 200);
+      const offset = parsePaginationInt(req.query.offset, 0,  Infinity);
 
-      const rows = await lrRepo.findMany({ where, limit, offset });
-      res.json({ data: rows, limit, offset });
+      const { rows, total } = await lrRepo.findMany({ where, limit, offset });
+      res.json({ data: rows, total, limit, offset });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Internal server error';
-      res.status(500).json({ error: message });
+      handleRouteError(err, res, '[lr] GET /lrs');
     }
   }
 );
@@ -38,6 +59,7 @@ router.get(
 
 router.post(
   '/',
+  writeLimiter,
   requirePermission('lr.create'),
   async (req: Request, res: Response): Promise<void> => {
     try {
@@ -53,33 +75,37 @@ router.post(
           date?: string;
         };
 
-      if (!lrNo || !branchId) {
+      if (!lrNo?.trim() || !branchId?.trim()) {
         res.status(400).json({ error: 'lrNo and branchId are required' });
         return;
       }
 
+      if (source && !(ALLOWED_SOURCES as readonly string[]).includes(source)) {
+        res.status(400).json({ error: `source must be one of: ${ALLOWED_SOURCES.join(', ')}` });
+        return;
+      }
+
       // Enforce that the branchId is within the user's allowed branches
-      if (!user.isSuperAdmin && !user.branchIds.includes(branchId)) {
+      if (!user.isSuperAdmin && !user.branchIds.includes(branchId.trim())) {
         res.status(403).json({ error: 'Forbidden: branch not in scope' });
         return;
       }
 
       const lr = await lrRepo.create({
-        lrNo,
+        lrNo:      lrNo.trim(),
         companyId: user.companyId,
-        branchId,
-        source: source ?? 'INTERNAL',
-        consignor,
-        consignee,
-        vehicleNo,
-        date,
+        branchId:  branchId.trim(),
+        source:    source ?? 'INTERNAL',
+        consignor: consignor?.trim(),
+        consignee: consignee?.trim(),
+        vehicleNo: vehicleNo?.trim(),
+        date:      date?.trim(),
         createdBy: user.id,
       });
 
       res.status(201).json({ data: lr });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Internal server error';
-      res.status(500).json({ error: message });
+      handleRouteError(err, res, '[lr] POST /lrs');
     }
   }
 );
@@ -91,6 +117,7 @@ router.post(
 
 router.patch(
   '/:id',
+  writeLimiter,
   requirePermission('lr.update'),
   async (req: Request, res: Response): Promise<void> => {
     try {
@@ -114,11 +141,22 @@ router.patch(
           date?: string;
         };
 
-      const updated = await lrRepo.update(lr.id, { lrNo, status, consignor, consignee, vehicleNo, date });
+      if (status && !(ALLOWED_LR_STATUSES as readonly string[]).includes(status)) {
+        res.status(400).json({ error: `status must be one of: ${ALLOWED_LR_STATUSES.join(', ')}` });
+        return;
+      }
+
+      const updated = await lrRepo.update(lr.id, {
+        lrNo:      lrNo?.trim(),
+        status,
+        consignor: consignor?.trim(),
+        consignee: consignee?.trim(),
+        vehicleNo: vehicleNo?.trim(),
+        date:      date?.trim(),
+      });
       res.json({ data: updated });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Internal server error';
-      res.status(500).json({ error: message });
+      handleRouteError(err, res, '[lr] PATCH /lrs/:id');
     }
   }
 );
@@ -129,6 +167,7 @@ router.patch(
 
 router.delete(
   '/:id',
+  writeLimiter,
   requirePermission('lr.delete'),
   async (req: Request, res: Response): Promise<void> => {
     try {
@@ -144,10 +183,32 @@ router.delete(
       await lrRepo.delete(lr.id);
       res.status(204).send();
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Internal server error';
-      res.status(500).json({ error: message });
+      handleRouteError(err, res, '[lr] DELETE /lrs/:id');
     }
   }
 );
 
 export default router;
+
+// ── Shared helpers ────────────────────────────────────────────────────────────
+
+// Parse a pagination query parameter with clamping — never return NaN or negative.
+function parsePaginationInt(
+  value: unknown,
+  defaultValue: number,
+  max: number,
+): number {
+  const n = parseInt(String(value ?? ''), 10);
+  if (isNaN(n) || n < 0) return defaultValue;
+  return Math.min(n, max);
+}
+
+// Log the real error server-side; send a generic message in production.
+function handleRouteError(err: unknown, res: Response, context: string): void {
+  console.error(`${context}:`, err);
+  const message =
+    process.env.NODE_ENV !== 'production' && err instanceof Error
+      ? err.message
+      : 'An unexpected error occurred';
+  res.status(500).json({ error: message });
+}

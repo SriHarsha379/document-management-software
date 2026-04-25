@@ -5,13 +5,24 @@ import type { UserContext } from '../rbac/userContext.js';
 
 const router = Router();
 
-// Rate limiter: max 10 login attempts per 15 minutes per IP
+// ── Rate limiters ─────────────────────────────────────────────────────────────
+
+// Strict limiter for login: prevents brute-force attacks
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many login attempts. Please try again after 15 minutes.' },
+});
+
+// General limiter for authenticated read endpoints
+const apiReadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down.' },
 });
 
 // ── requireAuth middleware ─────────────────────────────────────────────────────
@@ -38,25 +49,31 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
 // ── POST /api/auth/login ───────────────────────────────────────────────────────
 
 router.post('/login', loginLimiter, async (req: Request, res: Response): Promise<void> => {
-  const { email, password } = req.body as { email?: string; password?: string };
+  try {
+    const { email, password } = req.body as { email?: string; password?: string };
 
-  if (!email || !password) {
-    res.status(400).json({ error: 'email and password are required' });
-    return;
+    if (!email || !password) {
+      res.status(400).json({ error: 'email and password are required' });
+      return;
+    }
+
+    const result = await loginUser(email, password);
+    if (!result) {
+      // Constant-time response: don't indicate whether the email exists
+      res.status(401).json({ error: 'Invalid credentials' });
+      return;
+    }
+
+    res.json({ token: result.token, user: result.user });
+  } catch (err) {
+    console.error('[auth] login error:', err);
+    res.status(500).json({ error: 'An unexpected error occurred' });
   }
-
-  const result = await loginUser(email, password);
-  if (!result) {
-    res.status(401).json({ error: 'Invalid credentials' });
-    return;
-  }
-
-  res.json({ token: result.token, user: result.user });
 });
 
 // ── GET /api/auth/me ───────────────────────────────────────────────────────────
 
-router.get('/me', requireAuth, (req: Request, res: Response): void => {
+router.get('/me', apiReadLimiter, requireAuth, (req: Request, res: Response): void => {
   res.json({ user: req.user });
 });
 

@@ -4,6 +4,8 @@ import type { UserContext } from './userContext.js';
 // ── requirePermission ──────────────────────────────────────────────────────────
 // Route middleware that checks the authenticated user holds a specific permission.
 // Super Admin users bypass all capability checks.
+// In production the 403 body does not reveal which permission is missing, to
+// avoid leaking the permission model to potential attackers.
 
 export function requirePermission(permissionKey: string) {
   return (req: Request, res: Response, next: NextFunction): void => {
@@ -18,7 +20,11 @@ export function requirePermission(permissionKey: string) {
     }
 
     if (!user.permissionKeys.includes(permissionKey)) {
-      res.status(403).json({ error: 'Forbidden', missing: permissionKey });
+      const isProduction = process.env.NODE_ENV === 'production';
+      res.status(403).json({
+        error: 'Forbidden',
+        ...(isProduction ? {} : { missing: permissionKey }),
+      });
       return;
     }
 
@@ -31,12 +37,13 @@ export function requirePermission(permissionKey: string) {
 // the user is allowed to see.  NEVER filter in-memory — always pass this into
 // the DB query so list endpoints cannot leak cross-branch/company data.
 //
-// Super Admin users receive an empty filter (no restriction), or you can pass
-// an explicit companyId override when needed.
+// Super Admin users receive an empty filter (no restriction).  Callers may
+// provide an explicit companyId override (e.g. when super admin acts on behalf
+// of a specific company).
 
-export function buildScopeWhere(user: UserContext): ScopeWhere {
+export function buildScopeWhere(user: UserContext, overrideCompanyId?: string): ScopeWhere {
   if (user.isSuperAdmin) {
-    return {};
+    return overrideCompanyId ? { companyId: overrideCompanyId } : {};
   }
 
   const where: ScopeWhere = { companyId: user.companyId };
@@ -80,24 +87,24 @@ export function requireScope(opts: {
     }
 
     if (opts.branchParam) {
-      const requestedBranch = (req.params[opts.branchParam] ?? req.query[opts.branchParam]) as string | undefined;
-      if (requestedBranch && !user.branchIds.includes(requestedBranch)) {
+      const requested = firstString(req.params[opts.branchParam] ?? req.query[opts.branchParam]);
+      if (requested && !user.branchIds.includes(requested)) {
         res.status(403).json({ error: 'Forbidden: branch not in scope' });
         return;
       }
     }
 
     if (opts.sourceParam) {
-      const requestedSource = (req.params[opts.sourceParam] ?? req.query[opts.sourceParam]) as string | undefined;
-      if (requestedSource && !user.allowedSources.includes(requestedSource)) {
+      const requested = firstString(req.params[opts.sourceParam] ?? req.query[opts.sourceParam]);
+      if (requested && !user.allowedSources.includes(requested)) {
         res.status(403).json({ error: 'Forbidden: source not in scope' });
         return;
       }
     }
 
     if (opts.companyParam) {
-      const requestedCompany = (req.params[opts.companyParam] ?? req.query[opts.companyParam]) as string | undefined;
-      if (requestedCompany && requestedCompany !== user.companyId) {
+      const requested = firstString(req.params[opts.companyParam] ?? req.query[opts.companyParam]);
+      if (requested && requested !== user.companyId) {
         res.status(403).json({ error: 'Forbidden: company not in scope' });
         return;
       }
@@ -105,4 +112,14 @@ export function requireScope(opts: {
 
     next();
   };
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Express query params may be string | string[] | ParsedQs — take the first
+// string value and ignore everything else.
+function firstString(value: string | string[] | object | undefined): string | undefined {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
+  return undefined;
 }
