@@ -125,6 +125,7 @@ model UserSourceAccess {
 model Lr {
   id        String   @id @default(uuid())
   lrNo      String
+  invoiceNo String?
   status    String   @default("DRAFT")
   consignor String?
   consignee String?
@@ -140,6 +141,8 @@ model Lr {
   branchId  String
   branch    Branch  @relation(fields: [branchId], references: [id])
   source    String  @default("INTERNAL")
+
+  documentLinks DocumentLinkRecord[]
 
   @@map("lrs")
 }
@@ -175,6 +178,8 @@ model Document {
   extractedData ExtractedData?
 
   bundleItems   BundleItem[]
+
+  documentLinks DocumentLinkRecord[]
 
   @@map("documents")
 }
@@ -347,4 +352,31 @@ model DriverUploadDocument {
   tempDriverAccess   TemporaryDriverAccess @relation(fields: [tempDriverAccessId], references: [id])
 
   @@map("driver_upload_documents")
+}
+
+// ── Document → LR auto-linking ────────────────────────────────────────────────
+
+// Tracks every link between an uploaded Document and an Lr record.
+// A document can be linked to multiple LRs (e.g. consolidated shipment).
+// A unique constraint prevents duplicate links for the same document+lr pair.
+model DocumentLinkRecord {
+  id            String   @id @default(uuid())
+  documentId    String
+  document      Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  lrId          String
+  lr            Lr       @relation(fields: [lrId], references: [id], onDelete: Cascade)
+
+  // Which extracted fields caused this match (JSON array, e.g. ["lrNo"] or ["vehicleNo","date"])
+  matchedFields String
+
+  // Confidence score 0.0–1.0; ≥ 0.6 is auto-linked, < 0.6 is pending review
+  confidence    Float    @default(0.5)
+
+  // true when a user created the link manually (overrides the auto-link result)
+  isManual      Boolean  @default(false)
+
+  linkedAt      DateTime @default(now())
+
+  @@unique([documentId, lrId])
+  @@map("document_link_records")
 }

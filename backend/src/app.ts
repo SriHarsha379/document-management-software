@@ -11,6 +11,7 @@ import adminDriverRoutes from './routes/adminDriver.js';
 import driverPortalRoutes from './routes/driverPortal.js';
 import authRoutes from './modules/auth/auth.routes.js';
 import lrRoutes from './modules/lr/lr.routes.js';
+import autoLinkRoutes, { relinkAdminRouter } from './routes/autoLink.js';
 
 const app = express();
 
@@ -33,10 +34,12 @@ app.use('/uploads', express.static(path.resolve(uploadDir)));
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/documents', documentRoutes);
+app.use('/api/documents', autoLinkRoutes);
 app.use('/api/bundles', bundleRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/dispatch', dispatchRoutes);
 app.use('/api/admin/driver-access', adminDriverRoutes);
+app.use('/api/admin', relinkAdminRouter);
 app.use('/api/driver', driverPortalRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/lrs', lrRoutes);

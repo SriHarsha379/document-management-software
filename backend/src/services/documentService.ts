@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import type { DocumentType, ReviewPayload } from '../types/index.js';
+import { autoLinkDocument } from './autoLinkService.js';
 
 const prisma = new PrismaClient();
 
@@ -9,7 +10,7 @@ export { prisma };
  * Auto-link a document to a DocumentGroup based on vehicle number and date.
  * Creates the group if it doesn't exist.
  */
-export async function autoLinkDocument(documentId: string, vehicleNo: string, date: string): Promise<string> {
+async function autoLinkDocumentToGroup(documentId: string, vehicleNo: string, date: string): Promise<string> {
   const normalizedVehicle = vehicleNo.trim().toUpperCase().replace(/\s+/g, '');
   const normalizedDate = date.trim();
 
@@ -82,9 +83,10 @@ export async function saveOcrResults(
     });
   });
 
-  // Auto-link if vehicle number and date are available
+  // Auto-link to DocumentGroup if vehicle number and date are available
   if (fields.vehicleNo && fields.date) {
-    await autoLinkDocument(documentId, fields.vehicleNo, fields.date);
+    await autoLinkDocument(documentId);
+    await autoLinkDocumentToGroup(documentId, fields.vehicleNo, fields.date);
   }
 }
 
@@ -148,9 +150,10 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
     });
   });
 
-  // Re-link if vehicle/date changed
+  // Re-link to Lr record and DocumentGroup when vehicle/date changed
   const updatedExtracted = await prisma.extractedData.findUnique({ where: { documentId } });
   if (updatedExtracted?.vehicleNo && updatedExtracted.date) {
-    await autoLinkDocument(documentId, updatedExtracted.vehicleNo, updatedExtracted.date);
+    await autoLinkDocument(documentId);
+    await autoLinkDocumentToGroup(documentId, updatedExtracted.vehicleNo, updatedExtracted.date);
   }
 }
