@@ -12,6 +12,7 @@ import driverPortalRoutes from './routes/driverPortal.js';
 import authRoutes from './modules/auth/auth.routes.js';
 import lrRoutes from './modules/lr/lr.routes.js';
 import autoLinkRoutes, { relinkAdminRouter } from './routes/autoLink.js';
+import masterRoutes from './routes/master.js';
 
 const app = express();
 
@@ -43,6 +44,7 @@ app.use('/api/admin', relinkAdminRouter);
 app.use('/api/driver', driverPortalRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/lrs', lrRoutes);
+app.use('/api/master', masterRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

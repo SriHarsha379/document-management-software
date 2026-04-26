@@ -24,6 +24,10 @@ export const PERMISSIONS = {
   USER_MANAGE: 'user.manage',
   ROLE_MANAGE: 'role.manage',
 
+  // Master data — CRUD is admin-only; read (dropdown) is available to all roles
+  MASTER_MANAGE: 'master.manage', // create / update / delete any master record
+  MASTER_READ:   'master.read',   // read / list master records and dropdown data
+
   AUDIT_READ: 'audit.read',
   EXPORT_RUN: 'export.run',
 } as const;
@@ -56,32 +60,35 @@ export type LrStatus = typeof ALLOWED_LR_STATUSES[number];
 // populate the role_permissions table.
 
 export const ROLE_PERMISSION_MATRIX: Record<RoleKey, PermissionKey[]> = {
-  // L1 — data entry: create + read business records, submit workflow
+  // L1 — data entry: create + read business records, submit workflow; read master data
   [ROLES.L1]: [
     PERMISSIONS.LR_CREATE,   PERMISSIONS.LR_READ,
     PERMISSIONS.INVOICE_CREATE, PERMISSIONS.INVOICE_READ,
     PERMISSIONS.DOCUMENT_UPLOAD, PERMISSIONS.DOCUMENT_READ,
     PERMISSIONS.WORKFLOW_TRANSITION_SUBMIT,
+    PERMISSIONS.MASTER_READ,
   ],
 
-  // L2 — view only: read everything, optionally read audit
+  // L2 — view only: read everything, optionally read audit; read master data
   [ROLES.L2]: [
     PERMISSIONS.LR_READ,
     PERMISSIONS.INVOICE_READ,
     PERMISSIONS.DOCUMENT_READ,
     PERMISSIONS.AUDIT_READ,
+    PERMISSIONS.MASTER_READ,
   ],
 
-  // L3 — edit/delete: full CRUD + approve/reject workflow + export
+  // L3 — edit/delete: full CRUD + approve/reject workflow + export; read master data
   [ROLES.L3]: [
     PERMISSIONS.LR_CREATE,   PERMISSIONS.LR_READ,   PERMISSIONS.LR_UPDATE,   PERMISSIONS.LR_DELETE,
     PERMISSIONS.INVOICE_CREATE, PERMISSIONS.INVOICE_READ, PERMISSIONS.INVOICE_UPDATE, PERMISSIONS.INVOICE_DELETE,
     PERMISSIONS.DOCUMENT_UPLOAD, PERMISSIONS.DOCUMENT_READ, PERMISSIONS.DOCUMENT_DELETE,
     PERMISSIONS.WORKFLOW_TRANSITION_SUBMIT, PERMISSIONS.WORKFLOW_TRANSITION_APPROVE, PERMISSIONS.WORKFLOW_TRANSITION_REJECT,
     PERMISSIONS.AUDIT_READ, PERMISSIONS.EXPORT_RUN,
+    PERMISSIONS.MASTER_READ,
   ],
 
-  // Admin — full access scoped to own company; can manage users, roles, org
+  // Admin — full access scoped to own company; manages master data + users/roles/org
   [ROLES.ADMIN]: [
     PERMISSIONS.LR_CREATE,   PERMISSIONS.LR_READ,   PERMISSIONS.LR_UPDATE,   PERMISSIONS.LR_DELETE,
     PERMISSIONS.INVOICE_CREATE, PERMISSIONS.INVOICE_READ, PERMISSIONS.INVOICE_UPDATE, PERMISSIONS.INVOICE_DELETE,
@@ -90,6 +97,7 @@ export const ROLE_PERMISSION_MATRIX: Record<RoleKey, PermissionKey[]> = {
     PERMISSIONS.WORKFLOW_TRANSITION_REJECT, PERMISSIONS.WORKFLOW_OVERRIDE,
     PERMISSIONS.ORG_MANAGE, PERMISSIONS.USER_MANAGE, PERMISSIONS.ROLE_MANAGE,
     PERMISSIONS.AUDIT_READ, PERMISSIONS.EXPORT_RUN,
+    PERMISSIONS.MASTER_MANAGE, PERMISSIONS.MASTER_READ,
   ],
 
   // Super Admin — all permissions + isSuperAdmin bypass (no scope restriction)
@@ -101,6 +109,7 @@ export const ROLE_PERMISSION_MATRIX: Record<RoleKey, PermissionKey[]> = {
     PERMISSIONS.WORKFLOW_TRANSITION_REJECT, PERMISSIONS.WORKFLOW_OVERRIDE,
     PERMISSIONS.ORG_MANAGE, PERMISSIONS.USER_MANAGE, PERMISSIONS.ROLE_MANAGE,
     PERMISSIONS.AUDIT_READ, PERMISSIONS.EXPORT_RUN,
+    PERMISSIONS.MASTER_MANAGE, PERMISSIONS.MASTER_READ,
   ],
 };
 
@@ -136,6 +145,9 @@ export const PERMISSION_META: PermissionMeta[] = [
   { key: PERMISSIONS.ORG_MANAGE,  resource: 'org',  action: 'manage', description: 'Manage org/branch/centre settings' },
   { key: PERMISSIONS.USER_MANAGE, resource: 'user', action: 'manage', description: 'Manage users within company' },
   { key: PERMISSIONS.ROLE_MANAGE, resource: 'role', action: 'manage', description: 'Manage role-permission assignments' },
+
+  { key: PERMISSIONS.MASTER_MANAGE, resource: 'master', action: 'manage', description: 'Create/update/delete master data records' },
+  { key: PERMISSIONS.MASTER_READ,   resource: 'master', action: 'read',   description: 'Read master data and dropdown lists' },
 
   { key: PERMISSIONS.AUDIT_READ, resource: 'audit',  action: 'read',   description: 'Read audit logs' },
   { key: PERMISSIONS.EXPORT_RUN, resource: 'export', action: 'run',    description: 'Run data exports (CSV/PDF)' },

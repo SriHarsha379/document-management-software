@@ -160,6 +160,16 @@ type PrismaDocRow = {
   } | null;
 };
 
+/** Safely parse the JSON-serialised partyNames array stored in SQLite. */
+function parsePartyNames(value: string | null): string[] | null {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as string[];
+  } catch {
+    return null;
+  }
+}
+
 function formatDocRow(doc: PrismaDocRow): SearchResultItem {
   const ed = doc.extractedData;
   return {
@@ -179,7 +189,7 @@ function formatDocRow(doc: PrismaDocRow): SearchResultItem {
           vehicleNo: ed.vehicleNo,
           quantity: ed.quantity,
           date: ed.date,
-          partyNames: ed.partyNames ? (() => { try { return JSON.parse(ed.partyNames!) as string[]; } catch { return null; } })() : null,
+          partyNames: parsePartyNames(ed.partyNames),
           tollAmount: ed.tollAmount,
           weightInfo: ed.weightInfo,
           transporter: ed.transporter,

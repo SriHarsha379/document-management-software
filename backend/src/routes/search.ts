@@ -237,6 +237,3 @@ function handleError(err: unknown, res: Response, context: string): void {
   res.status(500).json({ error: message });
 }
 
-// Re-export constants so tests can use them without importing the service directly
-export { SEARCH_MAX_LIMIT, SEARCH_DEFAULT_LIMIT };
-

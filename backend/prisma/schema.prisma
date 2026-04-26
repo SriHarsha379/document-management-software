@@ -22,6 +22,13 @@ model Company {
   branches Branch[]
   lrs      Lr[]
 
+  // Master data
+  transporters   Transporter[]
+  officers       Officer[]
+  parties        Party[]
+  products       Product[]
+  workingCentres WorkingCentre[]
+
   @@map("companies")
 }
 
@@ -35,6 +42,7 @@ model Branch {
 
   userBranchAccess UserBranchAccess[]
   lrs              Lr[]
+  workingCentres   WorkingCentre[]
 
   @@map("branches")
 }
@@ -384,6 +392,107 @@ model SavedFilter {
 
   @@index([userId])
   @@map("saved_filters")
+}
+
+// ── Master Data ───────────────────────────────────────────────────────────────
+// All master entities are scoped to a company. Soft-deletes via isActive flag
+// preserve referential integrity when records are in use.
+
+model Transporter {
+  id          String   @id @default(uuid())
+  code        String   // unique within company
+  name        String
+  contactName String?
+  phone       String?
+  email       String?
+  address     String?
+  isActive    Boolean  @default(true)
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([isActive])
+  @@map("transporters")
+}
+
+model Officer {
+  id        String   @id @default(uuid())
+  name      String
+  phone     String?
+  email     String?
+  role      String?  // free-text job title / designation
+  isActive  Boolean  @default(true)
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([isActive])
+  @@map("officers")
+}
+
+model Party {
+  id            String   @id @default(uuid())
+  code          String   // unique within company
+  name          String
+  contactPerson String?
+  phone         String?
+  email         String?
+  gstNo         String?
+  address       String?
+  isActive      Boolean  @default(true)
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([isActive])
+  @@map("parties")
+}
+
+model Product {
+  id        String   @id @default(uuid())
+  name      String
+  brand     String?
+  category  String?
+  unit      String?  // e.g., KG, MT, BAG, LITRE
+  isActive  Boolean  @default(true)
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, name, brand])
+  @@index([companyId])
+  @@index([category])
+  @@index([isActive])
+  @@map("products")
+}
+
+model WorkingCentre {
+  id        String   @id @default(uuid())
+  code      String   // unique within company
+  name      String
+  address   String?
+  isActive  Boolean  @default(true)
+  branchId  String?
+  branch    Branch?  @relation(fields: [branchId], references: [id])
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([branchId])
+  @@index([isActive])
+  @@map("working_centres")
 }
 
 // ── Document → LR auto-linking ────────────────────────────────────────────────
