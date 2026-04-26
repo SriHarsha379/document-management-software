@@ -495,6 +495,127 @@ model WorkingCentre {
   @@map("working_centres")
 }
 
+// ── Communication Module ──────────────────────────────────────────────────────
+
+// Per-company settings for centralized sending addresses
+model CompanySettings {
+  companyId      String  @id
+  smtpFrom       String? // override global SMTP_FROM for this company
+  whatsappFrom   String? // override global TWILIO_WHATSAPP_FROM for this company
+  defaultCCEmail String? // always CC this email on every outgoing email
+  defaultCCPhone String? // always CC this phone on every outgoing WhatsApp
+
+  @@map("company_settings")
+}
+
+// Reusable message templates (Handlebars syntax)
+model MessageTemplate {
+  id              String   @id @default(uuid())
+  companyId       String
+  code            String   // unique within company
+  name            String
+  channel         CommChannel @default(BOTH)
+  subjectTemplate String?  // for EMAIL channel; supports {{vars}}
+  bodyTemplate    String   // Handlebars body; supports {{vars}}
+  isActive        Boolean  @default(true)
+  isDefault       Boolean  @default(false) // one default per company+channel
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  jobs CommunicationJob[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([isActive])
+  @@map("message_templates")
+}
+
+// Durable queue record — one per send request (may fan out to N messages)
+model CommunicationJob {
+  id           String      @id @default(uuid())
+  companyId    String
+  bundleId     String?
+  channel      CommChannel
+  recipients   String      // JSON: ResolvedRecipient[]
+  templateId   String?
+  template     MessageTemplate? @relation(fields: [templateId], references: [id])
+  templateVars String      @default("{}") // JSON: Record<string,string>
+  status       JobStatus   @default(QUEUED)
+  priority     JobPriority @default(NORMAL)
+  scheduledAt  DateTime    @default(now())
+  processedAt  DateTime?
+  retryCount   Int         @default(0)
+  maxRetries   Int         @default(3)
+  lastError    String?
+  notes        String?     // warnings from recipient resolution
+  createdBy    String?     // userId of the sender
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  messages CommunicationMessage[]
+
+  @@index([companyId])
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([bundleId])
+  @@map("communication_jobs")
+}
+
+// One row per individual send attempt (fan-out from CommunicationJob)
+model CommunicationMessage {
+  id              String      @id @default(uuid())
+  jobId           String
+  job             CommunicationJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  channel         CommChannel
+  recipient       String      // email address or E.164 phone
+  recipientName   String?
+  isCC            Boolean     @default(false)
+  renderedSubject String?
+  renderedBody    String
+  mediaUrls       String      @default("[]") // JSON: string[]
+  status          MsgStatus   @default(PENDING)
+  attemptCount    Int         @default(0)
+  lastAttemptAt   DateTime?
+  sentAt          DateTime?
+  errorCode       String?
+  errorMsg        String?
+  externalId      String?     // Twilio SID or SMTP messageId
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([jobId])
+  @@index([status])
+  @@index([recipient])
+  @@map("communication_messages")
+}
+
+enum CommChannel {
+  EMAIL
+  WHATSAPP
+  BOTH
+}
+
+enum JobStatus {
+  QUEUED
+  PROCESSING
+  DONE
+  FAILED
+  CANCELLED
+}
+
+enum JobPriority {
+  HIGH
+  NORMAL
+  LOW
+}
+
+enum MsgStatus {
+  PENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
 // ── Document → LR auto-linking ────────────────────────────────────────────────
 
 // Tracks every link between an uploaded Document and an Lr record.

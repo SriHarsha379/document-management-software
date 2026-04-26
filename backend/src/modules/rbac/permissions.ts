@@ -30,6 +30,11 @@ export const PERMISSIONS = {
 
   AUDIT_READ: 'audit.read',
   EXPORT_RUN: 'export.run',
+
+  // Communication module
+  COMMUNICATION_SEND:              'communication.send',              // send messages
+  COMMUNICATION_READ:              'communication.read',              // view jobs / logs
+  COMMUNICATION_TEMPLATE_MANAGE:   'communication.template.manage',   // create/edit templates
 } as const;
 
 export type PermissionKey = typeof PERMISSIONS[keyof typeof PERMISSIONS];
@@ -67,6 +72,7 @@ export const ROLE_PERMISSION_MATRIX: Record<RoleKey, PermissionKey[]> = {
     PERMISSIONS.DOCUMENT_UPLOAD, PERMISSIONS.DOCUMENT_READ,
     PERMISSIONS.WORKFLOW_TRANSITION_SUBMIT,
     PERMISSIONS.MASTER_READ,
+    PERMISSIONS.COMMUNICATION_READ,
   ],
 
   // L2 — view only: read everything, optionally read audit; read master data
@@ -76,6 +82,7 @@ export const ROLE_PERMISSION_MATRIX: Record<RoleKey, PermissionKey[]> = {
     PERMISSIONS.DOCUMENT_READ,
     PERMISSIONS.AUDIT_READ,
     PERMISSIONS.MASTER_READ,
+    PERMISSIONS.COMMUNICATION_READ,
   ],
 
   // L3 — edit/delete: full CRUD + approve/reject workflow + export; read master data
@@ -86,6 +93,7 @@ export const ROLE_PERMISSION_MATRIX: Record<RoleKey, PermissionKey[]> = {
     PERMISSIONS.WORKFLOW_TRANSITION_SUBMIT, PERMISSIONS.WORKFLOW_TRANSITION_APPROVE, PERMISSIONS.WORKFLOW_TRANSITION_REJECT,
     PERMISSIONS.AUDIT_READ, PERMISSIONS.EXPORT_RUN,
     PERMISSIONS.MASTER_READ,
+    PERMISSIONS.COMMUNICATION_SEND, PERMISSIONS.COMMUNICATION_READ,
   ],
 
   // Admin — full access scoped to own company; manages master data + users/roles/org
@@ -98,6 +106,7 @@ export const ROLE_PERMISSION_MATRIX: Record<RoleKey, PermissionKey[]> = {
     PERMISSIONS.ORG_MANAGE, PERMISSIONS.USER_MANAGE, PERMISSIONS.ROLE_MANAGE,
     PERMISSIONS.AUDIT_READ, PERMISSIONS.EXPORT_RUN,
     PERMISSIONS.MASTER_MANAGE, PERMISSIONS.MASTER_READ,
+    PERMISSIONS.COMMUNICATION_SEND, PERMISSIONS.COMMUNICATION_READ, PERMISSIONS.COMMUNICATION_TEMPLATE_MANAGE,
   ],
 
   // Super Admin — all permissions + isSuperAdmin bypass (no scope restriction)
@@ -110,6 +119,7 @@ export const ROLE_PERMISSION_MATRIX: Record<RoleKey, PermissionKey[]> = {
     PERMISSIONS.ORG_MANAGE, PERMISSIONS.USER_MANAGE, PERMISSIONS.ROLE_MANAGE,
     PERMISSIONS.AUDIT_READ, PERMISSIONS.EXPORT_RUN,
     PERMISSIONS.MASTER_MANAGE, PERMISSIONS.MASTER_READ,
+    PERMISSIONS.COMMUNICATION_SEND, PERMISSIONS.COMMUNICATION_READ, PERMISSIONS.COMMUNICATION_TEMPLATE_MANAGE,
   ],
 };
 
@@ -151,4 +161,8 @@ export const PERMISSION_META: PermissionMeta[] = [
 
   { key: PERMISSIONS.AUDIT_READ, resource: 'audit',  action: 'read',   description: 'Read audit logs' },
   { key: PERMISSIONS.EXPORT_RUN, resource: 'export', action: 'run',    description: 'Run data exports (CSV/PDF)' },
+
+  { key: PERMISSIONS.COMMUNICATION_SEND,            resource: 'communication', action: 'send',            description: 'Send communications (email/WhatsApp) via bundles' },
+  { key: PERMISSIONS.COMMUNICATION_READ,            resource: 'communication', action: 'read',            description: 'View communication jobs and message logs' },
+  { key: PERMISSIONS.COMMUNICATION_TEMPLATE_MANAGE, resource: 'communication', action: 'template.manage', description: 'Create, update and delete message templates' },
 ];
