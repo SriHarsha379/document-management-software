@@ -144,6 +144,11 @@ model Lr {
 
   documentLinks DocumentLinkRecord[]
 
+  @@index([companyId])
+  @@index([lrNo])
+  @@index([vehicleNo])
+  @@index([date])
+
   @@map("lrs")
 }
 
@@ -181,6 +186,10 @@ model Document {
 
   documentLinks DocumentLinkRecord[]
 
+  @@index([type])
+  @@index([status])
+  @@index([uploadedAt])
+
   @@map("documents")
 }
 
@@ -198,6 +207,7 @@ model ExtractedData {
   partyNames   String?  // JSON array stored as string in SQLite
   tollAmount   String?
   weightInfo   String?
+  transporter  String?  // transporter / transport company name
 
   // OCR metadata
   rawOcrResponse  String  // Full JSON response from OpenAI stored as string
@@ -211,6 +221,13 @@ model ExtractedData {
 
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+
+  // Indexes for fast filtered searches
+  @@index([vehicleNo])
+  @@index([lrNo])
+  @@index([invoiceNo])
+  @@index([date])
+  @@index([transporter])
 
   @@map("extracted_data")
 }
@@ -352,6 +369,21 @@ model DriverUploadDocument {
   tempDriverAccess   TemporaryDriverAccess @relation(fields: [tempDriverAccessId], references: [id])
 
   @@map("driver_upload_documents")
+}
+
+// ── Advanced Search — Saved Filters ──────────────────────────────────────────
+
+// Persists a user's named search filter set so they can re-run it quickly.
+model SavedFilter {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String
+  filters   String   // JSON-serialised AdvancedSearchFilters object
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("saved_filters")
 }
 
 // ── Document → LR auto-linking ────────────────────────────────────────────────

@@ -12,6 +12,7 @@ export interface ExtractedFields {
   partyNames?: string[];
   tollAmount?: string;
   weightInfo?: string;
+  transporter?: string;
   documentType?: DocumentType;
   confidence?: number;
 }
@@ -43,6 +44,7 @@ export interface DocumentWithExtracted {
     partyNames: string[] | null;
     tollAmount: string | null;
     weightInfo: string | null;
+    transporter: string | null;
     rawOcrResponse: string;
     confidence: number | null;
     ocrProcessedAt: Date;
@@ -61,6 +63,7 @@ export interface ReviewPayload {
   partyNames?: string[];
   tollAmount?: string;
   weightInfo?: string;
+  transporter?: string;
   documentType?: DocumentType;
 }
 
@@ -81,3 +84,85 @@ export interface UpdateBundlePayload {
   status?: BundleStatus;
   notes?: string;
 }
+
+// ── Advanced Search ────────────────────────────────────────────────────────────
+
+/**
+ * Structured filter set accepted by GET /api/search/documents.
+ * All fields are optional — omitting a field means "no filter on that field".
+ */
+export interface AdvancedSearchFilters {
+  // Org scope (automatically enforced from JWT; callers may only narrow further)
+  companyId?: string;
+  source?: string;
+
+  // Document type / status
+  documentType?: DocumentType;
+  documentStatus?: DocumentStatus;
+
+  // Logistics reference fields (partial-match)
+  lrNo?: string;
+  invoiceNo?: string;
+  vehicleNo?: string;
+  partyName?: string;
+  transporter?: string;
+
+  // Extracted date range (YYYY-MM-DD)
+  dateFrom?: string;
+  dateTo?: string;
+
+  // Upload timestamp range (ISO-8601)
+  uploadedFrom?: string;
+  uploadedTo?: string;
+
+  // Pagination
+  page?: number;
+  limit?: number;
+
+  // Sorting
+  sortBy?: 'uploadedAt' | 'date';
+  sortDir?: 'asc' | 'desc';
+}
+
+export interface SearchResultItem {
+  id: string;
+  type: string;
+  status: string;
+  originalFilename: string;
+  mimeType: string;
+  filePath: string;
+  uploadedAt: string;
+  updatedAt: string;
+  groupId: string | null;
+  extractedData?: {
+    lrNo: string | null;
+    invoiceNo: string | null;
+    vehicleNo: string | null;
+    quantity: string | null;
+    date: string | null;
+    partyNames: string[] | null;
+    tollAmount: string | null;
+    weightInfo: string | null;
+    transporter: string | null;
+    confidence: number | null;
+    userReviewed: boolean;
+  };
+}
+
+export interface AdvancedSearchResponse {
+  filters: AdvancedSearchFilters;
+  results: SearchResultItem[];
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    pages: number;
+  };
+}
+
+/** Payload for creating a saved filter. */
+export interface SavedFilterPayload {
+  name: string;
+  filters: AdvancedSearchFilters;
+}
+
