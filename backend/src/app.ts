@@ -9,6 +9,13 @@ import searchRoutes from './routes/search.js';
 import dispatchRoutes from './routes/dispatch.js';
 import adminDriverRoutes from './routes/adminDriver.js';
 import driverPortalRoutes from './routes/driverPortal.js';
+import adminCustomerPortalRoutes from './routes/adminCustomerPortal.js';
+import customerPortalRoutes from './routes/customerPortal.js';
+import authRoutes from './modules/auth/auth.routes.js';
+import lrRoutes from './modules/lr/lr.routes.js';
+import autoLinkRoutes, { relinkAdminRouter } from './routes/autoLink.js';
+import masterRoutes from './routes/master.js';
+import communicationRoutes from './modules/communication/communicationRoutes.js';
 
 const app = express();
 
@@ -31,11 +38,19 @@ app.use('/uploads', express.static(path.resolve(uploadDir)));
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/documents', documentRoutes);
+app.use('/api/documents', autoLinkRoutes);
 app.use('/api/bundles', bundleRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/dispatch', dispatchRoutes);
 app.use('/api/admin/driver-access', adminDriverRoutes);
+app.use('/api/admin/customer-portal-access', adminCustomerPortalRoutes);
+app.use('/api/admin', relinkAdminRouter);
 app.use('/api/driver', driverPortalRoutes);
+app.use('/api/customer', customerPortalRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/lrs', lrRoutes);
+app.use('/api/master', masterRoutes);
+app.use('/api/communication', communicationRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

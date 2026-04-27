@@ -7,24 +7,33 @@ import { SmartSearch } from './components/SmartSearch';
 import { DispatchModal } from './components/DispatchModal';
 import { DispatchHistory } from './components/DispatchHistory';
 import { AdminDriverAccess } from './components/AdminDriverAccess';
+import { AdminCustomerPortalAccess } from './components/AdminCustomerPortalAccess';
 import { DriverPortal } from './components/DriverPortal';
+import { CustomerPortal } from './components/CustomerPortal';
 import type { Document, Bundle } from './types';
 
-type View = 'list' | 'upload' | 'review' | 'bundle' | 'search' | 'dispatch' | 'drivers';
+type View = 'list' | 'upload' | 'review' | 'bundle' | 'search' | 'dispatch' | 'drivers' | 'customers';
 
 function App() {
   const [isDriverPortal, setIsDriverPortal] = useState(false);
+  const [isCustomerPortal, setIsCustomerPortal] = useState(false);
 
-  // Route /driver path to the driver portal
+  // Route /driver path to the driver portal, /customer-portal to the customer portal
   useEffect(() => {
     const path = window.location.pathname;
     if (path.startsWith('/driver')) {
       setIsDriverPortal(true);
+    } else if (path.startsWith('/customer-portal')) {
+      setIsCustomerPortal(true);
     }
   }, []);
 
   if (isDriverPortal) {
     return <DriverPortal />;
+  }
+
+  if (isCustomerPortal) {
+    return <CustomerPortal />;
   }
 
   return <AdminApp />;
@@ -100,6 +109,12 @@ function AdminApp() {
           >
             🚛 Drivers
           </button>
+          <button
+            style={{ ...styles.navBtn, ...(view === 'customers' ? styles.navBtnActive : {}) }}
+            onClick={() => setView('customers')}
+          >
+            🏢 Customers
+          </button>
         </nav>
       </header>
 
@@ -139,6 +154,10 @@ function AdminApp() {
 
         {view === 'drivers' && (
           <AdminDriverAccess />
+        )}
+
+        {view === 'customers' && (
+          <AdminCustomerPortalAccess />
         )}
 
         {/* Dispatch modal — rendered on top of any view */}

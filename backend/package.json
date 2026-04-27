@@ -10,7 +10,12 @@
     "start": "node dist/server.js",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "db:seed": "tsx prisma/seed.ts",
+    "test": "vitest run"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.6.0",
@@ -23,6 +28,7 @@
     "dotenv": "^16.5.0",
     "express": "^4.21.2",
     "express-rate-limit": "^8.4.0",
+    "handlebars": "^4.7.9",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.1",
     "nodemailer": "^8.0.5",
@@ -38,6 +44,7 @@
     "@types/uuid": "^10.0.0",
     "prisma": "^6.6.0",
     "tsx": "^4.19.3",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^2.1.9"
   }
 }

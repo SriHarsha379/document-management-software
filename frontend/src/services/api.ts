@@ -243,3 +243,141 @@ export const adminDriverAccessApi = {
     return res.data.uploads;
   },
 };
+
+// ── Customer Portal API ───────────────────────────────────────────────────────
+
+export interface CustomerPortalAccess {
+  id: string;
+  partyId: string;
+  partyName: string;
+  partyCode: string;
+  companyId: string;
+  loginEmail: string;
+  createdAt: string;
+  expiresAt: string;
+  lastLoginAt: string | null;
+  isRevoked: boolean;
+  isExpired: boolean;
+}
+
+export interface CustomerLoginResponse {
+  token: string;
+  expiresAt: string;
+  partyName: string;
+  loginEmail: string;
+}
+
+export interface CustomerMeResponse {
+  partyName: string;
+  partyCode: string;
+  loginEmail: string;
+  expiresAt: string;
+  address: string | null;
+}
+
+export interface CustomerShipment {
+  id: string;
+  status: 'READY' | 'SENT';
+  vehicleNo: string;
+  date: string;
+  documentCount: number;
+  lastDispatch: { sentAt: string; channel: string; status: string } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomerDocument {
+  id: string;
+  type: string;
+  originalFilename: string;
+  uploadedAt: string;
+  mimeType: string;
+  extractedData: {
+    lrNo: string | null;
+    invoiceNo: string | null;
+    vehicleNo: string | null;
+    date: string | null;
+    partyNames: string | null;
+    transporter: string | null;
+  } | null;
+}
+
+export interface CustomerShipmentDetail {
+  id: string;
+  status: string;
+  notes: string | null;
+  vehicleNo: string;
+  date: string;
+  documents: CustomerDocument[];
+  dispatchLogs: { sentAt: string; channel: string; status: string; recipient: string }[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+const customerApi = axios.create({
+  baseURL: '/api/customer',
+  timeout: 60000,
+});
+
+const adminCustomerApi = axios.create({
+  baseURL: '/api/admin/customer-portal-access',
+  timeout: 30000,
+});
+
+export const customerPortalApi = {
+  login: async (email: string, token: string): Promise<CustomerLoginResponse> => {
+    const res = await customerApi.post<CustomerLoginResponse>('/login', { email, token });
+    return res.data;
+  },
+
+  me: async (jwtToken: string): Promise<CustomerMeResponse> => {
+    const res = await customerApi.get<CustomerMeResponse>('/me', {
+      headers: { Authorization: `Bearer ${jwtToken}` },
+    });
+    return res.data;
+  },
+
+  listShipments: async (jwtToken: string): Promise<CustomerShipment[]> => {
+    const res = await customerApi.get<{ shipments: CustomerShipment[] }>('/shipments', {
+      headers: { Authorization: `Bearer ${jwtToken}` },
+    });
+    return res.data.shipments;
+  },
+
+  getShipment: async (jwtToken: string, bundleId: string): Promise<CustomerShipmentDetail> => {
+    const res = await customerApi.get<{ shipment: CustomerShipmentDetail }>(`/shipments/${bundleId}`, {
+      headers: { Authorization: `Bearer ${jwtToken}` },
+    });
+    return res.data.shipment;
+  },
+
+  downloadUrl: (documentId: string): string => `/api/customer/documents/${documentId}/download`,
+};
+
+export const adminCustomerPortalApi = {
+  create: async (
+    partyId: string,
+    loginEmail?: string,
+    daysValid?: number
+  ): Promise<{ access: CustomerPortalAccess; generatedToken: string }> => {
+    const res = await adminCustomerApi.post<{ access: CustomerPortalAccess; generatedToken: string }>('/', {
+      partyId,
+      loginEmail,
+      daysValid,
+    });
+    return res.data;
+  },
+
+  list: async (): Promise<CustomerPortalAccess[]> => {
+    const res = await adminCustomerApi.get<{ accesses: CustomerPortalAccess[] }>('/');
+    return res.data.accesses;
+  },
+
+  revoke: async (id: string): Promise<void> => {
+    await adminCustomerApi.put(`/${id}/revoke`);
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await adminCustomerApi.delete(`/${id}`);
+  },
+};

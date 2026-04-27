@@ -1,4 +1,5 @@
 import app from './app.js';
+import { startCommunicationWorker } from './modules/communication/communicationWorker.js';
 
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
 
@@ -7,3 +8,6 @@ app.listen(PORT, () => {
   console.log(`API:     http://localhost:${PORT}/api`);
   console.log(`Health:  http://localhost:${PORT}/api/health`);
 });
+
+// Start background workers
+startCommunicationWorker();
