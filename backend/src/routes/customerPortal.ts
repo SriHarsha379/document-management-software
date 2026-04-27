@@ -18,6 +18,15 @@ const loginLimiter = rateLimit({
   message: { error: 'Too many login attempts. Please try again after 15 minutes.' },
 });
 
+// Rate limiter for authenticated API endpoints: max 120 requests per minute per IP
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down.' },
+});
+
 // ──────────────────────────────────────────────────────────────────────────────
 // POST /api/customer/login
 // Authenticate with loginEmail + token. Validates expiry and isRevoked.
@@ -93,7 +102,7 @@ router.post('/login', loginLimiter, async (req: Request, res: Response): Promise
 // GET /api/customer/me
 // Return current session info.
 // ──────────────────────────────────────────────────────────────────────────────
-router.get('/me', requireCustomerAuth, async (req: Request, res: Response): Promise<void> => {
+router.get('/me', apiLimiter, requireCustomerAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const customer = (req as Request & { customer: CustomerTokenPayload }).customer;
 
@@ -125,7 +134,7 @@ router.get('/me', requireCustomerAuth, async (req: Request, res: Response): Prom
 // List all document bundles dispatched to this customer's email or phone.
 // Only READY or SENT bundles are returned (never DRAFT).
 // ──────────────────────────────────────────────────────────────────────────────
-router.get('/shipments', requireCustomerAuth, async (req: Request, res: Response): Promise<void> => {
+router.get('/shipments', apiLimiter, requireCustomerAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const customer = (req as Request & { customer: CustomerTokenPayload }).customer;
 
@@ -203,7 +212,7 @@ router.get('/shipments', requireCustomerAuth, async (req: Request, res: Response
 // GET /api/customer/shipments/:bundleId
 // Get a single bundle with all documents.
 // ──────────────────────────────────────────────────────────────────────────────
-router.get('/shipments/:bundleId', requireCustomerAuth, async (req: Request, res: Response): Promise<void> => {
+router.get('/shipments/:bundleId', apiLimiter, requireCustomerAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const customer = (req as Request & { customer: CustomerTokenPayload }).customer;
     const { bundleId } = req.params as { bundleId: string };
@@ -300,6 +309,7 @@ router.get('/shipments/:bundleId', requireCustomerAuth, async (req: Request, res
 // ──────────────────────────────────────────────────────────────────────────────
 router.get(
   '/documents/:documentId/download',
+  apiLimiter,
   requireCustomerAuth,
   async (req: Request, res: Response): Promise<void> => {
     try {
