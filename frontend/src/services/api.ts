@@ -56,6 +56,10 @@ export const documentsApi = {
     const res = await api.get<{ groups: DocumentGroup[] }>('/documents/groups');
     return res.data.groups;
   },
+
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/documents/${id}`);
+  },
 };
 
 export interface ListBundlesParams {
