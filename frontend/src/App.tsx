@@ -10,9 +10,10 @@ import { AdminDriverAccess } from './components/AdminDriverAccess';
 import { AdminCustomerPortalAccess } from './components/AdminCustomerPortalAccess';
 import { DriverPortal } from './components/DriverPortal';
 import { CustomerPortal } from './components/CustomerPortal';
+import { LrDashboard } from './components/LrDashboard';
 import type { Document, Bundle } from './types';
 
-type View = 'list' | 'upload' | 'review' | 'bundle' | 'search' | 'dispatch' | 'drivers' | 'customers';
+type View = 'dashboard' | 'list' | 'upload' | 'review' | 'bundle' | 'search' | 'dispatch' | 'drivers' | 'customers';
 
 function App() {
   const [isDriverPortal, setIsDriverPortal] = useState(false);
@@ -40,7 +41,7 @@ function App() {
 }
 
 function AdminApp() {
-  const [view, setView] = useState<View>('list');
+  const [view, setView] = useState<View>('dashboard');
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -73,6 +74,12 @@ function AdminApp() {
       <header style={styles.header}>
         <div style={styles.logo}>🚛 Logistics DMS</div>
         <nav style={styles.nav}>
+          <button
+            style={{ ...styles.navBtn, ...(view === 'dashboard' ? styles.navBtnActive : {}) }}
+            onClick={() => setView('dashboard')}
+          >
+            📊 Dashboard
+          </button>
           <button
             style={{ ...styles.navBtn, ...(view === 'list' ? styles.navBtnActive : {}) }}
             onClick={() => setView('list')}
@@ -120,6 +127,10 @@ function AdminApp() {
 
       {/* Main content */}
       <main style={styles.main}>
+        {view === 'dashboard' && (
+          <LrDashboard />
+        )}
+
         {view === 'list' && (
           <DocumentList onSelect={handleSelectFromList} refreshTrigger={refreshKey} />
         )}

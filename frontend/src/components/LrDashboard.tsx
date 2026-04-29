@@ -1,0 +1,344 @@
+import React, { useEffect, useState, useCallback } from 'react';
+import type { Lr, LrSummary } from '../types';
+import { lrApi } from '../services/api';
+
+// ── Column definitions ────────────────────────────────────────────────────────
+
+interface Col {
+  label: string;
+  render: (lr: Lr) => React.ReactNode;
+  width: number; // px
+}
+
+const ALL_COLUMNS: Col[] = [
+  { label: 'S.No',               width: 60,  render: (lr) => lr.serialNo ?? '—' },
+  { label: 'Principal Co.',      width: 130, render: (lr) => lr.principalCompany ?? '—' },
+  { label: 'Branch',             width: 110, render: (lr) => lr.branch?.name ?? '—' },
+  { label: 'Source',             width: 90,  render: (lr) => lr.source },
+  { label: 'LR Date',            width: 100, render: (lr) => lr.lrDate ?? lr.date ?? '—' },
+  { label: 'LR No',              width: 100, render: (lr) => lr.lrNo },
+  { label: 'Loading Slip No',    width: 120, render: (lr) => lr.loadingSlipNo ?? '—' },
+  { label: 'Inv. Date',          width: 100, render: (lr) => lr.companyInvoiceDate ?? '—' },
+  { label: 'Inv. No',            width: 110, render: (lr) => lr.companyInvoiceNo ?? '—' },
+  { label: 'E-Way Bill No',      width: 120, render: (lr) => lr.companyEwayBillNo ?? '—' },
+  { label: 'Bill To Party',      width: 130, render: (lr) => lr.billToParty ?? '—' },
+  { label: 'Ship To Party',      width: 130, render: (lr) => lr.shipToParty ?? '—' },
+  { label: 'Delivery Dest.',     width: 130, render: (lr) => lr.deliveryDestination ?? '—' },
+  { label: 'TPT',                width: 90,  render: (lr) => lr.tpt ?? '—' },
+  { label: 'Order Type',         width: 100, render: (lr) => lr.orderType ?? '—' },
+  // ── expanded columns below ────────────────────────────────────────────────
+  { label: 'Product',            width: 120, render: (lr) => lr.productName ?? '—' },
+  { label: 'Vehicle No',         width: 110, render: (lr) => lr.vehicleNo ?? '—' },
+  { label: 'Qty (Bags)',         width: 90,  render: (lr) => lr.quantityInBags ?? '—' },
+  { label: 'Qty (MT)',           width: 80,  render: (lr) => lr.quantityInMt ?? '—' },
+  { label: 'Toll ₹',            width: 80,  render: (lr) => lr.tollCharges ?? '—' },
+  { label: 'Weighment ₹',       width: 100, render: (lr) => lr.weighmentCharges ?? '—' },
+  { label: 'Unloading ₹',       width: 100, render: (lr) => lr.unloadingAtSite ?? '—' },
+  { label: 'Driver Bhatta ₹',   width: 110, render: (lr) => lr.driverBhatta ?? '—' },
+  { label: 'Open KM',            width: 80,  render: (lr) => lr.dayOpeningKm ?? '—' },
+  { label: 'Close KM',           width: 80,  render: (lr) => lr.dayClosingKm ?? '—' },
+  { label: 'Total KM',           width: 80,  render: (lr) => lr.totalRunningKm ?? '—' },
+  { label: 'Fuel/KM',            width: 80,  render: (lr) => lr.fuelPerKm ?? '—' },
+  { label: 'Fuel Amt ₹',        width: 90,  render: (lr) => lr.fuelAmount ?? '—' },
+  { label: 'Grand Total ₹',     width: 110, render: (lr) => lr.grandTotal ?? '—' },
+  { label: 'TPT Code',           width: 90,  render: (lr) => lr.tptCode ?? '—' },
+  { label: 'Transporter',        width: 130, render: (lr) => lr.transporterName ?? '—' },
+  { label: 'Driver',             width: 110, render: (lr) => lr.driverName ?? '—' },
+  { label: 'Driver Bill No',     width: 110, render: (lr) => lr.driverBillNo ?? '—' },
+  { label: 'Bill Date',          width: 100, render: (lr) => lr.billDate ?? '—' },
+  { label: 'Bill No',            width: 100, render: (lr) => lr.billNo ?? '—' },
+  { label: 'Bill Amount ₹',     width: 110, render: (lr) => lr.billAmount ?? '—' },
+];
+
+const VISIBLE_COUNT = 15; // first N columns always shown
+
+// ── Tiny SVG Pie Chart ────────────────────────────────────────────────────────
+
+function PieChart({ lrCount, invoiceCount }: { lrCount: number; invoiceCount: number }) {
+  const total = lrCount + invoiceCount;
+  if (total === 0) {
+    return <div style={pie.empty}>No data yet</div>;
+  }
+
+  const lrFrac = lrCount / total;
+  const invoiceFrac = invoiceCount / total;
+
+  // Build SVG arc path for the first slice (LR)
+  const cx = 80;
+  const cy = 80;
+  const r = 70;
+
+  function polarToXY(fraction: number) {
+    const angle = fraction * 2 * Math.PI - Math.PI / 2;
+    return {
+      x: cx + r * Math.cos(angle),
+      y: cy + r * Math.sin(angle),
+    };
+  }
+
+  // If one slice is 100%, draw a full circle instead of a degenerate arc.
+  const lrSlice = lrFrac >= 1
+    ? <circle cx={cx} cy={cy} r={r} fill="#4361ee" />
+    : (() => {
+        const start = polarToXY(0);
+        const end   = polarToXY(lrFrac);
+        const large = lrFrac > 0.5 ? 1 : 0;
+        return (
+          <path
+            d={`M ${cx} ${cy} L ${start.x} ${start.y} A ${r} ${r} 0 ${large} 1 ${end.x} ${end.y} Z`}
+            fill="#4361ee"
+          />
+        );
+      })();
+
+  const invoiceSlice = invoiceFrac >= 1
+    ? <circle cx={cx} cy={cy} r={r} fill="#06b6d4" />
+    : (() => {
+        const start = polarToXY(lrFrac);
+        const end   = polarToXY(1);
+        const large = invoiceFrac > 0.5 ? 1 : 0;
+        return (
+          <path
+            d={`M ${cx} ${cy} L ${start.x} ${start.y} A ${r} ${r} 0 ${large} 1 ${end.x} ${end.y} Z`}
+            fill="#06b6d4"
+          />
+        );
+      })();
+
+  return (
+    <div style={pie.wrapper}>
+      <svg width={160} height={160} viewBox="0 0 160 160">
+        {lrSlice}
+        {invoiceSlice}
+        <circle cx={cx} cy={cy} r={30} fill="#fff" />
+        <text x={cx} y={cy + 5} textAnchor="middle" fontSize={12} fontWeight={700} fill="#333">
+          {total}
+        </text>
+      </svg>
+      <div style={pie.legend}>
+        <div style={pie.legendItem}>
+          <span style={{ ...pie.dot, background: '#4361ee' }} />
+          LR Records&nbsp;<strong>({lrCount})</strong>
+        </div>
+        <div style={pie.legendItem}>
+          <span style={{ ...pie.dot, background: '#06b6d4' }} />
+          Invoices&nbsp;<strong>({invoiceCount})</strong>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const pie: Record<string, React.CSSProperties> = {
+  wrapper: { display: 'flex', alignItems: 'center', gap: 24 },
+  empty: { color: '#888', fontStyle: 'italic', padding: 16 },
+  legend: { display: 'flex', flexDirection: 'column', gap: 10 },
+  legendItem: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 },
+  dot: { width: 14, height: 14, borderRadius: '50%', display: 'inline-block', flexShrink: 0 },
+};
+
+// ── Main Dashboard ────────────────────────────────────────────────────────────
+
+export function LrDashboard() {
+  const [lrs, setLrs] = useState<Lr[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<LrSummary | null>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  const LIMIT = 20;
+
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const offset = (page - 1) * LIMIT;
+      const [result, sumResult] = await Promise.all([
+        lrApi.list({ limit: LIMIT, offset }),
+        lrApi.summary(),
+      ]);
+      setLrs(result.data);
+      setTotal(result.total);
+      setSummary(sumResult);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load dashboard');
+    } finally {
+      setLoading(false);
+    }
+  }, [page]);
+
+  useEffect(() => { void fetchData(); }, [fetchData]);
+
+  const visibleCols = expanded ? ALL_COLUMNS : ALL_COLUMNS.slice(0, VISIBLE_COUNT);
+  const gridTemplate = visibleCols.map((c) => `${c.width}px`).join(' ') + (expanded ? '' : ' 40px');
+  const pages = Math.max(1, Math.ceil(total / LIMIT));
+
+  return (
+    <div style={s.container}>
+      <h2 style={s.heading}>📊 LR Dashboard</h2>
+
+      {/* ── Pie chart card ─────────────────────────────────────────── */}
+      <div style={s.card}>
+        <h3 style={s.cardTitle}>Invoices vs LR Records</h3>
+        {summary
+          ? <PieChart lrCount={summary.lrCount} invoiceCount={summary.invoiceCount} />
+          : <p style={{ color: '#888' }}>Loading…</p>}
+      </div>
+
+      {/* ── LR table ───────────────────────────────────────────────── */}
+      <div style={s.card}>
+        <div style={s.tableHeader}>
+          <span style={s.cardTitle}>LR Records ({total})</span>
+          <button style={s.btnRefresh} onClick={() => void fetchData()} disabled={loading}>
+            🔄 Refresh
+          </button>
+        </div>
+
+        {error && <p style={s.error}>{error}</p>}
+        {loading && <p style={s.loading}>Loading…</p>}
+
+        {!loading && lrs.length === 0 && (
+          <p style={s.empty}>No LR records found.</p>
+        )}
+
+        {lrs.length > 0 && (
+          <div style={{ overflowX: 'auto' }}>
+            {/* Header row */}
+            <div style={{ ...s.row, ...s.headRow, gridTemplateColumns: gridTemplate }}>
+              {visibleCols.map((col) => (
+                <span key={col.label} style={s.th}>{col.label}</span>
+              ))}
+              {!expanded && (
+                <span style={s.th}>
+                  <button
+                    style={s.expandBtn}
+                    onClick={() => setExpanded(true)}
+                    title="Show all columns"
+                  >
+                    ▶
+                  </button>
+                </span>
+              )}
+            </div>
+
+            {/* Data rows */}
+            {lrs.map((lr) => (
+              <div key={lr.id} style={{ ...s.row, ...s.dataRow, gridTemplateColumns: gridTemplate }}>
+                {visibleCols.map((col) => (
+                  <span key={col.label} style={s.cell}>
+                    {col.render(lr)}
+                  </span>
+                ))}
+                {!expanded && (
+                  <span style={s.cell}>
+                    <button
+                      style={s.expandBtn}
+                      onClick={() => setExpanded(true)}
+                      title="Show all columns"
+                    >
+                      ▶
+                    </button>
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {expanded && (
+          <div style={{ textAlign: 'center', marginTop: 8 }}>
+            <button style={s.collapseBtn} onClick={() => setExpanded(false)}>
+              ◀ Collapse columns
+            </button>
+          </div>
+        )}
+
+        {/* Pagination */}
+        {pages > 1 && (
+          <div style={s.pagination}>
+            <button disabled={page === 1} onClick={() => setPage((p) => p - 1)} style={s.pageBtn}>
+              ← Prev
+            </button>
+            <span style={s.pageInfo}>Page {page} / {pages}</span>
+            <button disabled={page === pages} onClick={() => setPage((p) => p + 1)} style={s.pageBtn}>
+              Next →
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────────
+
+const s: Record<string, React.CSSProperties> = {
+  container: { padding: '0 24px 32px' },
+  heading: { fontSize: 22, fontWeight: 800, color: '#1a1a2e', marginBottom: 20 },
+  card: {
+    background: '#fff',
+    borderRadius: 10,
+    border: '1px solid #e0e0f0',
+    padding: '20px 20px 16px',
+    marginBottom: 24,
+    boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+  },
+  cardTitle: { fontSize: 16, fontWeight: 700, color: '#333', margin: '0 0 14px' },
+  tableHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  btnRefresh: {
+    padding: '6px 14px', background: '#f0f0f0', border: 'none',
+    borderRadius: 6, cursor: 'pointer', fontSize: 13,
+  },
+  error: { color: '#e53e3e', fontSize: 13 },
+  loading: { color: '#888', fontSize: 14, fontStyle: 'italic' },
+  empty: { color: '#888', textAlign: 'center', padding: '24px 0' },
+  row: { display: 'grid', gap: 0 },
+  headRow: {
+    background: '#f5f6ff',
+    borderRadius: '6px 6px 0 0',
+    border: '1px solid #e0e0f0',
+  },
+  dataRow: {
+    borderLeft: '1px solid #e0e0f0',
+    borderRight: '1px solid #e0e0f0',
+    borderBottom: '1px solid #f0f0f8',
+    background: '#fff',
+    transition: 'background 0.1s',
+  },
+  th: {
+    padding: '9px 10px',
+    fontSize: 11,
+    fontWeight: 700,
+    color: '#555',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  cell: {
+    padding: '8px 10px',
+    fontSize: 12,
+    color: '#333',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  expandBtn: {
+    background: '#4361ee', color: '#fff', border: 'none',
+    borderRadius: 4, cursor: 'pointer', fontSize: 11,
+    padding: '3px 7px', fontWeight: 700,
+  },
+  collapseBtn: {
+    padding: '6px 16px', background: '#eee', border: 'none',
+    borderRadius: 6, cursor: 'pointer', fontSize: 13, marginTop: 4,
+  },
+  pagination: { display: 'flex', alignItems: 'center', gap: 12, marginTop: 16, justifyContent: 'center' },
+  pageBtn: {
+    padding: '6px 14px', background: '#eee', border: 'none',
+    borderRadius: 6, cursor: 'pointer', fontSize: 13,
+  },
+  pageInfo: { fontSize: 13, color: '#555' },
+};

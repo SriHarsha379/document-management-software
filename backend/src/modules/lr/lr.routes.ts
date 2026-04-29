@@ -3,7 +3,7 @@ import rateLimit from 'express-rate-limit';
 import { requireAuth } from '../auth/auth.routes.js';
 import { requirePermission, buildScopeWhere } from '../rbac/rbac.middleware.js';
 import { ALLOWED_SOURCES, ALLOWED_LR_STATUSES } from '../rbac/permissions.js';
-import { lrRepo } from './lr.repo.js';
+import { lrRepo, type LrCreateInput, type LrUpdateInput } from './lr.repo.js';
 
 const router = Router();
 
@@ -28,6 +28,24 @@ const writeLimiter = rateLimit({
 // Apply rate limiting and auth to all LR routes
 router.use(readLimiter);
 router.use(requireAuth);
+
+// ── GET /api/lrs/summary ──────────────────────────────────────────────────────
+// Dashboard stats: LR count vs Invoice count for pie chart.
+
+router.get(
+  '/summary',
+  readLimiter,
+  requirePermission('lr.read'),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const user = req.user!;
+      const stats = await lrRepo.summary(user.companyId);
+      res.json(stats);
+    } catch (err) {
+      handleRouteError(err, res, '[lr] GET /lrs/summary');
+    }
+  }
+);
 
 // ── GET /api/lrs ───────────────────────────────────────────────────────────────
 // Returns LR records scoped to the calling user's company/branch/source.
@@ -64,16 +82,9 @@ router.post(
   async (req: Request, res: Response): Promise<void> => {
     try {
       const user = req.user!;
-      const { lrNo, branchId, source, consignor, consignee, vehicleNo, date } =
-        req.body as {
-          lrNo?: string;
-          branchId?: string;
-          source?: string;
-          consignor?: string;
-          consignee?: string;
-          vehicleNo?: string;
-          date?: string;
-        };
+      const body = req.body as Partial<LrCreateInput & { status?: string }>;
+
+      const { lrNo, branchId, source } = body;
 
       if (!lrNo?.trim() || !branchId?.trim()) {
         res.status(400).json({ error: 'lrNo and branchId are required' });
@@ -92,15 +103,49 @@ router.post(
       }
 
       const lr = await lrRepo.create({
-        lrNo:      lrNo.trim(),
-        companyId: user.companyId,
-        branchId:  branchId.trim(),
-        source:    source ?? 'INTERNAL',
-        consignor: consignor?.trim(),
-        consignee: consignee?.trim(),
-        vehicleNo: vehicleNo?.trim(),
-        date:      date?.trim(),
-        createdBy: user.id,
+        lrNo:               lrNo.trim(),
+        companyId:          user.companyId,
+        branchId:           branchId.trim(),
+        source:             source ?? 'INTERNAL',
+        createdBy:          user.id,
+        // Legacy
+        consignor:          body.consignor?.trim(),
+        consignee:          body.consignee?.trim(),
+        invoiceNo:          body.invoiceNo?.trim(),
+        date:               body.date?.trim(),
+        // Extended
+        principalCompany:   body.principalCompany?.trim(),
+        lrDate:             body.lrDate?.trim(),
+        loadingSlipNo:      body.loadingSlipNo?.trim(),
+        companyInvoiceDate: body.companyInvoiceDate?.trim(),
+        companyInvoiceNo:   body.companyInvoiceNo?.trim(),
+        companyEwayBillNo:  body.companyEwayBillNo?.trim(),
+        billToParty:        body.billToParty?.trim(),
+        shipToParty:        body.shipToParty?.trim(),
+        deliveryDestination: body.deliveryDestination?.trim(),
+        tpt:                body.tpt?.trim(),
+        orderType:          body.orderType?.trim(),
+        productName:        body.productName?.trim(),
+        vehicleNo:          body.vehicleNo?.trim(),
+        quantityInBags:     toFloat(body.quantityInBags),
+        quantityInMt:       toFloat(body.quantityInMt),
+        tollCharges:        toFloat(body.tollCharges),
+        weighmentCharges:   toFloat(body.weighmentCharges),
+        unloadingAtSite:    toFloat(body.unloadingAtSite),
+        driverBhatta:       toFloat(body.driverBhatta),
+        dayOpeningKm:       toFloat(body.dayOpeningKm),
+        dayClosingKm:       toFloat(body.dayClosingKm),
+        totalRunningKm:     toFloat(body.totalRunningKm),
+        fuelPerKm:          toFloat(body.fuelPerKm),
+        fuelAmount:         toFloat(body.fuelAmount),
+        grandTotal:         toFloat(body.grandTotal),
+        tptCode:            body.tptCode?.trim(),
+        transporterName:    body.transporterName?.trim(),
+        driverName:         body.driverName?.trim(),
+        driverBillNo:       body.driverBillNo?.trim(),
+        billDate:           body.billDate?.trim(),
+        billNo:             body.billNo?.trim(),
+        billAmount:         toFloat(body.billAmount),
       });
 
       res.status(201).json({ data: lr });
@@ -131,29 +176,55 @@ router.patch(
         return;
       }
 
-      const { lrNo, status, consignor, consignee, vehicleNo, date } =
-        req.body as {
-          lrNo?: string;
-          status?: string;
-          consignor?: string;
-          consignee?: string;
-          vehicleNo?: string;
-          date?: string;
-        };
+      const body = req.body as Partial<LrUpdateInput>;
 
-      if (status && !(ALLOWED_LR_STATUSES as readonly string[]).includes(status)) {
+      if (body.status && !(ALLOWED_LR_STATUSES as readonly string[]).includes(body.status)) {
         res.status(400).json({ error: `status must be one of: ${ALLOWED_LR_STATUSES.join(', ')}` });
         return;
       }
 
-      const updated = await lrRepo.update(lr.id, {
-        lrNo:      lrNo?.trim(),
-        status,
-        consignor: consignor?.trim(),
-        consignee: consignee?.trim(),
-        vehicleNo: vehicleNo?.trim(),
-        date:      date?.trim(),
-      });
+      const updateData: LrUpdateInput = {
+        lrNo:               body.lrNo?.trim(),
+        status:             body.status,
+        consignor:          body.consignor?.trim(),
+        consignee:          body.consignee?.trim(),
+        vehicleNo:          body.vehicleNo?.trim(),
+        date:               body.date?.trim(),
+        invoiceNo:          body.invoiceNo?.trim(),
+        principalCompany:   body.principalCompany?.trim(),
+        lrDate:             body.lrDate?.trim(),
+        loadingSlipNo:      body.loadingSlipNo?.trim(),
+        companyInvoiceDate: body.companyInvoiceDate?.trim(),
+        companyInvoiceNo:   body.companyInvoiceNo?.trim(),
+        companyEwayBillNo:  body.companyEwayBillNo?.trim(),
+        billToParty:        body.billToParty?.trim(),
+        shipToParty:        body.shipToParty?.trim(),
+        deliveryDestination: body.deliveryDestination?.trim(),
+        tpt:                body.tpt?.trim(),
+        orderType:          body.orderType?.trim(),
+        productName:        body.productName?.trim(),
+        quantityInBags:     toFloat(body.quantityInBags),
+        quantityInMt:       toFloat(body.quantityInMt),
+        tollCharges:        toFloat(body.tollCharges),
+        weighmentCharges:   toFloat(body.weighmentCharges),
+        unloadingAtSite:    toFloat(body.unloadingAtSite),
+        driverBhatta:       toFloat(body.driverBhatta),
+        dayOpeningKm:       toFloat(body.dayOpeningKm),
+        dayClosingKm:       toFloat(body.dayClosingKm),
+        totalRunningKm:     toFloat(body.totalRunningKm),
+        fuelPerKm:          toFloat(body.fuelPerKm),
+        fuelAmount:         toFloat(body.fuelAmount),
+        grandTotal:         toFloat(body.grandTotal),
+        tptCode:            body.tptCode?.trim(),
+        transporterName:    body.transporterName?.trim(),
+        driverName:         body.driverName?.trim(),
+        driverBillNo:       body.driverBillNo?.trim(),
+        billDate:           body.billDate?.trim(),
+        billNo:             body.billNo?.trim(),
+        billAmount:         toFloat(body.billAmount),
+      };
+
+      const updated = await lrRepo.update(lr.id, updateData);
       res.json({ data: updated });
     } catch (err) {
       handleRouteError(err, res, '[lr] PATCH /lrs/:id');
@@ -201,6 +272,13 @@ function parsePaginationInt(
   const n = parseInt(String(value ?? ''), 10);
   if (isNaN(n) || n < 0) return defaultValue;
   return Math.min(n, max);
+}
+
+// Convert unknown input to float, returning undefined if falsy/invalid.
+function toFloat(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  const n = parseFloat(String(value));
+  return isNaN(n) ? undefined : n;
 }
 
 // Log the real error server-side; send a generic message in production.
