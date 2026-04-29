@@ -40,6 +40,7 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
   const [filterType, setFilterType] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterVehicle, setFilterVehicle] = useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const LIMIT = 15;
 
@@ -62,6 +63,19 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
       setLoading(false);
     }
   }, [filterType, filterStatus, filterVehicle, page]);
+
+  const handleDelete = useCallback(async (doc: Document) => {
+    if (!window.confirm(`Delete "${doc.originalFilename}"? This cannot be undone.`)) return;
+    setDeletingId(doc.id);
+    try {
+      await documentsApi.delete(doc.id);
+      await fetchDocuments();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete document');
+    } finally {
+      setDeletingId(null);
+    }
+  }, [fetchDocuments]);
 
   useEffect(() => {
     void fetchDocuments();
@@ -123,6 +137,7 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
             <span>Status</span>
             <span>Group</span>
             <span></span>
+            <span></span>
           </div>
           {documents.map((doc) => (
             <div key={doc.id} style={styles.row}>
@@ -149,6 +164,15 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
               <span>
                 <button style={styles.btnView} onClick={() => onSelect(doc)}>
                   {doc.status === 'PENDING_REVIEW' ? '✏️ Review' : '👁 View'}
+                </button>
+              </span>
+              <span>
+                <button
+                  style={styles.btnDelete}
+                  onClick={() => void handleDelete(doc)}
+                  disabled={deletingId === doc.id}
+                >
+                  {deletingId === doc.id ? '…' : '🗑 Delete'}
                 </button>
               </span>
             </div>
@@ -187,12 +211,12 @@ const styles: Record<string, React.CSSProperties> = {
   empty: { textAlign: 'center', padding: 40, color: '#888' },
   table: { border: '1px solid #e0e0f0', borderRadius: 8, overflow: 'hidden' },
   tableHeader: {
-    display: 'grid', gridTemplateColumns: '2fr 90px 120px 110px 130px 80px 80px',
+    display: 'grid', gridTemplateColumns: '2fr 90px 120px 110px 130px 80px 80px 90px',
     background: '#f5f6ff', padding: '10px 12px', fontSize: 12, fontWeight: 700,
     color: '#666', textTransform: 'uppercase', letterSpacing: '0.05em', gap: 8,
   },
   row: {
-    display: 'grid', gridTemplateColumns: '2fr 90px 120px 110px 130px 80px 80px',
+    display: 'grid', gridTemplateColumns: '2fr 90px 120px 110px 130px 80px 80px 90px',
     padding: '10px 12px', borderTop: '1px solid #eee', alignItems: 'center',
     fontSize: 13, gap: 8, background: '#fff',
   },
@@ -202,6 +226,10 @@ const styles: Record<string, React.CSSProperties> = {
   mono: { fontFamily: 'monospace', fontSize: 13 },
   btnView: {
     padding: '4px 10px', background: '#4361ee', color: '#fff', border: 'none',
+    borderRadius: 5, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+  },
+  btnDelete: {
+    padding: '4px 10px', background: '#ef4444', color: '#fff', border: 'none',
     borderRadius: 5, cursor: 'pointer', fontSize: 12, fontWeight: 600,
   },
   pagination: { display: 'flex', alignItems: 'center', gap: 12, marginTop: 16, justifyContent: 'center' },

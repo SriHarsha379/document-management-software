@@ -56,6 +56,10 @@ export const documentsApi = {
     const res = await api.get<{ groups: DocumentGroup[] }>('/documents/groups');
     return res.data.groups;
   },
+
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/documents/${id}`);
+  },
 };
 
 export interface ListBundlesParams {
@@ -107,6 +111,37 @@ export const bundlesApi = {
 };
 
 import type { SearchResponse } from '../types';
+import type { Lr, PaginatedLrs, LrSummary } from '../types';
+
+// ── LR API ────────────────────────────────────────────────────────────────────
+
+export type LrCreatePayload = Omit<Lr, 'id' | 'serialNo' | 'createdAt' | 'updatedAt' | 'company' | 'branch'>;
+
+export const lrApi = {
+  list: async (params?: { limit?: number; offset?: number }): Promise<PaginatedLrs> => {
+    const res = await api.get<PaginatedLrs>('/lrs', { params });
+    return res.data;
+  },
+
+  summary: async (): Promise<LrSummary> => {
+    const res = await api.get<LrSummary>('/lrs/summary');
+    return res.data;
+  },
+
+  create: async (payload: Partial<LrCreatePayload>): Promise<Lr> => {
+    const res = await api.post<{ data: Lr }>('/lrs', payload);
+    return res.data.data;
+  },
+
+  update: async (id: string, payload: Partial<LrCreatePayload>): Promise<Lr> => {
+    const res = await api.patch<{ data: Lr }>(`/lrs/${id}`, payload);
+    return res.data.data;
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/lrs/${id}`);
+  },
+};
 
 export const searchApi = {
   query: async (query: string): Promise<SearchResponse> => {

@@ -3,6 +3,71 @@ export type DocumentStatus = 'PENDING_OCR' | 'PENDING_REVIEW' | 'REVIEWED' | 'SA
 export type RecipientType = 'ACCOUNTS' | 'PARTY' | 'TRANSPORTER';
 export type BundleStatus = 'DRAFT' | 'READY' | 'SENT';
 
+// ── Lorry Receipt (LR) ────────────────────────────────────────────────────────
+
+export interface Lr {
+  id: string;
+  serialNo: number | null;
+  lrNo: string;
+  lrDate: string | null;
+  loadingSlipNo: string | null;
+  companyInvoiceDate: string | null;
+  companyInvoiceNo: string | null;
+  companyEwayBillNo: string | null;
+  principalCompany: string | null;
+  billToParty: string | null;
+  shipToParty: string | null;
+  deliveryDestination: string | null;
+  tpt: string | null;
+  orderType: string | null;
+  productName: string | null;
+  vehicleNo: string | null;
+  quantityInBags: number | null;
+  quantityInMt: number | null;
+  tollCharges: number | null;
+  weighmentCharges: number | null;
+  unloadingAtSite: number | null;
+  driverBhatta: number | null;
+  dayOpeningKm: number | null;
+  dayClosingKm: number | null;
+  totalRunningKm: number | null;
+  fuelPerKm: number | null;
+  fuelAmount: number | null;
+  grandTotal: number | null;
+  tptCode: string | null;
+  transporterName: string | null;
+  driverName: string | null;
+  driverBillNo: string | null;
+  billDate: string | null;
+  billNo: string | null;
+  billAmount: number | null;
+  // Legacy
+  invoiceNo: string | null;
+  status: string;
+  consignor: string | null;
+  consignee: string | null;
+  date: string | null;
+  source: string;
+  companyId: string;
+  branchId: string;
+  createdAt: string;
+  updatedAt: string;
+  company?: { id: string; name: string };
+  branch?: { id: string; name: string };
+}
+
+export interface PaginatedLrs {
+  data: Lr[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface LrSummary {
+  lrCount: number;
+  invoiceCount: number;
+}
+
 export interface ExtractedData {
   id: string;
   lrNo: string | null;

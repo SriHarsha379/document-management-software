@@ -157,6 +157,33 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
+// DELETE /api/documents/:id
+// Delete a document and its associated data.
+// ──────────────────────────────────────────────────────────────────────────────
+router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = req.params['id'] as string;
+
+    const document = await prisma.document.findUnique({ where: { id } });
+    if (!document) {
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
+
+    // BundleItem has no onDelete cascade, so remove bundle membership first
+    await prisma.bundleItem.deleteMany({ where: { documentId: id } });
+
+    // Delete the document — cascades to ExtractedData and DocumentLinkRecord
+    await prisma.document.delete({ where: { id } });
+
+    res.status(204).send();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to delete document';
+    res.status(500).json({ error: message });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
 // GET /api/documents/:id
 // Get a single document by ID.
 // ──────────────────────────────────────────────────────────────────────────────

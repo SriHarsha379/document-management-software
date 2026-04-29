@@ -128,16 +128,64 @@ model UserSourceAccess {
   @@map("user_source_access")
 }
 
-// ── LR (Lorry Receipt) stub entity for RBAC demonstration ─────────────────────
+// ── LR (Lorry Receipt) ────────────────────────────────────────────────────────
 
 model Lr {
   id        String   @id @default(uuid())
-  lrNo      String
+  serialNo  Int?     // auto-assigned per-company in application layer
+
+  // Core LR fields
+  lrNo              String
+  lrDate            String?   // LR date (alias for date)
+  loadingSlipNo     String?
+
+  // Invoice / E-Way Bill
+  companyInvoiceDate  String?
+  companyInvoiceNo    String?
+  companyEwayBillNo   String?
+
+  // Parties
+  principalCompany    String?
+  billToParty         String?   // consignee
+  shipToParty         String?
+  deliveryDestination String?
+
+  // Transport
+  tpt               String?   // transport company short name
+  orderType         String?
+  productName       String?
+  vehicleNo         String?
+  quantityInBags    Float?
+  quantityInMt      Float?
+
+  // Charges
+  tollCharges       Float?
+  weighmentCharges  Float?
+  unloadingAtSite   Float?
+  driverBhatta      Float?
+
+  // Km / Fuel
+  dayOpeningKm      Float?
+  dayClosingKm      Float?
+  totalRunningKm    Float?
+  fuelPerKm         Float?
+  fuelAmount        Float?
+  grandTotal        Float?
+
+  // Transporter / Driver billing
+  tptCode           String?
+  transporterName   String?
+  driverName        String?
+  driverBillNo      String?
+  billDate          String?
+  billNo            String?
+  billAmount        Float?
+
+  // Legacy / derived fields kept for backward-compat
   invoiceNo String?
   status    String   @default("DRAFT")
   consignor String?
   consignee String?
-  vehicleNo String?
   date      String?
   createdBy String?
   createdAt DateTime @default(now())
@@ -156,6 +204,7 @@ model Lr {
   @@index([lrNo])
   @@index([vehicleNo])
   @@index([date])
+  @@index([serialNo])
 
   @@map("lrs")
 }

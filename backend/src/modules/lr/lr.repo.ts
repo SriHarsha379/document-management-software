@@ -9,6 +9,54 @@ import type { Prisma } from '@prisma/client';
 
 type LrWhereInput = Prisma.LrWhereInput;
 
+export type LrCreateInput = {
+  lrNo: string;
+  companyId: string;
+  branchId: string;
+  source?: string;
+  // Legacy
+  consignor?: string;
+  consignee?: string;
+  date?: string;
+  createdBy?: string;
+  invoiceNo?: string;
+  // Extended
+  principalCompany?: string;
+  lrDate?: string;
+  loadingSlipNo?: string;
+  companyInvoiceDate?: string;
+  companyInvoiceNo?: string;
+  companyEwayBillNo?: string;
+  billToParty?: string;
+  shipToParty?: string;
+  deliveryDestination?: string;
+  tpt?: string;
+  orderType?: string;
+  productName?: string;
+  vehicleNo?: string;
+  quantityInBags?: number;
+  quantityInMt?: number;
+  tollCharges?: number;
+  weighmentCharges?: number;
+  unloadingAtSite?: number;
+  driverBhatta?: number;
+  dayOpeningKm?: number;
+  dayClosingKm?: number;
+  totalRunningKm?: number;
+  fuelPerKm?: number;
+  fuelAmount?: number;
+  grandTotal?: number;
+  tptCode?: string;
+  transporterName?: string;
+  driverName?: string;
+  driverBillNo?: string;
+  billDate?: string;
+  billNo?: string;
+  billAmount?: number;
+};
+
+export type LrUpdateInput = Partial<Omit<LrCreateInput, 'companyId' | 'branchId' | 'createdBy'> & { status: string }>;
+
 export const lrRepo = {
   // ── findMany ─────────────────────────────────────────────────────────────────
   async findMany(opts: {
@@ -20,7 +68,7 @@ export const lrRepo = {
     const [rows, total] = await Promise.all([
       db.lr.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ serialNo: 'asc' }, { createdAt: 'desc' }],
         take: opts.limit ?? 50,
         skip: opts.offset ?? 0,
         include: { company: { select: { id: true, name: true } }, branch: { select: { id: true, name: true } } },
@@ -36,31 +84,46 @@ export const lrRepo = {
     return db.lr.findFirst({ where });
   },
 
+  // ── summary — count of LRs vs Invoices for pie chart ─────────────────────────
+  async summary(companyId: string): Promise<{ lrCount: number; invoiceCount: number }> {
+    const [lrCount, invoiceCount] = await Promise.all([
+      db.lr.count({ where: { companyId } }),
+      db.document.count({ where: { type: 'INVOICE' } }),
+    ]);
+    return { lrCount, invoiceCount };
+  },
+
   // ── create ───────────────────────────────────────────────────────────────────
-  async create(data: {
-    lrNo: string;
-    companyId: string;
-    branchId: string;
-    source?: string;
-    consignor?: string;
-    consignee?: string;
-    vehicleNo?: string;
-    date?: string;
-    createdBy?: string;
-  }) {
-    return db.lr.create({ data: { ...data, source: data.source ?? 'INTERNAL' } });
+  async create(data: LrCreateInput) {
+    // Auto-assign next serialNo per company inside a transaction to prevent
+    // concurrent requests from receiving the same serial number.
+    return db.$transaction(async (tx) => {
+      const last = await tx.lr.findFirst({
+        where: { companyId: data.companyId },
+        orderBy: { serialNo: 'desc' },
+        select: { serialNo: true },
+      });
+      const serialNo = (last?.serialNo ?? 0) + 1;
+
+      return tx.lr.create({
+        data: {
+          ...data,
+          serialNo,
+          source: data.source ?? 'INTERNAL',
+          // Keep legacy date in sync with lrDate
+          date: data.lrDate ?? data.date,
+        },
+      });
+    });
   },
 
   // ── update ───────────────────────────────────────────────────────────────────
-  async update(id: string, data: Partial<{
-    lrNo: string;
-    status: string;
-    consignor: string;
-    consignee: string;
-    vehicleNo: string;
-    date: string;
-  }>) {
-    return db.lr.update({ where: { id }, data });
+  async update(id: string, data: LrUpdateInput) {
+    // Keep legacy date in sync with lrDate when lrDate is explicitly provided
+    const syncedData = data.lrDate !== undefined
+      ? { ...data, date: data.lrDate ?? data.date }
+      : data;
+    return db.lr.update({ where: { id }, data: syncedData });
   },
 
   // ── delete ───────────────────────────────────────────────────────────────────
