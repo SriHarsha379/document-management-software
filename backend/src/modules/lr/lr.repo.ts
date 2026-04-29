@@ -95,28 +95,35 @@ export const lrRepo = {
 
   // ── create ───────────────────────────────────────────────────────────────────
   async create(data: LrCreateInput) {
-    // Auto-assign next serialNo per company
-    const last = await db.lr.findFirst({
-      where: { companyId: data.companyId },
-      orderBy: { serialNo: 'desc' },
-      select: { serialNo: true },
-    });
-    const serialNo = (last?.serialNo ?? 0) + 1;
+    // Auto-assign next serialNo per company inside a transaction to prevent
+    // concurrent requests from receiving the same serial number.
+    return db.$transaction(async (tx) => {
+      const last = await tx.lr.findFirst({
+        where: { companyId: data.companyId },
+        orderBy: { serialNo: 'desc' },
+        select: { serialNo: true },
+      });
+      const serialNo = (last?.serialNo ?? 0) + 1;
 
-    return db.lr.create({
-      data: {
-        ...data,
-        serialNo,
-        source: data.source ?? 'INTERNAL',
-        // Keep legacy date in sync with lrDate
-        date: data.lrDate ?? data.date,
-      },
+      return tx.lr.create({
+        data: {
+          ...data,
+          serialNo,
+          source: data.source ?? 'INTERNAL',
+          // Keep legacy date in sync with lrDate
+          date: data.lrDate ?? data.date,
+        },
+      });
     });
   },
 
   // ── update ───────────────────────────────────────────────────────────────────
   async update(id: string, data: LrUpdateInput) {
-    return db.lr.update({ where: { id }, data });
+    // Keep legacy date in sync with lrDate when lrDate is explicitly provided
+    const syncedData = data.lrDate !== undefined
+      ? { ...data, date: data.lrDate ?? data.date }
+      : data;
+    return db.lr.update({ where: { id }, data: syncedData });
   },
 
   // ── delete ───────────────────────────────────────────────────────────────────

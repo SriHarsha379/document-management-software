@@ -54,6 +54,25 @@ const VISIBLE_COUNT = 15; // first N columns always shown
 
 // ── Tiny SVG Pie Chart ────────────────────────────────────────────────────────
 
+function polarToXY(cx: number, cy: number, r: number, fraction: number) {
+  const angle = fraction * 2 * Math.PI - Math.PI / 2;
+  return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
+}
+
+function arcPath(cx: number, cy: number, r: number, startFrac: number, endFrac: number, fill: string) {
+  const frac = endFrac - startFrac;
+  if (frac >= 1) return <circle cx={cx} cy={cy} r={r} fill={fill} />;
+  const s = polarToXY(cx, cy, r, startFrac);
+  const e = polarToXY(cx, cy, r, endFrac);
+  const large = frac > 0.5 ? 1 : 0;
+  return (
+    <path
+      d={`M ${cx} ${cy} L ${s.x} ${s.y} A ${r} ${r} 0 ${large} 1 ${e.x} ${e.y} Z`}
+      fill={fill}
+    />
+  );
+}
+
 function PieChart({ lrCount, invoiceCount }: { lrCount: number; invoiceCount: number }) {
   const total = lrCount + invoiceCount;
   if (total === 0) {
@@ -61,55 +80,13 @@ function PieChart({ lrCount, invoiceCount }: { lrCount: number; invoiceCount: nu
   }
 
   const lrFrac = lrCount / total;
-  const invoiceFrac = invoiceCount / total;
-
-  // Build SVG arc path for the first slice (LR)
-  const cx = 80;
-  const cy = 80;
-  const r = 70;
-
-  function polarToXY(fraction: number) {
-    const angle = fraction * 2 * Math.PI - Math.PI / 2;
-    return {
-      x: cx + r * Math.cos(angle),
-      y: cy + r * Math.sin(angle),
-    };
-  }
-
-  // If one slice is 100%, draw a full circle instead of a degenerate arc.
-  const lrSlice = lrFrac >= 1
-    ? <circle cx={cx} cy={cy} r={r} fill="#4361ee" />
-    : (() => {
-        const start = polarToXY(0);
-        const end   = polarToXY(lrFrac);
-        const large = lrFrac > 0.5 ? 1 : 0;
-        return (
-          <path
-            d={`M ${cx} ${cy} L ${start.x} ${start.y} A ${r} ${r} 0 ${large} 1 ${end.x} ${end.y} Z`}
-            fill="#4361ee"
-          />
-        );
-      })();
-
-  const invoiceSlice = invoiceFrac >= 1
-    ? <circle cx={cx} cy={cy} r={r} fill="#06b6d4" />
-    : (() => {
-        const start = polarToXY(lrFrac);
-        const end   = polarToXY(1);
-        const large = invoiceFrac > 0.5 ? 1 : 0;
-        return (
-          <path
-            d={`M ${cx} ${cy} L ${start.x} ${start.y} A ${r} ${r} 0 ${large} 1 ${end.x} ${end.y} Z`}
-            fill="#06b6d4"
-          />
-        );
-      })();
+  const cx = 80, cy = 80, r = 70;
 
   return (
     <div style={pie.wrapper}>
       <svg width={160} height={160} viewBox="0 0 160 160">
-        {lrSlice}
-        {invoiceSlice}
+        {arcPath(cx, cy, r, 0, lrFrac, '#4361ee')}
+        {arcPath(cx, cy, r, lrFrac, 1, '#06b6d4')}
         <circle cx={cx} cy={cy} r={30} fill="#fff" />
         <text x={cx} y={cy + 5} textAnchor="middle" fontSize={12} fontWeight={700} fill="#333">
           {total}
