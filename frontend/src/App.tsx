@@ -11,6 +11,8 @@ import { AdminCustomerPortalAccess } from './components/AdminCustomerPortalAcces
 import { DriverPortal } from './components/DriverPortal';
 import { CustomerPortal } from './components/CustomerPortal';
 import { LrDashboard } from './components/LrDashboard';
+import { AdminLogin } from './components/AdminLogin';
+import { authService } from './services/authService';
 import type { Document, Bundle } from './types';
 
 type View = 'dashboard' | 'list' | 'upload' | 'review' | 'bundle' | 'search' | 'dispatch' | 'drivers' | 'customers';
@@ -18,6 +20,7 @@ type View = 'dashboard' | 'list' | 'upload' | 'review' | 'bundle' | 'search' | '
 function App() {
   const [isDriverPortal, setIsDriverPortal] = useState(false);
   const [isCustomerPortal, setIsCustomerPortal] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => authService.isAuthenticated());
 
   // Route /driver path to the driver portal, /customer-portal to the customer portal
   useEffect(() => {
@@ -37,10 +40,14 @@ function App() {
     return <CustomerPortal />;
   }
 
-  return <AdminApp />;
+  if (!isAuthenticated) {
+    return <AdminLogin onLogin={() => setIsAuthenticated(true)} />;
+  }
+
+  return <AdminApp onLogout={() => { authService.clearToken(); setIsAuthenticated(false); }} />;
 }
 
-function AdminApp() {
+function AdminApp({ onLogout }: { onLogout: () => void }) {
   const [view, setView] = useState<View>('dashboard');
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -123,6 +130,9 @@ function AdminApp() {
             🏢 Customers
           </button>
         </nav>
+        <button style={styles.logoutBtn} onClick={onLogout}>
+          Sign Out
+        </button>
       </header>
 
       {/* Main content */}
@@ -204,6 +214,16 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'background 0.15s',
   },
   navBtnActive: { background: '#4361ee' },
+  logoutBtn: {
+    padding: '7px 14px',
+    border: '1px solid rgba(255,255,255,0.3)',
+    borderRadius: 6,
+    cursor: 'pointer',
+    fontSize: 13,
+    fontWeight: 500,
+    background: 'transparent',
+    color: '#fff',
+  },
   main: { maxWidth: 1100, margin: '0 auto', padding: '24px 0' },
 };
 

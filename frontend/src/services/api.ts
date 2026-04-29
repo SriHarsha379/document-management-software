@@ -3,11 +3,48 @@ import type {
   Document, PaginatedDocuments, ReviewPayload, DocumentType, DocumentStatus, DocumentGroup,
   Bundle, PaginatedBundles, BundlePreview, RecipientType, BundleStatus,
 } from '../types';
+import { authService } from './authService';
 
 const api = axios.create({
   baseURL: '/api',
   timeout: 60000,
 });
+
+api.interceptors.request.use((config) => {
+  const token = authService.getToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+}, (error) => Promise.reject(error));
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      authService.clearToken();
+    }
+    return Promise.reject(error);
+  }
+);
+
+export interface LoginResponse {
+  token: string;
+  user: {
+    id: string;
+    companyId: string;
+    roleKeys: string[];
+    permissionKeys: string[];
+    isSuperAdmin: boolean;
+  };
+}
+
+export const authApi = {
+  login: async (email: string, password: string): Promise<LoginResponse> => {
+    const res = await api.post<LoginResponse>('/auth/login', { email, password });
+    return res.data;
+  },
+};
 
 export interface ListDocumentsParams {
   type?: DocumentType;
