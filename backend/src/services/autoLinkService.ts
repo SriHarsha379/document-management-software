@@ -4,15 +4,13 @@
  * Automatically attaches uploaded Documents to Lr (Lorry Receipt) records by
  * comparing extracted OCR fields against the fields stored on Lr rows.
  *
- * Matching strategy (in priority order):
- *  1. lrNo   exact match               → confidence 1.00
- *  2. invoiceNo exact match            → confidence 0.90
- *  3. vehicleNo + date within ±3 days  → confidence 0.70–0.80 (scaled by proximity)
- *  4. vehicleNo only                   → confidence 0.40 (below auto-link threshold)
+ * Matching strategy (in priority order — all comparisons are exact):
+ *  1. lrNo   exact match        → linked
+ *  2. invoiceNo exact match     → linked
+ *  3. vehicleNo + date (same calendar day, normalised) → linked
  *
- * A link is created automatically when confidence ≥ AUTO_LINK_THRESHOLD (0.60).
- * Below that threshold the document is left PENDING for manual review or a
- * later relink attempt (supporting delayed uploads at T+1, T+7, etc.).
+ * No confidence scoring or fuzzy thresholds are used.  A link is created
+ * whenever any of the above fields match exactly.
  *
  * Duplicate links are prevented by the unique constraint on
  * document_link_records(documentId, lrId).
@@ -21,29 +19,17 @@
 import { db } from '../lib/db.js';
 import type { Prisma } from '@prisma/client';
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-/** Documents with a match score ≥ this are linked automatically. */
-export const AUTO_LINK_THRESHOLD = 0.6;
-
-/** Maximum date difference (in calendar days) for a vehicleNo+date match. */
-export const DATE_TOLERANCE_DAYS = 3;
-
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface MatchResult {
   lrId: string;
-  confidence: number;
   matchedFields: string[];
 }
 
 export interface LinkResult {
   linked: boolean;
   lrId?: string;
-  confidence?: number;
   matchedFields?: string[];
-  /** true when confidence ≥ threshold; false means the link was stored as pending */
-  autoLinked?: boolean;
 }
 
 export interface RelinkSummary {
@@ -87,87 +73,33 @@ export function daysBetween(dateA: string, dateB: string): number | null {
  * Return true when the two date strings are within `toleranceDays` of each
  * other.  Returns false (not null) when either date is unparseable — callers
  * treat unparseable as "no match".
+ *
+ * Retained as a utility for callers that need range-based date comparisons.
+ * The auto-link pipeline itself uses exact (same-day) date matching.
  */
 export function isDateWithinTolerance(
   dateA: string,
   dateB: string,
-  toleranceDays: number = DATE_TOLERANCE_DAYS,
+  toleranceDays: number = 3,
 ): boolean {
   const diff = daysBetween(dateA, dateB);
   return diff !== null && diff <= toleranceDays;
 }
 
-// ── Core matching logic ───────────────────────────────────────────────────────
-
-type LrRow = Awaited<ReturnType<typeof db.lr.findFirst>>;
-
-/**
- * Compute a confidence score and the list of matched field names for a single
- * (extractedData fields) vs (Lr row) comparison.
- */
-export function scoreMatch(
-  extracted: {
-    lrNo?: string | null;
-    invoiceNo?: string | null;
-    vehicleNo?: string | null;
-    date?: string | null;
-  },
-  lr: NonNullable<LrRow>,
-): { confidence: number; matchedFields: string[] } {
-  const matchedFields: string[] = [];
-  let confidence = 0;
-
-  // ── 1. lrNo exact match (highest priority) ────────────────────────────────
-  if (extracted.lrNo && lr.lrNo) {
-    if (normalizeRefNo(extracted.lrNo) === normalizeRefNo(lr.lrNo)) {
-      matchedFields.push('lrNo');
-      confidence = Math.max(confidence, 1.0);
-    }
-  }
-
-  // ── 2. invoiceNo exact match ──────────────────────────────────────────────
-  if (extracted.invoiceNo && lr.invoiceNo) {
-    if (normalizeRefNo(extracted.invoiceNo) === normalizeRefNo(lr.invoiceNo)) {
-      matchedFields.push('invoiceNo');
-      confidence = Math.max(confidence, 0.9);
-    }
-  }
-
-  // ── 3. vehicleNo + date proximity ─────────────────────────────────────────
-  const vehicleMatch =
-    extracted.vehicleNo &&
-    lr.vehicleNo &&
-    normalizeVehicleNo(extracted.vehicleNo) === normalizeVehicleNo(lr.vehicleNo);
-
-  if (vehicleMatch) {
-    matchedFields.push('vehicleNo');
-
-    if (extracted.date && lr.date) {
-      const diff = daysBetween(extracted.date, lr.date);
-      if (diff !== null && diff <= DATE_TOLERANCE_DAYS) {
-        matchedFields.push('date');
-        // Scale 0.70–0.80 based on proximity: 0 days → 0.80, 3 days → 0.70
-        const proximityScore = 0.80 - (diff / DATE_TOLERANCE_DAYS) * 0.10;
-        confidence = Math.max(confidence, proximityScore);
-      }
-    } else {
-      // vehicleNo only — below threshold, but store the score
-      confidence = Math.max(confidence, 0.4);
-    }
-  }
-
-  return { confidence, matchedFields };
-}
-
 // ── Database operations ───────────────────────────────────────────────────────
 
 /**
- * Find the best-matching Lr row for the given extracted fields.
+ * Find the matching Lr row for the given extracted fields using exact matching.
  *
- * When a companyId is supplied (most callers should supply it) the search is
- * scoped to that company, preventing cross-company data leaks.
+ * Matching priority (first match wins):
+ *  1. lrNo exact match
+ *  2. invoiceNo or companyInvoiceNo exact match
+ *  3. vehicleNo + same calendar day (date normalised via Date.parse)
  *
- * Returns null when no candidate exceeds 0 confidence.
+ * When a companyId is supplied the search is scoped to that company,
+ * preventing cross-company data leaks.
+ *
+ * Returns null when no field produces an exact match.
  */
 export async function findBestMatchingLr(
   extracted: {
@@ -178,37 +110,54 @@ export async function findBestMatchingLr(
   },
   companyId?: string,
 ): Promise<MatchResult | null> {
-  const conditions: Prisma.LrWhereInput[] = [];
+  const scope: Prisma.LrWhereInput = companyId ? { companyId } : {};
 
+  // ── 1. lrNo exact match ───────────────────────────────────────────────────
   if (extracted.lrNo?.trim()) {
-    conditions.push({ lrNo: { equals: normalizeRefNo(extracted.lrNo) } });
+    const lr = await db.lr.findFirst({
+      where: { lrNo: normalizeRefNo(extracted.lrNo), ...scope },
+    });
+    if (lr) return { lrId: lr.id, matchedFields: ['lrNo'] };
   }
+
+  // ── 2. invoiceNo exact match (check both invoiceNo and companyInvoiceNo) ──
   if (extracted.invoiceNo?.trim()) {
-    conditions.push({ invoiceNo: { equals: normalizeRefNo(extracted.invoiceNo) } });
+    const normalizedInvoice = normalizeRefNo(extracted.invoiceNo);
+    const lr = await db.lr.findFirst({
+      where: {
+        OR: [
+          { invoiceNo: normalizedInvoice },
+          { companyInvoiceNo: normalizedInvoice },
+        ],
+        ...scope,
+      },
+    });
+    if (lr) return { lrId: lr.id, matchedFields: ['invoiceNo'] };
   }
-  if (extracted.vehicleNo?.trim()) {
-    conditions.push({ vehicleNo: normalizeVehicleNo(extracted.vehicleNo) });
-  }
 
-  if (conditions.length === 0) return null;
-
-  const where: Prisma.LrWhereInput = {
-    OR: conditions,
-    ...(companyId ? { companyId } : {}),
-  };
-
-  const candidates = await db.lr.findMany({ where, take: 50 });
-
-  let best: MatchResult | null = null;
-
-  for (const lr of candidates) {
-    const { confidence, matchedFields } = scoreMatch(extracted, lr);
-    if (confidence > 0 && (best === null || confidence > best.confidence)) {
-      best = { lrId: lr.id, confidence, matchedFields };
+  // ── 3. vehicleNo + exact same calendar day ────────────────────────────────
+  if (extracted.vehicleNo?.trim() && extracted.date?.trim()) {
+    const normalizedVehicle = normalizeVehicleNo(extracted.vehicleNo);
+    const extractedDateMs = parseDateMs(extracted.date);
+    if (extractedDateMs !== null) {
+      const candidates = await db.lr.findMany({
+        where: { vehicleNo: normalizedVehicle, ...scope },
+        take: 20,
+      });
+      for (const lr of candidates) {
+        // Check both date and lrDate fields on the Lr record
+        const lrDateStr = lr.lrDate ?? lr.date;
+        if (lrDateStr) {
+          const lrDateMs = parseDateMs(lrDateStr);
+          if (lrDateMs !== null && lrDateMs === extractedDateMs) {
+            return { lrId: lr.id, matchedFields: ['vehicleNo', 'date'] };
+          }
+        }
+      }
     }
   }
 
-  return best;
+  return null;
 }
 
 /**
@@ -221,7 +170,7 @@ export async function linkDocumentToLr(
   documentId: string,
   lrId: string,
   matchedFields: string[],
-  confidence: number,
+  confidence: number = 1.0,
   isManual: boolean = false,
 ): Promise<Prisma.DocumentLinkRecordGetPayload<object>> {
   return db.documentLinkRecord.upsert({
@@ -234,9 +183,6 @@ export async function linkDocumentToLr(
       isManual,
     },
     update: {
-      // Re-running auto-link refreshes confidence and matched fields on
-      // non-manual links so scores stay current as the algorithm improves.
-      // Manual links are never overwritten by auto-link passes.
       ...(isManual
         ? { isManual: true, matchedFields: JSON.stringify(matchedFields), confidence }
         : { matchedFields: JSON.stringify(matchedFields), confidence }),
@@ -259,14 +205,12 @@ export async function unlinkDocumentFromLr(
     });
 }
 
-// ── High-level orchestration ─────────────────────────────────────────────────
-
 /**
  * Run the auto-link pipeline for a single document.
  *
  * 1. Loads the document's extracted OCR fields.
- * 2. Scores all candidate Lr rows.
- * 3. If the best match confidence ≥ AUTO_LINK_THRESHOLD, persists the link.
+ * 2. Searches for an exactly matching Lr row (lrNo → invoiceNo → vehicleNo+date).
+ * 3. If a match is found, persists the link.
  * 4. Returns a summary of what happened.
  *
  * `companyId` should be passed whenever available to scope the candidate search.
@@ -294,28 +238,23 @@ export async function autoLinkDocument(
     return { linked: false };
   }
 
-  // Always persist the link record so we can surface near-matches for manual
-  // review.  The `autoLinked` flag tells the caller whether it passed the
-  // threshold.
   await linkDocumentToLr(
     documentId,
     match.lrId,
     match.matchedFields,
-    match.confidence,
+    1.0,
     false,
   );
 
   return {
     linked: true,
     lrId: match.lrId,
-    confidence: match.confidence,
     matchedFields: match.matchedFields,
-    autoLinked: match.confidence >= AUTO_LINK_THRESHOLD,
   };
 }
 
 /**
- * Batch-relink all documents that have no confirmed auto-links yet.
+ * Batch-relink all documents that have no confirmed link yet.
  *
  * Designed for scheduled runs (e.g. nightly cron) to handle delayed uploads
  * (T+1, T+7) where the corresponding LR may not have existed at upload time.
@@ -325,13 +264,11 @@ export async function autoLinkDocument(
 export async function relinkPendingDocuments(
   companyId?: string,
 ): Promise<RelinkSummary> {
-  // Find documents with extracted data but no link with confidence ≥ threshold
+  // Find documents with extracted data but no link records at all
   const candidates = await db.document.findMany({
     where: {
       extractedData: { isNot: null },
-      documentLinks: {
-        none: { confidence: { gte: AUTO_LINK_THRESHOLD } },
-      },
+      documentLinks: { none: {} },
     },
     select: { id: true },
   });
@@ -340,7 +277,7 @@ export async function relinkPendingDocuments(
 
   for (const { id } of candidates) {
     const result = await autoLinkDocument(id, companyId);
-    if (result.autoLinked) linked += 1;
+    if (result.linked) linked += 1;
   }
 
   return { processed: candidates.length, linked };
@@ -366,7 +303,7 @@ export async function getDocumentLinks(documentId: string) {
         },
       },
     },
-    orderBy: { confidence: 'desc' },
+    orderBy: { linkedAt: 'desc' },
   });
 
   return records.map((r) => ({

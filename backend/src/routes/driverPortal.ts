@@ -5,7 +5,7 @@ import rateLimit from 'express-rate-limit';
 import { upload } from '../middleware/upload.js';
 import { requireDriverAuth, signDriverToken } from '../middleware/driverAuth.js';
 import type { DriverTokenPayload } from '../middleware/driverAuth.js';
-import { prisma } from '../services/documentService.js';
+import { prisma, saveOcrResults } from '../services/documentService.js';
 import { processDocumentOcr } from '../services/ocrService.js';
 
 const router = Router();
@@ -189,18 +189,31 @@ router.post(
         vehicleNumber = ocrResult.fields.vehicleNo ?? null;
         documentDate = ocrResult.fields.date ?? null;
 
-        // Try to auto-link to a DocumentGroup
-        if (vehicleNumber && documentDate) {
-          const normalizedVehicle = vehicleNumber.trim().toUpperCase().replace(/\s+/g, '');
-          const normalizedDate = documentDate.trim();
+        // Create a Document record in the main system so the upload is visible
+        // to admins in the Documents view and participates in auto-linking to
+        // Lr records and DocumentGroups (via saveOcrResults).
+        const adminDoc = await prisma.document.create({
+          data: {
+            type:             ocrResult.documentType,
+            status:           'PENDING_OCR',
+            originalFilename: req.file.originalname,
+            rawFilePath:      resolvedFilePath,
+            mimeType:         req.file.mimetype,
+          },
+        });
 
-          const group = await prisma.documentGroup.findUnique({
-            where: { vehicleNo_date: { vehicleNo: normalizedVehicle, date: normalizedDate } },
-          });
+        // saveOcrResults updates the Document type/status, stores ExtractedData,
+        // and calls autoLinkDocument + autoLinkDocumentToGroup.
+        await saveOcrResults(adminDoc.id, ocrResult.fields, ocrResult.documentType, ocrResult.rawResponse);
 
-          linkedGroupId = group?.id ?? null;
-          finalStatus = group ? 'PROCESSED' : 'UNLINKED';
-        }
+        // Fetch the groupId that autoLinkDocumentToGroup set on the Document.
+        const updatedAdminDoc = await prisma.document.findUnique({
+          where: { id: adminDoc.id },
+          select: { groupId: true },
+        });
+
+        linkedGroupId = updatedAdminDoc?.groupId ?? null;
+        finalStatus = linkedGroupId ? 'PROCESSED' : 'UNLINKED';
 
         // Update with OCR results
         await prisma.driverUploadDocument.update({

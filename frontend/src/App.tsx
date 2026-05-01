@@ -17,6 +17,17 @@ import type { Document, Bundle } from './types';
 
 type View = 'dashboard' | 'list' | 'upload' | 'review' | 'bundle' | 'search' | 'dispatch' | 'drivers' | 'customers';
 
+// ── URL-hash routing helpers ──────────────────────────────────────────────────
+// Views that should be persisted in the URL hash.  'review' is intentionally
+// excluded because it depends on a selected-document state that cannot be
+// serialised into the URL; refreshing from that state falls back to 'list'.
+const HASH_VIEWS: View[] = ['dashboard', 'list', 'upload', 'bundle', 'search', 'dispatch', 'drivers', 'customers'];
+
+function viewFromHash(): View {
+  const raw = window.location.hash.replace('#', '') as View;
+  return HASH_VIEWS.includes(raw) ? raw : 'dashboard';
+}
+
 function App() {
   const [isDriverPortal, setIsDriverPortal] = useState(false);
   const [isCustomerPortal, setIsCustomerPortal] = useState(false);
@@ -48,9 +59,24 @@ function App() {
 }
 
 function AdminApp({ onLogout }: { onLogout: () => void }) {
-  const [view, setView] = useState<View>('dashboard');
+  const [view, setViewState] = useState<View>(viewFromHash);
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Keep the URL hash in sync when the view changes programmatically.
+  const setView = (v: View) => {
+    if (HASH_VIEWS.includes(v)) {
+      window.location.hash = v;
+    }
+    setViewState(v);
+  };
+
+  // Sync view ← hash when the user navigates with browser back/forward.
+  useEffect(() => {
+    const onHashChange = () => setViewState(viewFromHash());
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
 
   const handleDocumentReady = (doc: Document) => {
     setSelectedDoc(doc);
