@@ -178,6 +178,11 @@ export const lrApi = {
   delete: async (id: string): Promise<void> => {
     await api.delete(`/lrs/${id}`);
   },
+
+  syncFromDocuments: async (): Promise<{ processed: number; created: number; linked: number }> => {
+    const res = await api.post<{ processed: number; created: number; linked: number }>('/lrs/sync-from-documents');
+    return res.data;
+  },
 };
 
 export const searchApi = {

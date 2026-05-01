@@ -127,6 +127,8 @@ export function LrDashboard() {
   const [expanded, setExpanded] = useState(false);
   const [driverUploads, setDriverUploads] = useState<DriverUploadDoc[]>([]);
   const [driverUploadsTotal, setDriverUploadsTotal] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ created: number; linked: number } | null>(null);
 
   const LIMIT = 20;
 
@@ -166,6 +168,20 @@ export function LrDashboard() {
 
   useEffect(() => { void fetchData(); }, [fetchData]);
 
+  const handleSync = async () => {
+    try {
+      setSyncing(true);
+      setSyncResult(null);
+      const result = await lrApi.syncFromDocuments();
+      setSyncResult({ created: result.created, linked: result.linked });
+      void fetchData();
+    } catch {
+      setSyncResult(null);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const visibleCols = expanded ? ALL_COLUMNS : ALL_COLUMNS.slice(0, VISIBLE_COUNT);
   const gridTemplate = visibleCols.map((c) => `${c.width}px`).join(' ') + (expanded ? '' : ' 40px');
   const pages = Math.max(1, Math.ceil(total / LIMIT));
@@ -176,7 +192,24 @@ export function LrDashboard() {
 
       {/* ── Pie chart card ─────────────────────────────────────────── */}
       <div style={s.card}>
-        <h3 style={s.cardTitle}>Invoices vs LR Records</h3>
+        <div style={s.tableHeader}>
+          <h3 style={{ ...s.cardTitle, margin: 0 }}>Invoices vs LR Records</h3>
+          <button
+            style={syncing ? s.btnSyncDisabled : s.btnSync}
+            onClick={() => void handleSync()}
+            disabled={syncing}
+            title="Scan all uploaded LR documents and auto-create LR records from them"
+          >
+            {syncing ? '⏳ Syncing…' : '🔄 Sync LR Records from Uploads'}
+          </button>
+        </div>
+        {syncResult !== null && (
+          <p style={s.syncInfo}>
+            {syncResult.created === 0
+              ? '✅ All LR records are already up to date.'
+              : `✅ Created ${syncResult.created} new LR record${syncResult.created !== 1 ? 's' : ''} and linked ${syncResult.linked} document${syncResult.linked !== 1 ? 's' : ''}.`}
+          </p>
+        )}
         {summary
           ? <PieChart lrCount={summary.lrCount} invoiceCount={summary.invoiceCount} />
           : <p style={{ color: '#888' }}>Loading…</p>}
@@ -395,4 +428,13 @@ const s: Record<string, React.CSSProperties> = {
     borderRadius: 6, cursor: 'pointer', fontSize: 13,
   },
   pageInfo: { fontSize: 13, color: '#555' },
+  btnSync: {
+    padding: '7px 14px', background: '#4361ee', color: '#fff', border: 'none',
+    borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 600,
+  },
+  btnSyncDisabled: {
+    padding: '7px 14px', background: '#a0aec0', color: '#fff', border: 'none',
+    borderRadius: 6, cursor: 'not-allowed', fontSize: 13, fontWeight: 600,
+  },
+  syncInfo: { fontSize: 13, color: '#065f46', background: '#d1fae5', borderRadius: 6, padding: '8px 12px', marginBottom: 12 },
 };

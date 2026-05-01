@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import type { DocumentType, ReviewPayload } from '../types/index.js';
-import { autoLinkDocument } from './autoLinkService.js';
+import { autoLinkDocument, relinkPendingDocuments, normalizeVehicleNo } from './autoLinkService.js';
 
 const prisma = new PrismaClient();
 
@@ -90,6 +90,128 @@ async function autoLinkDocumentToGroup(
 }
 
 /**
+ * Auto-create an LR record from an uploaded LR-type document.
+ *
+ * Uses the first available company + branch as defaults (single-tenant).
+ * Idempotent — skips silently when an LR with the same lrNo already exists
+ * for that company, so calling this multiple times is safe.
+ *
+ * Returns true when a new LR record was created, false when skipped.
+ */
+async function autoCreateLrRecord(
+  documentType: DocumentType | string,
+  fields: {
+    lrNo?: string | null;
+    invoiceNo?: string | null;
+    vehicleNo?: string | null;
+    date?: string | null;
+    partyNames?: string[] | string | null;
+  },
+): Promise<boolean> {
+  if (documentType !== 'LR' || !fields.lrNo?.trim()) return false;
+
+  const lrNo = fields.lrNo.trim().toUpperCase();
+
+  // Look up the first company and its first branch (single-tenant default)
+  const company = await prisma.company.findFirst({
+    include: { branches: { take: 1, orderBy: { createdAt: 'asc' } } },
+  });
+  if (!company || company.branches.length === 0) return false;
+
+  const companyId = company.id;
+  const branchId = company.branches[0].id;
+
+  // Idempotent: skip if an LR with the same lrNo already exists for this company
+  const existing = await prisma.lr.findFirst({ where: { lrNo, companyId } });
+  if (existing) return false;
+
+  // Parse party names (OCR returns ["consignor", "consignee"]).
+  // Array access beyond its length returns undefined in JS — no out-of-bounds error.
+  let consignor: string | undefined;
+  let consignee: string | undefined;
+  if (fields.partyNames) {
+    try {
+      const names: unknown[] = Array.isArray(fields.partyNames)
+        ? fields.partyNames
+        : (JSON.parse(fields.partyNames as string) as unknown[]);
+      if (typeof names[0] === 'string') consignor = (names[0] as string).trim() || undefined;
+      if (typeof names[1] === 'string') consignee = (names[1] as string).trim() || undefined;
+    } catch {
+      // ignore malformed JSON
+    }
+  }
+
+  // Assign next serialNo for this company
+  const last = await prisma.lr.findFirst({
+    where: { companyId },
+    orderBy: { serialNo: 'desc' },
+    select: { serialNo: true },
+  });
+  const serialNo = (last?.serialNo ?? 0) + 1;
+
+  const lrDate = fields.date?.trim() || undefined;
+  const vehicleNo = fields.vehicleNo?.trim()
+    ? normalizeVehicleNo(fields.vehicleNo)
+    : undefined;
+
+  await prisma.lr.create({
+    data: {
+      lrNo,
+      serialNo,
+      companyId,
+      branchId,
+      source: 'INTERNAL',
+      lrDate,
+      date: lrDate,
+      vehicleNo,
+      invoiceNo: fields.invoiceNo?.trim() || undefined,
+      consignor: consignor || undefined,
+      consignee: consignee || undefined,
+    },
+  });
+
+  return true;
+}
+
+/**
+ * Sync LR records from all existing LR-type documents.
+ *
+ * Scans every LR-type document that has OCR-extracted data, auto-creates an
+ * LR record for each one (idempotent — skips existing), then re-runs the
+ * auto-link pipeline so all documents get linked to their LR records.
+ *
+ * Safe to call repeatedly; already-existing LR records are never duplicated.
+ */
+export async function syncLrRecordsFromDocuments(): Promise<{
+  processed: number;
+  created: number;
+  linked: number;
+}> {
+  const docs = await prisma.document.findMany({
+    where: { type: 'LR' },
+    include: { extractedData: true },
+  });
+
+  let created = 0;
+  for (const doc of docs) {
+    if (!doc.extractedData?.lrNo) continue;
+    const wasCreated = await autoCreateLrRecord('LR', {
+      lrNo: doc.extractedData.lrNo,
+      invoiceNo: doc.extractedData.invoiceNo,
+      vehicleNo: doc.extractedData.vehicleNo,
+      date: doc.extractedData.date,
+      partyNames: doc.extractedData.partyNames,
+    });
+    if (wasCreated) created++;
+  }
+
+  // Re-run auto-link for documents that have no LR link yet
+  const { linked } = await relinkPendingDocuments();
+
+  return { processed: docs.length, created, linked };
+}
+
+/**
  * Save OCR results to the ExtractedData table and update document status/type.
  */
 export async function saveOcrResults(
@@ -148,6 +270,15 @@ export async function saveOcrResults(
   // Strategy 1 (vehicleNo+date) is tried first inside autoLinkDocumentToGroup;
   // lrNo and invoiceNo are used as fallback when date is unavailable.
   if (fields.vehicleNo || fields.lrNo || fields.invoiceNo) {
+    // Auto-create an LR record from OCR data before attempting to link,
+    // so the link step can always find a matching LR row.
+    await autoCreateLrRecord(documentType, {
+      lrNo: fields.lrNo,
+      invoiceNo: fields.invoiceNo,
+      vehicleNo: fields.vehicleNo,
+      date: fields.date,
+      partyNames: fields.partyNames,
+    });
     await autoLinkDocument(documentId);
     await autoLinkDocumentToGroup(documentId, {
       vehicleNo: fields.vehicleNo,
@@ -221,7 +352,18 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
   // Re-link to Lr record and DocumentGroup when reviewed fields change.
   // Use || so lrNo/invoiceNo fallback is available when date is missing.
   const updatedExtracted = await prisma.extractedData.findUnique({ where: { documentId } });
+  const updatedDoc = await prisma.document.findUnique({ where: { id: documentId }, select: { type: true } });
   if (updatedExtracted?.vehicleNo || updatedExtracted?.lrNo || updatedExtracted?.invoiceNo) {
+    // Auto-create LR record from confirmed reviewed data before linking
+    if (updatedDoc?.type === 'LR') {
+      await autoCreateLrRecord('LR', {
+        lrNo: updatedExtracted.lrNo,
+        invoiceNo: updatedExtracted.invoiceNo,
+        vehicleNo: updatedExtracted.vehicleNo,
+        date: updatedExtracted.date,
+        partyNames: updatedExtracted.partyNames,
+      });
+    }
     await autoLinkDocument(documentId);
     await autoLinkDocumentToGroup(documentId, {
       vehicleNo: updatedExtracted.vehicleNo,

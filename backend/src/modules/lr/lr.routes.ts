@@ -4,6 +4,7 @@ import { requireAuth } from '../auth/auth.routes.js';
 import { requirePermission, buildScopeWhere } from '../rbac/rbac.middleware.js';
 import { ALLOWED_SOURCES, ALLOWED_LR_STATUSES } from '../rbac/permissions.js';
 import { lrRepo, type LrCreateInput, type LrUpdateInput } from './lr.repo.js';
+import { syncLrRecordsFromDocuments } from '../../services/documentService.js';
 
 const router = Router();
 
@@ -43,6 +44,30 @@ router.get(
       res.json(stats);
     } catch (err) {
       handleRouteError(err, res, '[lr] GET /lrs/summary');
+    }
+  }
+);
+
+// ── POST /api/lrs/sync-from-documents ────────────────────────────────────────
+// Scans all saved LR-type documents and auto-creates LR records from their
+// OCR-extracted data, then re-runs auto-linking for any unlinked documents.
+// Safe to call repeatedly — existing LR records are never duplicated.
+
+router.post(
+  '/sync-from-documents',
+  writeLimiter,
+  requirePermission('lr.create'),
+  async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const result = await syncLrRecordsFromDocuments();
+      res.json({
+        message: 'Sync complete',
+        processed: result.processed,
+        created: result.created,
+        linked: result.linked,
+      });
+    } catch (err) {
+      handleRouteError(err, res, '[lr] POST /lrs/sync-from-documents');
     }
   }
 );
