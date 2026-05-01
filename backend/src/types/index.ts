@@ -13,6 +13,17 @@ export interface ExtractedFields {
   tollAmount?: string;
   weightInfo?: string;
   transporter?: string;
+  // Extended LR fields extracted from document
+  billToParty?: string;
+  shipToParty?: string;
+  principalCompany?: string;
+  loadingSlipNo?: string;
+  companyInvoiceNo?: string;
+  companyInvoiceDate?: string;
+  companyEwayBillNo?: string;
+  deliveryDestination?: string;
+  productName?: string;
+  transporterName?: string;
   documentType?: DocumentType;
   confidence?: number;
 }
