@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import type { Lr, LrSummary } from '../types';
 import { lrApi, adminDriverAccessApi } from '../services/api';
 import type { DriverUploadDoc } from '../services/api';
+import { LrEditModal } from './LrEditModal';
 
 // ── Column definitions ────────────────────────────────────────────────────────
 
@@ -125,6 +126,7 @@ export function LrDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<LrSummary | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [editingLr, setEditingLr] = useState<Lr | null>(null);
   const [driverUploads, setDriverUploads] = useState<DriverUploadDoc[]>([]);
   const [driverUploadsTotal, setDriverUploadsTotal] = useState(0);
   const [syncing, setSyncing] = useState(false);
@@ -183,7 +185,8 @@ export function LrDashboard() {
   };
 
   const visibleCols = expanded ? ALL_COLUMNS : ALL_COLUMNS.slice(0, VISIBLE_COUNT);
-  const gridTemplate = visibleCols.map((c) => `${c.width}px`).join(' ') + (expanded ? '' : ' 40px');
+  // +60px for the Edit action column
+  const gridTemplate = visibleCols.map((c) => `${c.width}px`).join(' ') + (expanded ? ' 60px' : ' 40px 60px');
   const pages = Math.max(1, Math.ceil(total / LIMIT));
 
   return (
@@ -249,6 +252,7 @@ export function LrDashboard() {
                   </button>
                 </span>
               )}
+              <span style={s.th}>Edit</span>
             </div>
 
             {/* Data rows */}
@@ -270,6 +274,15 @@ export function LrDashboard() {
                     </button>
                   </span>
                 )}
+                <span style={s.cell}>
+                  <button
+                    style={s.editBtn}
+                    onClick={() => setEditingLr(lr)}
+                    title="Edit this LR record"
+                  >
+                    ✏️
+                  </button>
+                </span>
               </div>
             ))}
           </div>
@@ -330,6 +343,18 @@ export function LrDashboard() {
           </div>
         )}
       </div>
+
+      {/* ── LR Edit Modal ───────────────────────────────────────────── */}
+      {editingLr && (
+        <LrEditModal
+          lr={editingLr}
+          onSaved={(updated) => {
+            setLrs((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+            setEditingLr(null);
+          }}
+          onCancel={() => setEditingLr(null)}
+        />
+      )}
     </div>
   );
 }
@@ -417,6 +442,11 @@ const s: Record<string, React.CSSProperties> = {
     background: '#4361ee', color: '#fff', border: 'none',
     borderRadius: 4, cursor: 'pointer', fontSize: 11,
     padding: '3px 7px', fontWeight: 700,
+  },
+  editBtn: {
+    background: 'none', border: '1px solid #d0d0e0', borderRadius: 4,
+    cursor: 'pointer', fontSize: 14, padding: '2px 6px',
+    lineHeight: 1,
   },
   collapseBtn: {
     padding: '6px 16px', background: '#eee', border: 'none',
