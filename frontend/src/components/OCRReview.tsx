@@ -98,6 +98,21 @@ export function OCRReview({ document, onSaved, onCancel }: Props) {
 
         {/* Right: form */}
         <div style={styles.formPane}>
+          {/* Missing-fields warning */}
+          {(!form.vehicleNo || !form.date) && (
+            <div style={styles.missingWarning}>
+              ⚠️ <strong>Action needed:</strong>{' '}
+              {[
+                !form.vehicleNo && 'Vehicle Number',
+                !form.date && 'Date',
+              ]
+                .filter(Boolean)
+                .join(' and ')}{' '}
+              {(!form.vehicleNo && !form.date) ? 'are' : 'is'} missing.
+              Fill in the field{(!form.vehicleNo && !form.date) ? 's' : ''} below so this document can be
+              automatically grouped with related trip documents.
+            </div>
+          )}
           {/* Document Type */}
           <div style={styles.fieldGroup}>
             <label style={styles.label}>Document Type</label>
@@ -116,12 +131,19 @@ export function OCRReview({ document, onSaved, onCancel }: Props) {
             <Field label="LR Number" value={form.lrNo ?? ''} onChange={(v) => handleChange('lrNo', v)} />
             <Field label="Invoice Number" value={form.invoiceNo ?? ''} onChange={(v) => handleChange('invoiceNo', v)} />
             <Field
-              label="Vehicle Number"
+              label="Vehicle Number ✱"
               value={form.vehicleNo ?? ''}
               onChange={(v) => handleChange('vehicleNo', v)}
               placeholder="e.g. MH12AB1234"
+              highlight={!form.vehicleNo}
             />
-            <Field label="Date (YYYY-MM-DD)" value={form.date ?? ''} onChange={(v) => handleChange('date', v)} placeholder="YYYY-MM-DD" />
+            <Field
+              label="Date (YYYY-MM-DD) ✱"
+              value={form.date ?? ''}
+              onChange={(v) => handleChange('date', v)}
+              placeholder="YYYY-MM-DD"
+              highlight={!form.date}
+            />
             <Field label="Quantity" value={form.quantity ?? ''} onChange={(v) => handleChange('quantity', v)} placeholder="e.g. 10 MT" />
             <Field label="Toll Amount" value={form.tollAmount ?? ''} onChange={(v) => handleChange('tollAmount', v)} />
           </div>
@@ -176,18 +198,19 @@ export function OCRReview({ document, onSaved, onCancel }: Props) {
 }
 
 function Field({
-  label, value, onChange, placeholder,
+  label, value, onChange, placeholder, highlight,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  highlight?: boolean;
 }) {
   return (
     <div style={styles.fieldGroup}>
-      <label style={styles.label}>{label}</label>
+      <label style={{ ...styles.label, ...(highlight ? { color: '#e97a00' } : {}) }}>{label}</label>
       <input
-        style={styles.input}
+        style={{ ...styles.input, ...(highlight ? styles.inputHighlight : {}) }}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder ?? '—'}
@@ -210,9 +233,14 @@ const styles: Record<string, React.CSSProperties> = {
   fieldGroup: { marginBottom: 14 },
   label: { display: 'block', fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' },
   input: { width: '100%', padding: '8px 10px', border: '1px solid #d0d0e0', borderRadius: 6, fontSize: 14, boxSizing: 'border-box' },
+  inputHighlight: { border: '2px solid #e97a00', background: '#fff8f0' },
   select: { width: '100%', padding: '8px 10px', border: '1px solid #d0d0e0', borderRadius: 6, fontSize: 14, boxSizing: 'border-box' },
   textarea: { width: '100%', padding: '8px 10px', border: '1px solid #d0d0e0', borderRadius: 6, fontSize: 14, resize: 'vertical', boxSizing: 'border-box' },
   groupBadge: { background: '#eef0ff', border: '1px solid #c0c8ff', borderRadius: 6, padding: '8px 12px', fontSize: 13, color: '#4361ee', marginBottom: 14 },
+  missingWarning: {
+    background: '#fff8f0', border: '1.5px solid #e97a00', borderRadius: 6,
+    padding: '10px 14px', fontSize: 13, color: '#7a3f00', marginBottom: 14, lineHeight: 1.5,
+  },
   error: { color: '#e53e3e', fontSize: 13, marginBottom: 8 },
   actions: { display: 'flex', gap: 8, marginTop: 8 },
   btnPrimary: {

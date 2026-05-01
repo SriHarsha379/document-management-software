@@ -50,6 +50,7 @@ export interface ListDocumentsParams {
   type?: DocumentType;
   status?: DocumentStatus;
   vehicleNo?: string;
+  ungrouped?: boolean;
   page?: number;
   limit?: number;
 }
