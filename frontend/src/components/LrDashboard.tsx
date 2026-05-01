@@ -310,7 +310,8 @@ export function LrDashboard() {
         )}
       </div>
 
-      {/* ── Driver Uploads card ────────────────────────────────────── */}      <div style={s.card}>
+      {/* ── Driver Uploads card ────────────────────────────────────── */}
+      <div style={s.card}>
         <div style={s.tableHeader}>
           <span style={s.cardTitle}>🚛 Driver Uploads ({driverUploadsTotal})</span>
           <button style={s.btnRefresh} onClick={() => void fetchData()} disabled={loading}>

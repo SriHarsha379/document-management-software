@@ -49,6 +49,12 @@ function toStr(v: string | number | null | undefined): string {
   return String(v);
 }
 
+function toNum(v: string): number | undefined {
+  if (v === '') return undefined;
+  const n = parseFloat(v);
+  return isNaN(n) ? undefined : n;
+}
+
 export function LrEditModal({ lr, onSaved, onCancel }: Props) {
   const [form, setForm] = useState<FormData>({
     lrNo:               toStr(lr.lrNo),
@@ -111,25 +117,25 @@ export function LrEditModal({ lr, onSaved, onCancel }: Props) {
         orderType:          form.orderType.trim() || undefined,
         productName:        form.productName.trim() || undefined,
         vehicleNo:          form.vehicleNo.trim() || undefined,
-        quantityInBags:     form.quantityInBags !== '' ? (Number(form.quantityInBags) as never) : undefined,
-        quantityInMt:       form.quantityInMt !== ''   ? (Number(form.quantityInMt) as never)   : undefined,
-        tollCharges:        form.tollCharges !== ''    ? (Number(form.tollCharges) as never)    : undefined,
-        weighmentCharges:   form.weighmentCharges !== '' ? (Number(form.weighmentCharges) as never) : undefined,
-        unloadingAtSite:    form.unloadingAtSite !== '' ? (Number(form.unloadingAtSite) as never) : undefined,
-        driverBhatta:       form.driverBhatta !== ''   ? (Number(form.driverBhatta) as never)   : undefined,
-        dayOpeningKm:       form.dayOpeningKm !== ''   ? (Number(form.dayOpeningKm) as never)   : undefined,
-        dayClosingKm:       form.dayClosingKm !== ''   ? (Number(form.dayClosingKm) as never)   : undefined,
-        totalRunningKm:     form.totalRunningKm !== '' ? (Number(form.totalRunningKm) as never) : undefined,
-        fuelPerKm:          form.fuelPerKm !== ''      ? (Number(form.fuelPerKm) as never)      : undefined,
-        fuelAmount:         form.fuelAmount !== ''     ? (Number(form.fuelAmount) as never)     : undefined,
-        grandTotal:         form.grandTotal !== ''     ? (Number(form.grandTotal) as never)     : undefined,
+        quantityInBags:     toNum(form.quantityInBags),
+        quantityInMt:       toNum(form.quantityInMt),
+        tollCharges:        toNum(form.tollCharges),
+        weighmentCharges:   toNum(form.weighmentCharges),
+        unloadingAtSite:    toNum(form.unloadingAtSite),
+        driverBhatta:       toNum(form.driverBhatta),
+        dayOpeningKm:       toNum(form.dayOpeningKm),
+        dayClosingKm:       toNum(form.dayClosingKm),
+        totalRunningKm:     toNum(form.totalRunningKm),
+        fuelPerKm:          toNum(form.fuelPerKm),
+        fuelAmount:         toNum(form.fuelAmount),
+        grandTotal:         toNum(form.grandTotal),
         tptCode:            form.tptCode.trim() || undefined,
         transporterName:    form.transporterName.trim() || undefined,
         driverName:         form.driverName.trim() || undefined,
         driverBillNo:       form.driverBillNo.trim() || undefined,
         billDate:           form.billDate.trim() || undefined,
         billNo:             form.billNo.trim() || undefined,
-        billAmount:         form.billAmount !== ''     ? (Number(form.billAmount) as never)     : undefined,
+        billAmount:         toNum(form.billAmount),
       });
       onSaved(updated);
     } catch (err) {
