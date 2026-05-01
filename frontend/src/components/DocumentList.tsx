@@ -40,6 +40,7 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
   const [filterType, setFilterType] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterVehicle, setFilterVehicle] = useState('');
+  const [filterUngrouped, setFilterUngrouped] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const LIMIT = 15;
@@ -52,6 +53,7 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
         type: filterType as DocumentType || undefined,
         status: filterStatus as DocumentStatus || undefined,
         vehicleNo: filterVehicle || undefined,
+        ungrouped: filterUngrouped || undefined,
         page,
         limit: LIMIT,
       });
@@ -62,7 +64,7 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [filterType, filterStatus, filterVehicle, page]);
+  }, [filterType, filterStatus, filterVehicle, filterUngrouped, page]);
 
   const handleDelete = useCallback(async (doc: Document) => {
     if (!window.confirm(`Delete "${doc.originalFilename}"? This cannot be undone.`)) return;
@@ -116,6 +118,15 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
           value={filterVehicle}
           onChange={(e) => { setFilterVehicle(e.target.value); setPage(1); }}
         />
+        <label style={styles.checkboxLabel}>
+          <input
+            type="checkbox"
+            checked={filterUngrouped}
+            onChange={(e) => { setFilterUngrouped(e.target.checked); setPage(1); }}
+            style={{ marginRight: 6 }}
+          />
+          ⚠️ Ungrouped only
+        </label>
       </div>
 
       {error && <p style={styles.error}>{error}</p>}
@@ -139,44 +150,56 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
             <span></span>
             <span></span>
           </div>
-          {documents.map((doc) => (
-            <div key={doc.id} style={styles.row}>
-              <span style={styles.filename} title={doc.originalFilename}>
-                {doc.originalFilename.length > 28
-                  ? doc.originalFilename.slice(0, 26) + '…'
-                  : doc.originalFilename}
-              </span>
-              <span>
-                <span style={{ ...styles.badge, background: TYPE_COLORS[doc.type] }}>
-                  {doc.type}
+          {documents.map((doc) => {
+            const missingVehicle = !doc.extractedData?.vehicleNo;
+            const missingDate = !doc.extractedData?.date;
+            const needsFix = !doc.groupId && (missingVehicle || missingDate);
+            return (
+              <div key={doc.id} style={{ ...styles.row, ...(needsFix ? styles.rowWarning : {}) }}>
+                <span style={styles.filename} title={doc.originalFilename}>
+                  {doc.originalFilename.length > 28
+                    ? doc.originalFilename.slice(0, 26) + '…'
+                    : doc.originalFilename}
                 </span>
-              </span>
-              <span style={styles.mono}>{doc.extractedData?.vehicleNo ?? '—'}</span>
-              <span>{doc.extractedData?.date ?? '—'}</span>
-              <span>
-                <span style={{ ...styles.statusBadge, color: STATUS_COLORS[doc.status] }}>
-                  {STATUS_LABELS[doc.status]}
+                <span>
+                  <span style={{ ...styles.badge, background: TYPE_COLORS[doc.type] }}>
+                    {doc.type}
+                  </span>
                 </span>
-              </span>
-              <span style={{ fontSize: 12, color: '#888' }}>
-                {doc.groupId ? '🔗 Linked' : '—'}
-              </span>
-              <span>
-                <button style={styles.btnView} onClick={() => onSelect(doc)}>
-                  {doc.status === 'PENDING_REVIEW' ? '✏️ Review' : '👁 View'}
-                </button>
-              </span>
-              <span>
-                <button
-                  style={styles.btnDelete}
-                  onClick={() => void handleDelete(doc)}
-                  disabled={deletingId === doc.id}
-                >
-                  {deletingId === doc.id ? '…' : '🗑 Delete'}
-                </button>
-              </span>
-            </div>
-          ))}
+                <span style={{ ...styles.mono, color: missingVehicle ? '#e53e3e' : undefined }}>
+                  {missingVehicle ? '⚠️ missing' : doc.extractedData!.vehicleNo}
+                </span>
+                <span style={{ color: missingDate ? '#e53e3e' : undefined }}>
+                  {missingDate ? '⚠️ missing' : doc.extractedData!.date}
+                </span>
+                <span>
+                  <span style={{ ...styles.statusBadge, color: STATUS_COLORS[doc.status] }}>
+                    {STATUS_LABELS[doc.status]}
+                  </span>
+                </span>
+                <span style={{ fontSize: 12, color: doc.groupId ? '#4361ee' : '#e53e3e' }}>
+                  {doc.groupId ? '🔗 Linked' : '⚠️ No group'}
+                </span>
+                <span>
+                  <button
+                    style={needsFix ? styles.btnFix : styles.btnView}
+                    onClick={() => onSelect(doc)}
+                  >
+                    {needsFix ? '✏️ Fix Fields' : doc.status === 'PENDING_REVIEW' ? '✏️ Review' : '👁 View'}
+                  </button>
+                </span>
+                <span>
+                  <button
+                    style={styles.btnDelete}
+                    onClick={() => void handleDelete(doc)}
+                    disabled={deletingId === doc.id}
+                  >
+                    {deletingId === doc.id ? '…' : '🗑 Delete'}
+                  </button>
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -211,14 +234,17 @@ const styles: Record<string, React.CSSProperties> = {
   empty: { textAlign: 'center', padding: 40, color: '#888' },
   table: { border: '1px solid #e0e0f0', borderRadius: 8, overflow: 'hidden' },
   tableHeader: {
-    display: 'grid', gridTemplateColumns: '2fr 90px 120px 110px 130px 80px 80px 90px',
+    display: 'grid', gridTemplateColumns: '2fr 90px 120px 110px 130px 80px 100px 90px',
     background: '#f5f6ff', padding: '10px 12px', fontSize: 12, fontWeight: 700,
     color: '#666', textTransform: 'uppercase', letterSpacing: '0.05em', gap: 8,
   },
   row: {
-    display: 'grid', gridTemplateColumns: '2fr 90px 120px 110px 130px 80px 80px 90px',
+    display: 'grid', gridTemplateColumns: '2fr 90px 120px 110px 130px 80px 100px 90px',
     padding: '10px 12px', borderTop: '1px solid #eee', alignItems: 'center',
     fontSize: 13, gap: 8, background: '#fff',
+  },
+  rowWarning: {
+    background: '#fff8f0',
   },
   filename: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   badge: { color: '#fff', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700 },
@@ -227,6 +253,15 @@ const styles: Record<string, React.CSSProperties> = {
   btnView: {
     padding: '4px 10px', background: '#4361ee', color: '#fff', border: 'none',
     borderRadius: 5, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+  },
+  btnFix: {
+    padding: '4px 10px', background: '#e97a00', color: '#fff', border: 'none',
+    borderRadius: 5, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+  },
+  checkboxLabel: {
+    display: 'flex', alignItems: 'center', padding: '7px 10px',
+    border: '1px solid #d0d0e0', borderRadius: 6, fontSize: 13,
+    background: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' as const,
   },
   btnDelete: {
     padding: '4px 10px', background: '#ef4444', color: '#fff', border: 'none',

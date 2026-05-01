@@ -117,11 +117,11 @@ router.put('/:id/review', async (req: Request, res: Response): Promise<void> => 
 // ──────────────────────────────────────────────────────────────────────────────
 // GET /api/documents
 // List all documents with optional filters.
-// Query params: type, status, vehicleNo, page, limit
+// Query params: type, status, vehicleNo, ungrouped, page, limit
 // ──────────────────────────────────────────────────────────────────────────────
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { type, status, vehicleNo, page = '1', limit = '20' } = req.query as Record<string, string>;
+    const { type, status, vehicleNo, ungrouped, page = '1', limit = '20' } = req.query as Record<string, string>;
 
     const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
     const take = parseInt(limit, 10);
@@ -133,6 +133,9 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       where.extractedData = {
         vehicleNo: { contains: vehicleNo.toUpperCase() },
       };
+    }
+    if (ungrouped === 'true') {
+      where.groupId = null;
     }
 
     const [documents, total] = await Promise.all([

@@ -106,6 +106,16 @@ async function autoCreateLrRecord(
     vehicleNo?: string | null;
     date?: string | null;
     partyNames?: string[] | string | null;
+    billToParty?: string | null;
+    shipToParty?: string | null;
+    principalCompany?: string | null;
+    loadingSlipNo?: string | null;
+    companyInvoiceNo?: string | null;
+    companyInvoiceDate?: string | null;
+    companyEwayBillNo?: string | null;
+    deliveryDestination?: string | null;
+    productName?: string | null;
+    transporterName?: string | null;
   },
 ): Promise<boolean> {
   if (documentType !== 'LR' || !fields.lrNo?.trim()) return false;
@@ -167,6 +177,16 @@ async function autoCreateLrRecord(
       invoiceNo: fields.invoiceNo?.trim() || undefined,
       consignor: consignor || undefined,
       consignee: consignee || undefined,
+      billToParty: fields.billToParty?.trim() || undefined,
+      shipToParty: fields.shipToParty?.trim() || undefined,
+      principalCompany: fields.principalCompany?.trim() || undefined,
+      loadingSlipNo: fields.loadingSlipNo?.trim() || undefined,
+      companyInvoiceNo: fields.companyInvoiceNo?.trim() || undefined,
+      companyInvoiceDate: fields.companyInvoiceDate?.trim() || undefined,
+      companyEwayBillNo: fields.companyEwayBillNo?.trim() || undefined,
+      deliveryDestination: fields.deliveryDestination?.trim() || undefined,
+      productName: fields.productName?.trim() || undefined,
+      transporterName: fields.transporterName?.trim() || undefined,
     },
   });
 
@@ -201,6 +221,16 @@ export async function syncLrRecordsFromDocuments(): Promise<{
       vehicleNo: doc.extractedData.vehicleNo,
       date: doc.extractedData.date,
       partyNames: doc.extractedData.partyNames,
+      billToParty: doc.extractedData.billToParty,
+      shipToParty: doc.extractedData.shipToParty,
+      principalCompany: doc.extractedData.principalCompany,
+      loadingSlipNo: doc.extractedData.loadingSlipNo,
+      companyInvoiceNo: doc.extractedData.companyInvoiceNo,
+      companyInvoiceDate: doc.extractedData.companyInvoiceDate,
+      companyEwayBillNo: doc.extractedData.companyEwayBillNo,
+      deliveryDestination: doc.extractedData.deliveryDestination,
+      productName: doc.extractedData.productName,
+      transporterName: doc.extractedData.transporterName,
     });
     if (wasCreated) created++;
   }
@@ -226,6 +256,16 @@ export async function saveOcrResults(
     tollAmount?: string;
     weightInfo?: string;
     confidence?: number;
+    billToParty?: string;
+    shipToParty?: string;
+    principalCompany?: string;
+    loadingSlipNo?: string;
+    companyInvoiceNo?: string;
+    companyInvoiceDate?: string;
+    companyEwayBillNo?: string;
+    deliveryDestination?: string;
+    productName?: string;
+    transporterName?: string;
   },
   documentType: DocumentType,
   rawOcrResponse: string
@@ -245,6 +285,16 @@ export async function saveOcrResults(
         weightInfo: fields.weightInfo ?? null,
         rawOcrResponse,
         confidence: fields.confidence ?? null,
+        billToParty: fields.billToParty ?? null,
+        shipToParty: fields.shipToParty ?? null,
+        principalCompany: fields.principalCompany ?? null,
+        loadingSlipNo: fields.loadingSlipNo ?? null,
+        companyInvoiceNo: fields.companyInvoiceNo ?? null,
+        companyInvoiceDate: fields.companyInvoiceDate ?? null,
+        companyEwayBillNo: fields.companyEwayBillNo ?? null,
+        deliveryDestination: fields.deliveryDestination ?? null,
+        productName: fields.productName ?? null,
+        transporterName: fields.transporterName ?? null,
       },
       update: {
         lrNo: fields.lrNo ?? null,
@@ -257,6 +307,16 @@ export async function saveOcrResults(
         weightInfo: fields.weightInfo ?? null,
         rawOcrResponse,
         confidence: fields.confidence ?? null,
+        billToParty: fields.billToParty ?? null,
+        shipToParty: fields.shipToParty ?? null,
+        principalCompany: fields.principalCompany ?? null,
+        loadingSlipNo: fields.loadingSlipNo ?? null,
+        companyInvoiceNo: fields.companyInvoiceNo ?? null,
+        companyInvoiceDate: fields.companyInvoiceDate ?? null,
+        companyEwayBillNo: fields.companyEwayBillNo ?? null,
+        deliveryDestination: fields.deliveryDestination ?? null,
+        productName: fields.productName ?? null,
+        transporterName: fields.transporterName ?? null,
       },
     });
 
@@ -278,6 +338,16 @@ export async function saveOcrResults(
       vehicleNo: fields.vehicleNo,
       date: fields.date,
       partyNames: fields.partyNames,
+      billToParty: fields.billToParty,
+      shipToParty: fields.shipToParty,
+      principalCompany: fields.principalCompany,
+      loadingSlipNo: fields.loadingSlipNo,
+      companyInvoiceNo: fields.companyInvoiceNo,
+      companyInvoiceDate: fields.companyInvoiceDate,
+      companyEwayBillNo: fields.companyEwayBillNo,
+      deliveryDestination: fields.deliveryDestination,
+      productName: fields.productName,
+      transporterName: fields.transporterName,
     });
     await autoLinkDocument(documentId);
     await autoLinkDocumentToGroup(documentId, {
@@ -362,6 +432,16 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
         vehicleNo: updatedExtracted.vehicleNo,
         date: updatedExtracted.date,
         partyNames: updatedExtracted.partyNames,
+        billToParty: updatedExtracted.billToParty,
+        shipToParty: updatedExtracted.shipToParty,
+        principalCompany: updatedExtracted.principalCompany,
+        loadingSlipNo: updatedExtracted.loadingSlipNo,
+        companyInvoiceNo: updatedExtracted.companyInvoiceNo,
+        companyInvoiceDate: updatedExtracted.companyInvoiceDate,
+        companyEwayBillNo: updatedExtracted.companyEwayBillNo,
+        deliveryDestination: updatedExtracted.deliveryDestination,
+        productName: updatedExtracted.productName,
+        transporterName: updatedExtracted.transporterName,
       });
     }
     await autoLinkDocument(documentId);

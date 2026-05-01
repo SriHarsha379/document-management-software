@@ -266,6 +266,18 @@ model ExtractedData {
   weightInfo   String?
   transporter  String?  // transporter / transport company name
 
+  // Extended LR fields
+  billToParty         String?
+  shipToParty         String?
+  principalCompany    String?
+  loadingSlipNo       String?
+  companyInvoiceNo    String?
+  companyInvoiceDate  String?
+  companyEwayBillNo   String?
+  deliveryDestination String?
+  productName         String?
+  transporterName     String?
+
   // OCR metadata
   rawOcrResponse  String  // Full JSON response from OpenAI stored as string
   confidence      Float?
