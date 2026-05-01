@@ -194,12 +194,30 @@ router.post(
           const normalizedVehicle = vehicleNumber.trim().toUpperCase().replace(/\s+/g, '');
           const normalizedDate = documentDate.trim();
 
-          const group = await prisma.documentGroup.findUnique({
+          // Upsert: create the group if it doesn't exist yet so the first
+          // uploaded document always starts a group for that vehicle+date.
+          const group = await prisma.documentGroup.upsert({
             where: { vehicleNo_date: { vehicleNo: normalizedVehicle, date: normalizedDate } },
+            update: {},
+            create: { vehicleNo: normalizedVehicle, date: normalizedDate },
           });
 
-          linkedGroupId = group?.id ?? null;
-          finalStatus = group ? 'PROCESSED' : 'UNLINKED';
+          linkedGroupId = group.id;
+          finalStatus = 'PROCESSED';
+        } else if (ocrResult.fields.lrNo?.trim()) {
+          // Fallback: find an existing group via lrNo in other documents
+          const normalizedLrNo = ocrResult.fields.lrNo.trim().toUpperCase();
+          const match = await prisma.extractedData.findFirst({
+            where: {
+              lrNo: normalizedLrNo,
+              document: { groupId: { not: null } },
+            },
+            select: { document: { select: { groupId: true } } },
+          });
+          if (match?.document?.groupId) {
+            linkedGroupId = match.document.groupId;
+            finalStatus = 'PROCESSED';
+          }
         }
 
         // Update with OCR results

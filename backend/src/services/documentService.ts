@@ -7,25 +7,86 @@ const prisma = new PrismaClient();
 export { prisma };
 
 /**
- * Auto-link a document to a DocumentGroup based on vehicle number and date.
- * Creates the group if it doesn't exist.
+ * Auto-link a document to a DocumentGroup based on common fields.
+ *
+ * Matching strategy (in priority order):
+ *  1. vehicleNo + date   — upserts the group (creates it if absent)
+ *  2. lrNo               — joins an existing group that contains a document
+ *                          with the same lrNo in its extracted data
+ *  3. invoiceNo          — joins an existing group that contains a document
+ *                          with the same invoiceNo in its extracted data
+ *
+ * Returns the groupId when a match is made, null otherwise.
  */
-async function autoLinkDocumentToGroup(documentId: string, vehicleNo: string, date: string): Promise<string> {
-  const normalizedVehicle = vehicleNo.trim().toUpperCase().replace(/\s+/g, '');
-  const normalizedDate = date.trim();
+async function autoLinkDocumentToGroup(
+  documentId: string,
+  fields: {
+    vehicleNo?: string | null;
+    date?: string | null;
+    lrNo?: string | null;
+    invoiceNo?: string | null;
+  },
+): Promise<string | null> {
+  const { vehicleNo, date, lrNo, invoiceNo } = fields;
 
-  const group = await prisma.documentGroup.upsert({
-    where: { vehicleNo_date: { vehicleNo: normalizedVehicle, date: normalizedDate } },
-    update: {},
-    create: { vehicleNo: normalizedVehicle, date: normalizedDate },
-  });
+  // ── Strategy 1: vehicleNo + date (create or find group) ──────────────────
+  if (vehicleNo?.trim() && date?.trim()) {
+    const normalizedVehicle = vehicleNo.trim().toUpperCase().replace(/\s+/g, '');
+    const normalizedDate = date.trim();
 
-  await prisma.document.update({
-    where: { id: documentId },
-    data: { groupId: group.id },
-  });
+    const group = await prisma.documentGroup.upsert({
+      where: { vehicleNo_date: { vehicleNo: normalizedVehicle, date: normalizedDate } },
+      update: {},
+      create: { vehicleNo: normalizedVehicle, date: normalizedDate },
+    });
 
-  return group.id;
+    await prisma.document.update({
+      where: { id: documentId },
+      data: { groupId: group.id },
+    });
+
+    return group.id;
+  }
+
+  // ── Strategy 2: lrNo match in existing extracted data ─────────────────────
+  if (lrNo?.trim()) {
+    const normalizedLrNo = lrNo.trim().toUpperCase();
+    const match = await prisma.extractedData.findFirst({
+      where: {
+        lrNo: normalizedLrNo,
+        document: { groupId: { not: null }, id: { not: documentId } },
+      },
+      select: { document: { select: { groupId: true } } },
+    });
+    if (match?.document?.groupId) {
+      await prisma.document.update({
+        where: { id: documentId },
+        data: { groupId: match.document.groupId },
+      });
+      return match.document.groupId;
+    }
+  }
+
+  // ── Strategy 3: invoiceNo match in existing extracted data ────────────────
+  if (invoiceNo?.trim()) {
+    const normalizedInvoiceNo = invoiceNo.trim().toUpperCase();
+    const match = await prisma.extractedData.findFirst({
+      where: {
+        invoiceNo: normalizedInvoiceNo,
+        document: { groupId: { not: null }, id: { not: documentId } },
+      },
+      select: { document: { select: { groupId: true } } },
+    });
+    if (match?.document?.groupId) {
+      await prisma.document.update({
+        where: { id: documentId },
+        data: { groupId: match.document.groupId },
+      });
+      return match.document.groupId;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -83,10 +144,17 @@ export async function saveOcrResults(
     });
   });
 
-  // Auto-link to DocumentGroup if vehicle number and date are available
-  if (fields.vehicleNo && fields.date) {
+  // Auto-link to DocumentGroup using all common fields.
+  // Strategy 1 (vehicleNo+date) is tried first inside autoLinkDocumentToGroup;
+  // lrNo and invoiceNo are used as fallback when date is unavailable.
+  if (fields.vehicleNo || fields.lrNo || fields.invoiceNo) {
     await autoLinkDocument(documentId);
-    await autoLinkDocumentToGroup(documentId, fields.vehicleNo, fields.date);
+    await autoLinkDocumentToGroup(documentId, {
+      vehicleNo: fields.vehicleNo,
+      date: fields.date,
+      lrNo: fields.lrNo,
+      invoiceNo: fields.invoiceNo,
+    });
   }
 }
 
@@ -150,10 +218,16 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
     });
   });
 
-  // Re-link to Lr record and DocumentGroup when vehicle/date changed
+  // Re-link to Lr record and DocumentGroup when reviewed fields change.
+  // Use || so lrNo/invoiceNo fallback is available when date is missing.
   const updatedExtracted = await prisma.extractedData.findUnique({ where: { documentId } });
-  if (updatedExtracted?.vehicleNo && updatedExtracted.date) {
+  if (updatedExtracted?.vehicleNo || updatedExtracted?.lrNo || updatedExtracted?.invoiceNo) {
     await autoLinkDocument(documentId);
-    await autoLinkDocumentToGroup(documentId, updatedExtracted.vehicleNo, updatedExtracted.date);
+    await autoLinkDocumentToGroup(documentId, {
+      vehicleNo: updatedExtracted.vehicleNo,
+      date: updatedExtracted.date,
+      lrNo: updatedExtracted.lrNo,
+      invoiceNo: updatedExtracted.invoiceNo,
+    });
   }
 }

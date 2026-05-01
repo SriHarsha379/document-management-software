@@ -10,12 +10,9 @@ import {
   parseDateMs,
   daysBetween,
   isDateWithinTolerance,
-  scoreMatch,
   findBestMatchingLr,
   autoLinkDocument,
   relinkPendingDocuments,
-  AUTO_LINK_THRESHOLD,
-  DATE_TOLERANCE_DAYS,
 } from '../services/autoLinkService.js';
 
 // ── Normalisation helpers ────────────────────────────────────────────────────
@@ -97,182 +94,12 @@ describe('isDateWithinTolerance', () => {
   });
 });
 
-// ── scoreMatch ───────────────────────────────────────────────────────────────
-
-function makeLr(overrides: Partial<{
-  id: string; lrNo: string; invoiceNo: string | null;
-  vehicleNo: string | null; date: string | null;
-}> = {}) {
-  return {
-    id: 'lr-1',
-    lrNo: 'LR001',
-    invoiceNo: null,
-    vehicleNo: null,
-    date: null,
-    status: 'DRAFT',
-    consignor: null,
-    consignee: null,
-    source: 'INTERNAL',
-    companyId: 'co-1',
-    branchId: 'br-1',
-    createdBy: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    // Extended fields (all nullable)
-    serialNo: null,
-    principalCompany: null,
-    lrDate: null,
-    loadingSlipNo: null,
-    companyInvoiceDate: null,
-    companyInvoiceNo: null,
-    companyEwayBillNo: null,
-    billToParty: null,
-    shipToParty: null,
-    deliveryDestination: null,
-    tpt: null,
-    orderType: null,
-    productName: null,
-    quantityInBags: null,
-    quantityInMt: null,
-    tollCharges: null,
-    weighmentCharges: null,
-    unloadingAtSite: null,
-    driverBhatta: null,
-    dayOpeningKm: null,
-    dayClosingKm: null,
-    totalRunningKm: null,
-    fuelPerKm: null,
-    fuelAmount: null,
-    grandTotal: null,
-    tptCode: null,
-    transporterName: null,
-    driverName: null,
-    driverBillNo: null,
-    billDate: null,
-    billNo: null,
-    billAmount: null,
-    ...overrides,
-  };
-}
-
-describe('scoreMatch', () => {
-  it('returns confidence 1.0 for exact lrNo match', () => {
-    const { confidence, matchedFields } = scoreMatch(
-      { lrNo: 'LR001' },
-      makeLr({ lrNo: 'LR001' }),
-    );
-    expect(confidence).toBe(1.0);
-    expect(matchedFields).toContain('lrNo');
-  });
-
-  it('is case-insensitive for lrNo', () => {
-    const { confidence } = scoreMatch(
-      { lrNo: 'lr001' },
-      makeLr({ lrNo: 'LR001' }),
-    );
-    expect(confidence).toBe(1.0);
-  });
-
-  it('returns confidence 0.9 for exact invoiceNo match', () => {
-    const { confidence, matchedFields } = scoreMatch(
-      { invoiceNo: 'INV-555' },
-      makeLr({ invoiceNo: 'INV-555' }),
-    );
-    expect(confidence).toBe(0.9);
-    expect(matchedFields).toContain('invoiceNo');
-  });
-
-  it('returns confidence 0.80 for vehicleNo + same date', () => {
-    const { confidence, matchedFields } = scoreMatch(
-      { vehicleNo: 'MH12AB1234', date: '2024-03-15' },
-      makeLr({ vehicleNo: 'MH12AB1234', date: '2024-03-15' }),
-    );
-    expect(confidence).toBeCloseTo(0.80, 2);
-    expect(matchedFields).toContain('vehicleNo');
-    expect(matchedFields).toContain('date');
-  });
-
-  it('returns confidence ~0.70 for vehicleNo + 3-day tolerance', () => {
-    const { confidence } = scoreMatch(
-      { vehicleNo: 'MH12AB1234', date: '2024-03-15' },
-      makeLr({ vehicleNo: 'MH12AB1234', date: '2024-03-18' }),
-    );
-    expect(confidence).toBeCloseTo(0.70, 2);
-  });
-
-  it('returns confidence 0.4 for vehicleNo only (no date)', () => {
-    const { confidence, matchedFields } = scoreMatch(
-      { vehicleNo: 'MH12AB1234' },
-      makeLr({ vehicleNo: 'MH12AB1234' }),
-    );
-    expect(confidence).toBe(0.4);
-    expect(matchedFields).toContain('vehicleNo');
-    expect(matchedFields).not.toContain('date');
-  });
-
-  it('returns confidence 0 when nothing matches', () => {
-    const { confidence, matchedFields } = scoreMatch(
-      { lrNo: 'DIFFERENT', vehicleNo: 'XX99ZZ9999' },
-      makeLr({ lrNo: 'LR001', vehicleNo: 'MH12AB1234' }),
-    );
-    expect(confidence).toBe(0);
-    expect(matchedFields).toHaveLength(0);
-  });
-
-  it('prefers lrNo over invoiceNo when both match', () => {
-    const { confidence } = scoreMatch(
-      { lrNo: 'LR001', invoiceNo: 'INV-555' },
-      makeLr({ lrNo: 'LR001', invoiceNo: 'INV-555' }),
-    );
-    expect(confidence).toBe(1.0);
-  });
-
-  it('normalises vehicle numbers with spaces', () => {
-    const { confidence } = scoreMatch(
-      { vehicleNo: 'mh 12 ab 1234', date: '2024-03-15' },
-      makeLr({ vehicleNo: 'MH12AB1234', date: '2024-03-15' }),
-    );
-    expect(confidence).toBeGreaterThanOrEqual(0.70);
-  });
-
-  it('does not match beyond 3-day date tolerance', () => {
-    const { matchedFields } = scoreMatch(
-      { vehicleNo: 'MH12AB1234', date: '2024-03-15' },
-      makeLr({ vehicleNo: 'MH12AB1234', date: '2024-03-20' }),
-    );
-    expect(matchedFields).not.toContain('date');
-  });
-});
-
-// ── AUTO_LINK_THRESHOLD constant ─────────────────────────────────────────────
-
-describe('AUTO_LINK_THRESHOLD', () => {
-  it('is 0.6', () => {
-    expect(AUTO_LINK_THRESHOLD).toBe(0.6);
-  });
-
-  it('vehicleNo-only score (0.4) is below the threshold', () => {
-    expect(0.4).toBeLessThan(AUTO_LINK_THRESHOLD);
-  });
-
-  it('vehicleNo+date score (0.70) is above the threshold', () => {
-    expect(0.70).toBeGreaterThanOrEqual(AUTO_LINK_THRESHOLD);
-  });
-});
-
-// ── DATE_TOLERANCE_DAYS constant ─────────────────────────────────────────────
-
-describe('DATE_TOLERANCE_DAYS', () => {
-  it('is 3', () => {
-    expect(DATE_TOLERANCE_DAYS).toBe(3);
-  });
-});
-
-// ── findBestMatchingLr (mocked DB) ───────────────────────────────────────────
+// ── Mock DB ───────────────────────────────────────────────────────────────────
 
 vi.mock('../lib/db.js', () => {
   const mockDb = {
     lr: {
+      findFirst: vi.fn(),
       findMany: vi.fn(),
     },
     document: {
@@ -297,41 +124,103 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+// ── findBestMatchingLr — exact matching ───────────────────────────────────────
+
 describe('findBestMatchingLr', () => {
-  it('returns the best match when multiple candidates exist', async () => {
-    mockDb.lr.findMany.mockResolvedValue([
-      makeLr({ id: 'lr-low',  lrNo: 'OTHER', vehicleNo: 'MH12AB1234', date: '2024-03-15' }),
-      makeLr({ id: 'lr-high', lrNo: 'LR001' }),
-    ]);
-
-    const result = await findBestMatchingLr({ lrNo: 'LR001', vehicleNo: 'MH12AB1234', date: '2024-03-15' });
-    expect(result).not.toBeNull();
-    expect(result!.lrId).toBe('lr-high');
-    expect(result!.confidence).toBe(1.0);
-  });
-
-  it('returns null when no candidates exist', async () => {
-    mockDb.lr.findMany.mockResolvedValue([]);
-    const result = await findBestMatchingLr({ vehicleNo: 'XX99ZZ9999' });
-    expect(result).toBeNull();
-  });
-
   it('returns null when extracted fields are all empty', async () => {
     const result = await findBestMatchingLr({});
     expect(result).toBeNull();
-    expect(mockDb.lr.findMany).not.toHaveBeenCalled();
+    expect(mockDb.lr.findFirst).not.toHaveBeenCalled();
   });
 
-  it('scopes the DB query to the given companyId', async () => {
-    mockDb.lr.findMany.mockResolvedValue([]);
+  it('matches by lrNo (priority 1) and returns the Lr id', async () => {
+    mockDb.lr.findFirst.mockResolvedValue({ id: 'lr-1' });
+    const result = await findBestMatchingLr({ lrNo: 'LR001' });
+    expect(result).not.toBeNull();
+    expect(result!.lrId).toBe('lr-1');
+    expect(result!.matchedFields).toEqual(['lrNo']);
+  });
+
+  it('is case-insensitive for lrNo', async () => {
+    mockDb.lr.findFirst.mockResolvedValue({ id: 'lr-1' });
+    const result = await findBestMatchingLr({ lrNo: 'lr001' });
+    expect(result!.lrId).toBe('lr-1');
+  });
+
+  it('matches by invoiceNo (priority 2) when lrNo is absent', async () => {
+    mockDb.lr.findFirst.mockResolvedValueOnce({ id: 'lr-2' }); // invoiceNo lookup
+    const result = await findBestMatchingLr({ invoiceNo: 'INV-555' });
+    expect(result!.lrId).toBe('lr-2');
+    expect(result!.matchedFields).toEqual(['invoiceNo']);
+  });
+
+  it('matches by vehicleNo + exact date (priority 3)', async () => {
+    mockDb.lr.findFirst.mockResolvedValue(null); // lrNo, invoiceNo absent
+    mockDb.lr.findMany.mockResolvedValue([
+      { id: 'lr-3', vehicleNo: 'MH12AB1234', date: '2024-03-15', lrDate: null },
+    ]);
+    const result = await findBestMatchingLr({
+      vehicleNo: 'MH12AB1234',
+      date: '2024-03-15',
+    });
+    expect(result!.lrId).toBe('lr-3');
+    expect(result!.matchedFields).toContain('vehicleNo');
+    expect(result!.matchedFields).toContain('date');
+  });
+
+  it('does NOT match vehicleNo + different date (exact required)', async () => {
+    mockDb.lr.findFirst.mockResolvedValue(null);
+    mockDb.lr.findMany.mockResolvedValue([
+      { id: 'lr-3', vehicleNo: 'MH12AB1234', date: '2024-03-18', lrDate: null },
+    ]);
+    const result = await findBestMatchingLr({
+      vehicleNo: 'MH12AB1234',
+      date: '2024-03-15',
+    });
+    expect(result).toBeNull();
+  });
+
+  it('also checks lrDate field on Lr record for vehicleNo+date matching', async () => {
+    mockDb.lr.findFirst.mockResolvedValue(null);
+    mockDb.lr.findMany.mockResolvedValue([
+      { id: 'lr-4', vehicleNo: 'MH12AB1234', date: null, lrDate: '2024-03-15' },
+    ]);
+    const result = await findBestMatchingLr({
+      vehicleNo: 'MH12AB1234',
+      date: '2024-03-15',
+    });
+    expect(result!.lrId).toBe('lr-4');
+  });
+
+  it('normalises vehicle numbers with spaces', async () => {
+    mockDb.lr.findFirst.mockResolvedValue(null);
+    mockDb.lr.findMany.mockResolvedValue([
+      { id: 'lr-5', vehicleNo: 'MH12AB1234', date: '2024-03-15', lrDate: null },
+    ]);
+    const result = await findBestMatchingLr({
+      vehicleNo: 'mh 12 ab 1234',
+      date: '2024-03-15',
+    });
+    expect(result!.lrId).toBe('lr-5');
+  });
+
+  it('scopes the lrNo DB query to the given companyId', async () => {
+    mockDb.lr.findFirst.mockResolvedValue(null);
     await findBestMatchingLr({ lrNo: 'LR001' }, 'company-abc');
-    expect(mockDb.lr.findMany).toHaveBeenCalledWith(
+    expect(mockDb.lr.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ companyId: 'company-abc' }) }),
     );
   });
+
+  it('returns null when no candidates exist', async () => {
+    mockDb.lr.findFirst.mockResolvedValue(null);
+    mockDb.lr.findMany.mockResolvedValue([]);
+    const result = await findBestMatchingLr({ vehicleNo: 'XX99ZZ9999', date: '2024-01-01' });
+    expect(result).toBeNull();
+  });
 });
 
-// ── autoLinkDocument (mocked DB) ─────────────────────────────────────────────
+// ── autoLinkDocument ──────────────────────────────────────────────────────────
 
 describe('autoLinkDocument', () => {
   it('returns linked:false when no extracted data found', async () => {
@@ -344,16 +233,16 @@ describe('autoLinkDocument', () => {
     mockDb.extractedData.findUnique.mockResolvedValue({
       lrNo: 'LR999', invoiceNo: null, vehicleNo: null, date: null,
     });
-    mockDb.lr.findMany.mockResolvedValue([]);
+    mockDb.lr.findFirst.mockResolvedValue(null);
     const result = await autoLinkDocument('doc-1');
     expect(result).toEqual({ linked: false });
   });
 
-  it('returns autoLinked:true when confidence ≥ threshold', async () => {
+  it('returns linked:true when lrNo matches exactly', async () => {
     mockDb.extractedData.findUnique.mockResolvedValue({
       lrNo: 'LR001', invoiceNo: null, vehicleNo: null, date: null,
     });
-    mockDb.lr.findMany.mockResolvedValue([makeLr({ id: 'lr-1', lrNo: 'LR001' })]);
+    mockDb.lr.findFirst.mockResolvedValue({ id: 'lr-1' });
     mockDb.documentLinkRecord.upsert.mockResolvedValue({
       id: 'link-1', documentId: 'doc-1', lrId: 'lr-1',
       matchedFields: '["lrNo"]', confidence: 1.0, isManual: false, linkedAt: new Date(),
@@ -361,31 +250,12 @@ describe('autoLinkDocument', () => {
 
     const result = await autoLinkDocument('doc-1');
     expect(result.linked).toBe(true);
-    expect(result.autoLinked).toBe(true);
-    expect(result.confidence).toBe(1.0);
+    expect(result.lrId).toBe('lr-1');
     expect(result.matchedFields).toContain('lrNo');
-  });
-
-  it('returns autoLinked:false when confidence < threshold (vehicleNo only)', async () => {
-    mockDb.extractedData.findUnique.mockResolvedValue({
-      lrNo: null, invoiceNo: null, vehicleNo: 'MH12AB1234', date: null,
-    });
-    mockDb.lr.findMany.mockResolvedValue([
-      makeLr({ id: 'lr-1', lrNo: 'LR001', vehicleNo: 'MH12AB1234' }),
-    ]);
-    mockDb.documentLinkRecord.upsert.mockResolvedValue({
-      id: 'link-1', documentId: 'doc-1', lrId: 'lr-1',
-      matchedFields: '["vehicleNo"]', confidence: 0.4, isManual: false, linkedAt: new Date(),
-    });
-
-    const result = await autoLinkDocument('doc-1');
-    expect(result.linked).toBe(true);
-    expect(result.autoLinked).toBe(false);
-    expect(result.confidence).toBe(0.4);
   });
 });
 
-// ── relinkPendingDocuments (mocked DB) ───────────────────────────────────────
+// ── relinkPendingDocuments ────────────────────────────────────────────────────
 
 describe('relinkPendingDocuments', () => {
   it('returns processed=0 when no pending documents exist', async () => {
@@ -394,18 +264,18 @@ describe('relinkPendingDocuments', () => {
     expect(summary).toEqual({ processed: 0, linked: 0 });
   });
 
-  it('counts successfully auto-linked documents', async () => {
+  it('counts successfully linked documents', async () => {
     mockDb.document.findMany.mockResolvedValue([{ id: 'doc-1' }, { id: 'doc-2' }]);
 
-    // doc-1: matched with lrNo → auto-linked
+    // doc-1: matched with lrNo → linked
     // doc-2: no extracted data → not linked
     mockDb.extractedData.findUnique
       .mockResolvedValueOnce({ lrNo: 'LR001', invoiceNo: null, vehicleNo: null, date: null })
       .mockResolvedValueOnce(null);
 
-    mockDb.lr.findMany
-      .mockResolvedValueOnce([makeLr({ id: 'lr-1', lrNo: 'LR001' })])
-      .mockResolvedValueOnce([]);
+    mockDb.lr.findFirst
+      .mockResolvedValueOnce({ id: 'lr-1' })
+      .mockResolvedValueOnce(null);
 
     mockDb.documentLinkRecord.upsert.mockResolvedValue({
       id: 'link-1', documentId: 'doc-1', lrId: 'lr-1',
