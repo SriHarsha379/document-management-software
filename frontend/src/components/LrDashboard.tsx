@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import type { Lr, LrSummary } from '../types';
-import { lrApi } from '../services/api';
+import { lrApi, adminDriverAccessApi } from '../services/api';
+import type { DriverUploadDoc } from '../services/api';
 
 // ── Column definitions ────────────────────────────────────────────────────────
 
@@ -124,6 +125,8 @@ export function LrDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<LrSummary | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [driverUploads, setDriverUploads] = useState<DriverUploadDoc[]>([]);
+  const [driverUploadsTotal, setDriverUploadsTotal] = useState(0);
 
   const LIMIT = 20;
 
@@ -132,13 +135,28 @@ export function LrDashboard() {
       setLoading(true);
       setError(null);
       const offset = (page - 1) * LIMIT;
-      const [result, sumResult] = await Promise.all([
+
+      const [lrResult, summaryResult, driverResult] = await Promise.allSettled([
         lrApi.list({ limit: LIMIT, offset }),
         lrApi.summary(),
+        adminDriverAccessApi.listAllUploads({ limit: 10 }),
       ]);
-      setLrs(result.data);
-      setTotal(result.total);
-      setSummary(sumResult);
+
+      if (lrResult.status === 'fulfilled') {
+        setLrs(lrResult.value.data);
+        setTotal(lrResult.value.total);
+      } else {
+        setError('Failed to load LR records');
+      }
+
+      if (summaryResult.status === 'fulfilled') {
+        setSummary(summaryResult.value);
+      }
+
+      if (driverResult.status === 'fulfilled') {
+        setDriverUploads(driverResult.value.uploads);
+        setDriverUploadsTotal(driverResult.value.total);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard');
     } finally {
@@ -245,11 +263,70 @@ export function LrDashboard() {
           </div>
         )}
       </div>
+
+      {/* ── Driver Uploads card ────────────────────────────────────── */}
+      <div style={s.card}>
+        <div style={s.tableHeader}>
+          <span style={s.cardTitle}>🚛 Driver Uploads ({driverUploadsTotal})</span>
+          <button style={s.btnRefresh} onClick={() => void fetchData()} disabled={loading}>
+            🔄 Refresh
+          </button>
+        </div>
+
+        {driverUploads.length === 0 && (
+          <p style={s.empty}>No driver uploads yet.</p>
+        )}
+
+        {driverUploads.length > 0 && (
+          <div style={{ overflowX: 'auto' }}>
+            <div style={{ ...s.row, ...s.headRow, gridTemplateColumns: duGrid }}>
+              {duCols.map((c) => <span key={c} style={s.th}>{c}</span>)}
+            </div>
+            {driverUploads.map((u) => (
+              <div key={u.id} style={{ ...s.row, ...s.dataRow, gridTemplateColumns: duGrid }}>
+                <span style={s.cell}>{docTypeLabel(u.docType)}</span>
+                <span style={s.cell}>{u.vehicleNumber ?? '—'}</span>
+                <span style={s.cell}>{u.documentDate ?? '—'}</span>
+                <span style={s.cell}>
+                  <span style={statusStyle(u.status)}>{statusLabel(u.status)}</span>
+                </span>
+                <span style={s.cell}>{u.driverPhone ?? '—'}</span>
+                <span style={s.cell}>{new Date(u.uploadedAt).toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
+// ── Driver Uploads helpers ────────────────────────────────────────────────────
+
+const duCols = ['Doc Type', 'Vehicle No', 'Date', 'Status', 'Driver Phone', 'Uploaded At'];
+const duGrid = '120px 120px 100px 100px 130px 160px';
+
+function docTypeLabel(t: string): string {
+  if (t === 'LR') return '📄 LR';
+  if (t === 'TOLL') return '🛣️ Toll';
+  if (t === 'WEIGHMENT_SLIP') return '⚖️ Weighment';
+  return t;
+}
+
+function statusLabel(st: string): string {
+  if (st === 'PROCESSED') return 'Linked';
+  if (st === 'UNLINKED')  return 'Unlinked';
+  return 'Processing…';
+}
+
+function statusStyle(status: string): React.CSSProperties {
+  const base: React.CSSProperties = {
+    padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700,
+  };
+  if (status === 'PROCESSED') return { ...base, background: '#d1fae5', color: '#065f46' };
+  if (status === 'UNLINKED')  return { ...base, background: '#fee2e2', color: '#991b1b' };
+  return { ...base, background: '#fef9c3', color: '#854d0e' };
+}
 
 const s: Record<string, React.CSSProperties> = {
   container: { padding: '0 24px 32px' },

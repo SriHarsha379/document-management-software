@@ -89,7 +89,52 @@ router.get('/', async (_req: Request, res: Response): Promise<void> => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// PUT /api/admin/driver-access/:id/revoke
+// GET /api/admin/driver-access/all-uploads
+// List the most recent uploads across ALL drivers (for the admin dashboard).
+// Query params: limit (max 100, default 50), offset (default 0)
+// ──────────────────────────────────────────────────────────────────────────────
+router.get('/all-uploads', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const rawLimit  = parseInt(String(req.query.limit  ?? ''), 10);
+    const rawOffset = parseInt(String(req.query.offset ?? ''), 10);
+    const limit  = Math.min(Number.isNaN(rawLimit)  ? 50 : Math.max(rawLimit,  1), 100);
+    const offset = Number.isNaN(rawOffset) ? 0 : Math.max(rawOffset, 0);
+
+    const [docs, total] = await Promise.all([
+      prisma.driverUploadDocument.findMany({
+        include: {
+          tempDriverAccess: { select: { phone: true } },
+        },
+        orderBy: { uploadedAt: 'desc' },
+        take: limit,
+        skip: offset,
+      }),
+      prisma.driverUploadDocument.count(),
+    ]);
+
+    res.json({
+      uploads: docs.map((d) => ({
+        id:               d.id,
+        docType:          d.docType,
+        status:           d.status,
+        originalFilename: d.originalFilename,
+        uploadedAt:       d.uploadedAt,
+        vehicleNumber:    d.vehicleNumber,
+        documentDate:     d.documentDate,
+        linkedGroupId:    d.linkedGroupId,
+        driverPhone:      d.tempDriverAccess?.phone ?? null,
+      })),
+      total,
+      limit,
+      offset,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch all uploads';
+    res.status(500).json({ error: message });
+  }
+});
+
+
 // Revoke a specific driver access.
 // ──────────────────────────────────────────────────────────────────────────────
 router.put('/:id/revoke', async (req: Request, res: Response): Promise<void> => {

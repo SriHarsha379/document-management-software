@@ -237,6 +237,8 @@ export interface DriverUploadDoc {
   vehicleNumber: string | null;
   documentDate: string | null;
   linkedGroupId: string | null;
+  /** Present only in admin all-uploads response */
+  driverPhone?: string | null;
 }
 
 export interface DriverLoginResponse {
@@ -313,6 +315,11 @@ export const adminDriverAccessApi = {
   getUploads: async (id: string): Promise<DriverUploadDoc[]> => {
     const res = await adminDriverApi.get<{ uploads: DriverUploadDoc[] }>(`/${id}/uploads`);
     return res.data.uploads;
+  },
+
+  listAllUploads: async (params?: { limit?: number; offset?: number }): Promise<{ uploads: DriverUploadDoc[]; total: number }> => {
+    const res = await adminDriverApi.get<{ uploads: DriverUploadDoc[]; total: number }>('/all-uploads', { params });
+    return res.data;
   },
 };
 
