@@ -160,6 +160,57 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
+// GET /api/documents/groups
+// List all document groups.
+// ──────────────────────────────────────────────────────────────────────────────
+router.get('/groups', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const groups = await prisma.documentGroup.findMany({
+      include: { documents: { select: { id: true, type: true, status: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    res.json({ groups });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch groups';
+    res.status(500).json({ error: message });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// GET /api/documents/groups/:groupId
+// Get all documents in a linked group.
+// ──────────────────────────────────────────────────────────────────────────────
+router.get('/groups/:groupId', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const groupId = req.params['groupId'] as string;
+
+    const group = await prisma.documentGroup.findUnique({
+      where: { id: groupId },
+      include: { documents: { include: { extractedData: true } } },
+    });
+
+    if (!group) {
+      res.status(404).json({ error: 'Document group not found' });
+      return;
+    }
+
+    res.json({
+      group: {
+        id: group.id,
+        vehicleNo: group.vehicleNo,
+        date: group.date,
+        createdAt: group.createdAt,
+        documents: group.documents.map((d) => formatDocument(d as PrismaDocumentWithRelations)),
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch group';
+    res.status(500).json({ error: message });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
 // DELETE /api/documents/:id
 // Delete a document and its associated data.
 // ──────────────────────────────────────────────────────────────────────────────
@@ -207,57 +258,6 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
     res.json({ document: formatDocument(document) });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch document';
-    res.status(500).json({ error: message });
-  }
-});
-
-// ──────────────────────────────────────────────────────────────────────────────
-// GET /api/documents/groups/:groupId
-// Get all documents in a linked group.
-// ──────────────────────────────────────────────────────────────────────────────
-router.get('/groups/:groupId', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const groupId = req.params['groupId'] as string;
-
-    const group = await prisma.documentGroup.findUnique({
-      where: { id: groupId },
-      include: { documents: { include: { extractedData: true } } },
-    });
-
-    if (!group) {
-      res.status(404).json({ error: 'Document group not found' });
-      return;
-    }
-
-    res.json({
-      group: {
-        id: group.id,
-        vehicleNo: group.vehicleNo,
-        date: group.date,
-        createdAt: group.createdAt,
-        documents: group.documents.map((d) => formatDocument(d as PrismaDocumentWithRelations)),
-      },
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to fetch group';
-    res.status(500).json({ error: message });
-  }
-});
-
-// ──────────────────────────────────────────────────────────────────────────────
-// GET /api/documents/groups
-// List all document groups.
-// ──────────────────────────────────────────────────────────────────────────────
-router.get('/groups', async (_req: Request, res: Response): Promise<void> => {
-  try {
-    const groups = await prisma.documentGroup.findMany({
-      include: { documents: { select: { id: true, type: true, status: true } } },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    res.json({ groups });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to fetch groups';
     res.status(500).json({ error: message });
   }
 });
