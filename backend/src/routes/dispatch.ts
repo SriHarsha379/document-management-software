@@ -54,7 +54,7 @@ router.post('/send', async (req: Request, res: Response): Promise<void> => {
       ccRecipient,
     });
 
-    const statusCode = result.success ? 200 : 502;
+    const statusCode = result.success ? 200 : 422;
     res.status(statusCode).json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Dispatch failed';

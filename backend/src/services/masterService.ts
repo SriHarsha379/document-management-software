@@ -117,11 +117,16 @@ function validateTransporter(data: TransporterCreateInput): void {
 
 export async function createTransporter(companyId: string, data: TransporterCreateInput) {
   validateTransporter(data);
+  const code = str(data.code).toUpperCase();
+  const existing = await db.transporter.findFirst({ where: { companyId, code } });
+  if (existing) {
+    throw new ValidationError(`A transporter with code "${code}" already exists in this company`);
+  }
   try {
     return await db.transporter.create({
       data: {
         companyId,
-        code:        str(data.code).toUpperCase(),
+        code,
         name:        str(data.name),
         contactName: optStr(data.contactName),
         phone:       optStr(data.phone),
@@ -131,7 +136,7 @@ export async function createTransporter(companyId: string, data: TransporterCrea
     });
   } catch (err: unknown) {
     if (isUniqueConstraintError(err)) {
-      throw new ValidationError(`A transporter with code "${data.code}" already exists in this company`);
+      throw new ValidationError(`A transporter with code "${code}" already exists in this company`);
     }
     throw err;
   }
@@ -318,11 +323,16 @@ function validateParty(data: PartyCreateInput): void {
 
 export async function createParty(companyId: string, data: PartyCreateInput) {
   validateParty(data);
+  const code = str(data.code).toUpperCase();
+  const existing = await db.party.findFirst({ where: { companyId, code } });
+  if (existing) {
+    throw new ValidationError(`A party with code "${code}" already exists in this company`);
+  }
   try {
     return await db.party.create({
       data: {
         companyId,
-        code:          str(data.code).toUpperCase(),
+        code,
         name:          str(data.name),
         contactPerson: optStr(data.contactPerson),
         phone:         optStr(data.phone),
@@ -333,7 +343,7 @@ export async function createParty(companyId: string, data: PartyCreateInput) {
     });
   } catch (err: unknown) {
     if (isUniqueConstraintError(err)) {
-      throw new ValidationError(`A party with code "${data.code}" already exists in this company`);
+      throw new ValidationError(`A party with code "${code}" already exists in this company`);
     }
     throw err;
   }
@@ -544,11 +554,16 @@ function validateWorkingCentre(data: WorkingCentreCreateInput): void {
 
 export async function createWorkingCentre(companyId: string, data: WorkingCentreCreateInput) {
   validateWorkingCentre(data);
+  const code = str(data.code).toUpperCase();
+  const existing = await db.workingCentre.findFirst({ where: { companyId, code } });
+  if (existing) {
+    throw new ValidationError(`A working centre with code "${code}" already exists in this company`);
+  }
   try {
     return await db.workingCentre.create({
       data: {
         companyId,
-        code:     str(data.code).toUpperCase(),
+        code,
         name:     str(data.name),
         address:  optStr(data.address),
         branchId: optStr(data.branchId),
@@ -556,7 +571,7 @@ export async function createWorkingCentre(companyId: string, data: WorkingCentre
     });
   } catch (err: unknown) {
     if (isUniqueConstraintError(err)) {
-      throw new ValidationError(`A working centre with code "${data.code}" already exists in this company`);
+      throw new ValidationError(`A working centre with code "${code}" already exists in this company`);
     }
     throw err;
   }
