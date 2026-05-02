@@ -8,6 +8,7 @@ import { DispatchModal } from './components/DispatchModal';
 import { DispatchHistory } from './components/DispatchHistory';
 import { AdminDriverAccess } from './components/AdminDriverAccess';
 import { AdminCustomerPortalAccess } from './components/AdminCustomerPortalAccess';
+import { MasterParties } from './components/MasterParties';
 import { DriverPortal } from './components/DriverPortal';
 import { CustomerPortal } from './components/CustomerPortal';
 import { LrDashboard } from './components/LrDashboard';
@@ -15,13 +16,13 @@ import { AdminLogin } from './components/AdminLogin';
 import { authService } from './services/authService';
 import type { Document, Bundle } from './types';
 
-type View = 'dashboard' | 'list' | 'upload' | 'review' | 'bundle' | 'search' | 'dispatch' | 'drivers' | 'customers';
+type View = 'dashboard' | 'list' | 'upload' | 'review' | 'bundle' | 'search' | 'dispatch' | 'drivers' | 'customers' | 'master';
 
 // ── URL-hash routing helpers ──────────────────────────────────────────────────
 // Views that should be persisted in the URL hash.  'review' is intentionally
 // excluded because it depends on a selected-document state that cannot be
 // serialised into the URL; refreshing from that state falls back to 'list'.
-const HASH_VIEWS: View[] = ['dashboard', 'list', 'upload', 'bundle', 'search', 'dispatch', 'drivers', 'customers'];
+const HASH_VIEWS: View[] = ['dashboard', 'list', 'upload', 'bundle', 'search', 'dispatch', 'drivers', 'customers', 'master'];
 
 function viewFromHash(): View {
   const raw = window.location.hash.replace('#', '') as View;
@@ -155,6 +156,12 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
           >
             🏢 Customers
           </button>
+          <button
+            style={{ ...styles.navBtn, ...(view === 'master' ? styles.navBtnActive : {}) }}
+            onClick={() => setView('master')}
+          >
+            🗂️ Master Data
+          </button>
         </nav>
         <button style={styles.logoutBtn} onClick={onLogout}>
           Sign Out
@@ -205,6 +212,10 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
 
         {view === 'customers' && (
           <AdminCustomerPortalAccess />
+        )}
+
+        {view === 'master' && (
+          <MasterParties />
         )}
 
         {/* Dispatch modal — rendered on top of any view */}
