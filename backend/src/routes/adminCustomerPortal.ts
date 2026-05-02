@@ -1,9 +1,26 @@
 import { Router, type Request, type Response } from 'express';
 import { randomBytes } from 'crypto';
 import bcrypt from 'bcryptjs';
+import rateLimit from 'express-rate-limit';
 import { prisma } from '../services/documentService.js';
+import { requireAuth } from '../modules/auth/auth.routes.js';
 
 const router = Router();
+
+const readLimiter = rateLimit({
+  windowMs: 60 * 1000, max: 60,
+  standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down.' },
+});
+
+const writeLimiter = rateLimit({
+  windowMs: 60 * 1000, max: 20,
+  standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down.' },
+});
+
+router.use(readLimiter);
+router.use(requireAuth);
 
 // ──────────────────────────────────────────────────────────────────────────────
 // POST /api/admin/customer-portal-access
@@ -11,7 +28,7 @@ const router = Router();
 // Returns the plain-text token once — admin must share it with the customer.
 // Body: { partyId: string, loginEmail?: string, daysValid?: number }
 // ──────────────────────────────────────────────────────────────────────────────
-router.post('/', async (req: Request, res: Response): Promise<void> => {
+router.post('/', writeLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const { partyId, loginEmail: overrideEmail, daysValid } = req.body as {
       partyId?: string;
@@ -24,7 +41,15 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const party = await prisma.party.findUnique({ where: { id: partyId.trim() } });
+    // req.user is guaranteed by requireAuth middleware above
+    const trimmedPartyId = partyId.trim();
+    let party = await prisma.party.findUnique({ where: { id: trimmedPartyId } });
+    if (!party) {
+      // Fall back to lookup by code within the authenticated user's company
+      party = await prisma.party.findUnique({
+        where: { companyId_code: { companyId: req.user!.companyId, code: trimmedPartyId } },
+      });
+    }
     if (!party) {
       res.status(404).json({ error: 'Party not found' });
       return;
@@ -85,7 +110,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
 // GET /api/admin/customer-portal-access
 // List all customer portal accesses.
 // ──────────────────────────────────────────────────────────────────────────────
-router.get('/', async (_req: Request, res: Response): Promise<void> => {
+router.get('/', readLimiter, async (_req: Request, res: Response): Promise<void> => {
   try {
     const accesses = await prisma.customerPortalAccess.findMany({
       orderBy: { createdAt: 'desc' },
@@ -117,7 +142,7 @@ router.get('/', async (_req: Request, res: Response): Promise<void> => {
 // PUT /api/admin/customer-portal-access/:id/revoke
 // Revoke a specific customer portal access.
 // ──────────────────────────────────────────────────────────────────────────────
-router.put('/:id/revoke', async (req: Request, res: Response): Promise<void> => {
+router.put('/:id/revoke', writeLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params as { id: string };
 
@@ -143,7 +168,7 @@ router.put('/:id/revoke', async (req: Request, res: Response): Promise<void> => 
 // DELETE /api/admin/customer-portal-access/:id
 // Delete a specific customer portal access entry.
 // ──────────────────────────────────────────────────────────────────────────────
-router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
+router.delete('/:id', writeLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params as { id: string };
 

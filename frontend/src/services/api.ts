@@ -409,6 +409,14 @@ const adminCustomerApi = axios.create({
   timeout: 30000,
 });
 
+adminCustomerApi.interceptors.request.use((config) => {
+  const token = authService.getToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+}, (error) => Promise.reject(error));
+
 export const customerPortalApi = {
   login: async (email: string, token: string): Promise<CustomerLoginResponse> => {
     const res = await customerApi.post<CustomerLoginResponse>('/login', { email, token });
