@@ -21,6 +21,7 @@ export function AdminLogin({ onLogin }: Props) {
     try {
       const result = await authApi.login(email.trim(), password);
       authService.setToken(result.token);
+      authService.setUser(result.user);
       onLogin();
     } catch (err: unknown) {
       const message =

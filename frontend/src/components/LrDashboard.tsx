@@ -3,6 +3,7 @@ import type { Lr, LrSummary } from '../types';
 import { lrApi, adminDriverAccessApi } from '../services/api';
 import type { DriverUploadDoc } from '../services/api';
 import { LrEditModal } from './LrEditModal';
+import { useCurrentUser, PERM } from '../contexts/UserContext';
 
 // ── Column definitions ────────────────────────────────────────────────────────
 
@@ -119,6 +120,10 @@ const pie: Record<string, React.CSSProperties> = {
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 
 export function LrDashboard() {
+  const { hasPermission } = useCurrentUser();
+  const canUpdate = hasPermission(PERM.LR_UPDATE);
+  const canCreate = hasPermission(PERM.LR_CREATE);
+
   const [lrs, setLrs] = useState<Lr[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -185,8 +190,9 @@ export function LrDashboard() {
   };
 
   const visibleCols = expanded ? ALL_COLUMNS : ALL_COLUMNS.slice(0, VISIBLE_COUNT);
-  // +60px for the Edit action column
-  const gridTemplate = visibleCols.map((c) => `${c.width}px`).join(' ') + (expanded ? ' 60px' : ' 40px 60px');
+  // Add edit column width only for users with lr.update permission
+  const editColSuffix = canUpdate ? ' 60px' : '';
+  const gridTemplate = visibleCols.map((c) => `${c.width}px`).join(' ') + (expanded ? editColSuffix : ` 40px${editColSuffix}`);
   const pages = Math.max(1, Math.ceil(total / LIMIT));
 
   return (
@@ -197,14 +203,16 @@ export function LrDashboard() {
       <div style={s.card}>
         <div style={s.tableHeader}>
           <h3 style={{ ...s.cardTitle, margin: 0 }}>Invoices vs LR Records</h3>
-          <button
-            style={syncing ? s.btnSyncDisabled : s.btnSync}
-            onClick={() => void handleSync()}
-            disabled={syncing}
-            title="Scan all uploaded LR documents and auto-create LR records from them"
-          >
-            {syncing ? '⏳ Syncing…' : '🔄 Sync LR Records from Uploads'}
-          </button>
+          {canCreate && (
+            <button
+              style={syncing ? s.btnSyncDisabled : s.btnSync}
+              onClick={() => void handleSync()}
+              disabled={syncing}
+              title="Scan all uploaded LR documents and auto-create LR records from them"
+            >
+              {syncing ? '⏳ Syncing…' : '🔄 Sync LR Records from Uploads'}
+            </button>
+          )}
         </div>
         {syncResult !== null && (
           <p style={s.syncInfo}>
@@ -252,7 +260,7 @@ export function LrDashboard() {
                   </button>
                 </span>
               )}
-              <span style={s.th}>Edit</span>
+              {canUpdate && <span style={s.th}>Edit</span>}
             </div>
 
             {/* Data rows */}
@@ -274,15 +282,17 @@ export function LrDashboard() {
                     </button>
                   </span>
                 )}
-                <span style={s.cell}>
-                  <button
-                    style={s.editBtn}
-                    onClick={() => setEditingLr(lr)}
-                    title="Edit this LR record"
-                  >
-                    ✏️
-                  </button>
-                </span>
+                {canUpdate && (
+                  <span style={s.cell}>
+                    <button
+                      style={s.editBtn}
+                      onClick={() => setEditingLr(lr)}
+                      title="Edit this LR record"
+                    >
+                      ✏️
+                    </button>
+                  </span>
+                )}
               </div>
             ))}
           </div>

@@ -90,7 +90,7 @@ function PartyForm({
 // ─────────────────────────────────────────────────────────────────────────────
 // Main component
 // ─────────────────────────────────────────────────────────────────────────────
-export function MasterParties() {
+export function MasterParties({ canManage = false }: { canManage?: boolean }) {
   const [parties, setParties] = useState<Party[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -218,15 +218,17 @@ export function MasterParties() {
           />
           Show inactive
         </label>
-        <button
-          style={btn}
-          onClick={() => {
-            setShowCreate(true);
-            setCreateError(null);
-          }}
-        >
-          ➕ Add Party
-        </button>
+        {canManage && (
+          <button
+            style={btn}
+            onClick={() => {
+              setShowCreate(true);
+              setCreateError(null);
+            }}
+          >
+            ➕ Add Party
+          </button>
+        )}
       </div>
 
       {/* Create form */}
@@ -291,10 +293,12 @@ export function MasterParties() {
                   {p.address && <div style={partyMeta}>{p.address}</div>}
                 </div>
                 <div style={partyActions}>
-                  <button style={btnSmall} onClick={() => { setEditId(p.id); setEditError(null); }}>
-                    ✏️ Edit
-                  </button>
-                  {p.isActive ? (
+                  {canManage && (
+                    <button style={btnSmall} onClick={() => { setEditId(p.id); setEditError(null); }}>
+                      ✏️ Edit
+                    </button>
+                  )}
+                  {canManage && (p.isActive ? (
                     <button style={btnSmallOrange} onClick={() => handleDeactivate(p.id, p.name)}>
                       Deactivate
                     </button>
@@ -302,7 +306,7 @@ export function MasterParties() {
                     <button style={btnSmallGreen} onClick={() => handleReactivate(p.id)}>
                       Reactivate
                     </button>
-                  )}
+                  ))}
                 </div>
               </div>
             )}
