@@ -2,8 +2,11 @@ import { Router, type Request, type Response } from 'express';
 import { randomBytes } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../services/documentService.js';
+import { requireAuth } from '../modules/auth/auth.routes.js';
 
 const router = Router();
+
+router.use(requireAuth);
 
 // ──────────────────────────────────────────────────────────────────────────────
 // POST /api/admin/customer-portal-access
@@ -24,7 +27,14 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const party = await prisma.party.findUnique({ where: { id: partyId.trim() } });
+    const trimmedPartyId = partyId.trim();
+    let party = await prisma.party.findUnique({ where: { id: trimmedPartyId } });
+    if (!party) {
+      // Fall back to lookup by code within the authenticated user's company
+      party = await prisma.party.findUnique({
+        where: { companyId_code: { companyId: req.user!.companyId, code: trimmedPartyId } },
+      });
+    }
     if (!party) {
       res.status(404).json({ error: 'Party not found' });
       return;
