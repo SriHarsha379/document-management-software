@@ -24,9 +24,11 @@ export function DocumentUpload({ onDocumentReady }: Props) {
     setError(null); setFile(selected);
     if (selected.type.startsWith('image/')) {
       const objectUrl = URL.createObjectURL(selected);
-      // createObjectURL always returns a blob: URI; validate before use
+      // Validate that the URL has a blob: protocol before using it as an image source.
+      // URL.createObjectURL always returns a blob: URI; this check prevents a
+      // hypothetical non-blob value from reaching the img src attribute.
       const parsed = new URL(objectUrl);
-      if (parsed.protocol === 'blob:') setPreview(objectUrl);
+      if (parsed.protocol === 'blob:') setPreview(parsed.href);
     } else { setPreview(null); }
   };
 
