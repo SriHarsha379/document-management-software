@@ -19,6 +19,7 @@ const writeLimiter = rateLimit({
   message: { error: 'Too many requests. Please slow down.' },
 });
 
+router.use(readLimiter);
 router.use(requireAuth);
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -40,17 +41,13 @@ router.post('/', writeLimiter, async (req: Request, res: Response): Promise<void
       return;
     }
 
-    if (!req.user) {
-      res.status(401).json({ error: 'Unauthorized' });
-      return;
-    }
-
+    // req.user is guaranteed by requireAuth middleware above
     const trimmedPartyId = partyId.trim();
     let party = await prisma.party.findUnique({ where: { id: trimmedPartyId } });
     if (!party) {
       // Fall back to lookup by code within the authenticated user's company
       party = await prisma.party.findUnique({
-        where: { companyId_code: { companyId: req.user.companyId, code: trimmedPartyId } },
+        where: { companyId_code: { companyId: req.user!.companyId, code: trimmedPartyId } },
       });
     }
     if (!party) {
