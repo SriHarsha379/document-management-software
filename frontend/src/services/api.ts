@@ -456,10 +456,59 @@ export interface PartyDropdownItem {
   name: string;
 }
 
+export interface Party {
+  id: string;
+  code: string;
+  name: string;
+  contactPerson: string | null;
+  phone: string | null;
+  email: string | null;
+  gstNo: string | null;
+  address: string | null;
+  isActive: boolean;
+  companyId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PartyCreateInput {
+  code: string;
+  name: string;
+  contactPerson?: string;
+  phone?: string;
+  email?: string;
+  gstNo?: string;
+  address?: string;
+}
+
+export interface PaginatedParties {
+  items: Party[];
+  pagination: { total: number; page: number; limit: number; pages: number };
+}
+
 export const masterApi = {
   partiesDropdown: async (): Promise<PartyDropdownItem[]> => {
     const res = await api.get<PartyDropdownItem[]>('/master/parties/dropdown');
     return res.data;
+  },
+
+  listParties: async (params?: { page?: number; limit?: number; search?: string; includeInactive?: boolean }): Promise<PaginatedParties> => {
+    const res = await api.get<PaginatedParties>('/master/parties', { params });
+    return res.data;
+  },
+
+  createParty: async (data: PartyCreateInput): Promise<Party> => {
+    const res = await api.post<Party>('/master/parties', data);
+    return res.data;
+  },
+
+  updateParty: async (id: string, data: Partial<PartyCreateInput> & { isActive?: boolean }): Promise<Party> => {
+    const res = await api.put<Party>(`/master/parties/${id}`, data);
+    return res.data;
+  },
+
+  deleteParty: async (id: string): Promise<void> => {
+    await api.delete(`/master/parties/${id}`);
   },
 };
 
