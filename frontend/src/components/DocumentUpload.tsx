@@ -24,7 +24,9 @@ export function DocumentUpload({ onDocumentReady }: Props) {
     setError(null); setFile(selected);
     if (selected.type.startsWith('image/')) {
       const objectUrl = URL.createObjectURL(selected);
-      if (objectUrl.startsWith('blob:')) setPreview(objectUrl);
+      // createObjectURL always returns a blob: URI; validate before use
+      const parsed = new URL(objectUrl);
+      if (parsed.protocol === 'blob:') setPreview(objectUrl);
     } else { setPreview(null); }
   };
 

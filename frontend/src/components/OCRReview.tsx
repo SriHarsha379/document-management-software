@@ -102,7 +102,7 @@ export function OCRReview({ document, onSaved, onCancel }: Props) {
           )}
 
           <div style={fieldGroup}>
-            <label style={label}>Document Type</label>
+            <label style={labelStyle}>Document Type</label>
             <select style={inputStyle} value={form.documentType} onChange={(e) => handleChange('documentType', e.target.value)}>
               {DOCUMENT_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
             </select>
@@ -118,12 +118,12 @@ export function OCRReview({ document, onSaved, onCancel }: Props) {
           </div>
 
           <div style={fieldGroup}>
-            <label style={label}>Weight Info</label>
+            <label style={labelStyle}>Weight Info</label>
             <input style={inputStyle} value={form.weightInfo ?? ''} onChange={(e) => handleChange('weightInfo', e.target.value)} placeholder="Gross: 15000 kg, Tare: 5000 kg, Net: 10000 kg" />
           </div>
 
           <div style={fieldGroup}>
-            <label style={label}>Party Names (one per line)</label>
+            <label style={labelStyle}>Party Names (one per line)</label>
             <textarea
               style={{ ...inputStyle, resize: 'vertical' as const }}
               value={partyNamesText}
@@ -168,12 +168,12 @@ export function OCRReview({ document, onSaved, onCancel }: Props) {
   );
 }
 
-function Field({ label: lbl, value, onChange, placeholder, highlight }: {
+function Field({ label, value, onChange, placeholder, highlight }: {
   label: string; value: string; onChange: (v: string) => void; placeholder?: string; highlight?: boolean;
 }) {
   return (
     <div style={fieldGroup}>
-      <label style={{ ...label, ...(highlight ? { color: '#e97a00' } : {}) }}>{lbl}</label>
+      <label style={{ ...labelStyle, ...(highlight ? { color: '#e97a00' } : {}) }}>{label}</label>
       <input
         style={{ ...inputStyle, ...(highlight ? { border: '2px solid #e97a00', background: '#fff8f0' } : {}) }}
         value={value}
@@ -185,5 +185,5 @@ function Field({ label: lbl, value, onChange, placeholder, highlight }: {
 }
 
 const fieldGroup: React.CSSProperties = { marginBottom: 14 };
-const label: React.CSSProperties = { display: 'block', fontSize: 11, fontWeight: 700, color: '#555', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' };
+const labelStyle: React.CSSProperties = { display: 'block', fontSize: 11, fontWeight: 700, color: '#555', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' };
 const inputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px', border: '1.5px solid #d0d0e0', borderRadius: 7, fontSize: 14, boxSizing: 'border-box', outline: 'none', fontFamily: 'inherit', color: '#1a1a2e', transition: 'border-color 0.15s, box-shadow 0.15s' };

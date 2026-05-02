@@ -312,9 +312,9 @@ const m: Record<string, React.CSSProperties> = {
     zIndex: 1000,
   },
   modal: {
-    background: '#fff', borderRadius: 10, width: '90%', maxWidth: 780,
+    background: '#fff', borderRadius: 14, width: '90%', maxWidth: 780,
     maxHeight: '90vh', display: 'flex', flexDirection: 'column',
-    boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+    boxShadow: '0 8px 40px rgba(0,0,0,0.18)',
   },
   header: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -339,7 +339,7 @@ const m: Record<string, React.CSSProperties> = {
     marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.04em',
   },
   input: {
-    width: '100%', padding: '7px 10px', border: '1px solid #d0d0e0',
+    width: '100%', padding: '7px 10px', border: '1.5px solid #d0d0e0',
     borderRadius: 6, fontSize: 13, boxSizing: 'border-box',
   },
   error: { color: '#e53e3e', fontSize: 13, margin: '0 20px 8px' },
