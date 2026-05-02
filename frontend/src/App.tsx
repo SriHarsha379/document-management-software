@@ -14,6 +14,7 @@ import { CustomerPortal } from './components/CustomerPortal';
 import { LrDashboard } from './components/LrDashboard';
 import { AdminLogin } from './components/AdminLogin';
 import { authService } from './services/authService';
+import { UserProvider, useCurrentUser, PERM } from './contexts/UserContext';
 import type { Document, Bundle } from './types';
 
 type View = 'dashboard' | 'list' | 'upload' | 'review' | 'bundle' | 'search' | 'dispatch' | 'drivers' | 'customers' | 'master';
@@ -56,13 +57,41 @@ function App() {
     return <AdminLogin onLogin={() => setIsAuthenticated(true)} />;
   }
 
-  return <AdminApp onLogout={() => { authService.clearToken(); setIsAuthenticated(false); }} />;
+  return (
+    <UserProvider>
+      <AdminApp onLogout={() => { authService.clearToken(); setIsAuthenticated(false); }} />
+    </UserProvider>
+  );
 }
 
 function AdminApp({ onLogout }: { onLogout: () => void }) {
+  const { user, hasPermission } = useCurrentUser();
   const [view, setViewState] = useState<View>(viewFromHash);
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // ── Permission flags for nav / actions ──────────────────────────────────
+  const canUpload   = hasPermission(PERM.DOCUMENT_UPLOAD);
+  const canBundle   = hasPermission(PERM.COMMUNICATION_SEND);
+  const canDispatch = hasPermission(PERM.COMMUNICATION_READ);
+  const canManageUsers  = hasPermission(PERM.USER_MANAGE);
+  const canManageMaster = hasPermission(PERM.MASTER_MANAGE);
+  const canReadMaster   = hasPermission(PERM.MASTER_READ);
+
+  // If the initial hash points to a tab the user cannot access, fall back to dashboard.
+  // Intentionally run only on mount — we only want to correct the initial URL-hash view,
+  // not redirect on every permission re-check.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const inaccessible =
+      (view === 'upload'    && !canUpload) ||
+      (view === 'bundle'    && !canBundle) ||
+      (view === 'dispatch'  && !canDispatch) ||
+      (view === 'drivers'   && !canManageUsers) ||
+      (view === 'customers' && !canManageUsers) ||
+      (view === 'master'    && !canReadMaster);
+    if (inaccessible) setViewState('dashboard');
+  }, []); // only runs on mount to correct stale URL-hash navigation
 
   // Keep the URL hash in sync when the view changes programmatically.
   const setView = (v: View) => {
@@ -120,52 +149,71 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
           >
             📋 Documents
           </button>
-          <button
-            style={{ ...styles.navBtn, ...(view === 'upload' ? styles.navBtnActive : {}) }}
-            onClick={() => setView('upload')}
-          >
-            ➕ Upload
-          </button>
-          <button
-            style={{ ...styles.navBtn, ...(view === 'bundle' ? styles.navBtnActive : {}) }}
-            onClick={() => setView('bundle')}
-          >
-            📦 Bundle
-          </button>
+          {canUpload && (
+            <button
+              style={{ ...styles.navBtn, ...(view === 'upload' ? styles.navBtnActive : {}) }}
+              onClick={() => setView('upload')}
+            >
+              ➕ Upload
+            </button>
+          )}
+          {canBundle && (
+            <button
+              style={{ ...styles.navBtn, ...(view === 'bundle' ? styles.navBtnActive : {}) }}
+              onClick={() => setView('bundle')}
+            >
+              📦 Bundle
+            </button>
+          )}
           <button
             style={{ ...styles.navBtn, ...(view === 'search' ? styles.navBtnActive : {}) }}
             onClick={() => setView('search')}
           >
             🔍 Search
           </button>
-          <button
-            style={{ ...styles.navBtn, ...(view === 'dispatch' ? styles.navBtnActive : {}) }}
-            onClick={() => setView('dispatch')}
-          >
-            📤 Dispatch
-          </button>
-          <button
-            style={{ ...styles.navBtn, ...(view === 'drivers' ? styles.navBtnActive : {}) }}
-            onClick={() => setView('drivers')}
-          >
-            🚛 Drivers
-          </button>
-          <button
-            style={{ ...styles.navBtn, ...(view === 'customers' ? styles.navBtnActive : {}) }}
-            onClick={() => setView('customers')}
-          >
-            🏢 Customers
-          </button>
-          <button
-            style={{ ...styles.navBtn, ...(view === 'master' ? styles.navBtnActive : {}) }}
-            onClick={() => setView('master')}
-          >
-            🗂️ Master Data
-          </button>
+          {canDispatch && (
+            <button
+              style={{ ...styles.navBtn, ...(view === 'dispatch' ? styles.navBtnActive : {}) }}
+              onClick={() => setView('dispatch')}
+            >
+              📤 Dispatch
+            </button>
+          )}
+          {canManageUsers && (
+            <button
+              style={{ ...styles.navBtn, ...(view === 'drivers' ? styles.navBtnActive : {}) }}
+              onClick={() => setView('drivers')}
+            >
+              🚛 Drivers
+            </button>
+          )}
+          {canManageUsers && (
+            <button
+              style={{ ...styles.navBtn, ...(view === 'customers' ? styles.navBtnActive : {}) }}
+              onClick={() => setView('customers')}
+            >
+              🏢 Customers
+            </button>
+          )}
+          {canReadMaster && (
+            <button
+              style={{ ...styles.navBtn, ...(view === 'master' ? styles.navBtnActive : {}) }}
+              onClick={() => setView('master')}
+            >
+              🗂️ Master Data
+            </button>
+          )}
         </nav>
-        <button style={styles.logoutBtn} onClick={onLogout}>
-          Sign Out
-        </button>
+        <div style={styles.headerRight}>
+          {user?.isSuperAdmin && (
+            <span style={styles.superAdminBadge} title="You have cross-company super-admin access">
+              🌐 Super Admin
+            </span>
+          )}
+          <button style={styles.logoutBtn} onClick={onLogout}>
+            Sign Out
+          </button>
+        </div>
       </header>
 
       {/* Main content */}
@@ -178,7 +226,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
           <DocumentList onSelect={handleSelectFromList} refreshTrigger={refreshKey} />
         )}
 
-        {view === 'upload' && (
+        {view === 'upload' && canUpload && (
           <DocumentUpload onDocumentReady={handleDocumentReady} />
         )}
 
@@ -194,7 +242,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
           />
         )}
 
-        {view === 'bundle' && (
+        {view === 'bundle' && canBundle && (
           <DocumentBundler onBundleSaved={handleBundleSaved} />
         )}
 
@@ -202,20 +250,20 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
           <SmartSearch />
         )}
 
-        {view === 'dispatch' && (
+        {view === 'dispatch' && canDispatch && (
           <DispatchHistory />
         )}
 
-        {view === 'drivers' && (
+        {view === 'drivers' && canManageUsers && (
           <AdminDriverAccess />
         )}
 
-        {view === 'customers' && (
+        {view === 'customers' && canManageUsers && (
           <AdminCustomerPortalAccess />
         )}
 
-        {view === 'master' && (
-          <MasterParties />
+        {view === 'master' && canReadMaster && (
+          <MasterParties canManage={canManageMaster} />
         )}
 
         {/* Dispatch modal — rendered on top of any view */}
@@ -251,6 +299,17 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'background 0.15s',
   },
   navBtnActive: { background: '#4361ee' },
+  headerRight: { display: 'flex', alignItems: 'center', gap: 10 },
+  superAdminBadge: {
+    padding: '5px 10px',
+    background: 'rgba(99,102,241,0.35)',
+    border: '1px solid rgba(165,180,252,0.5)',
+    borderRadius: 6,
+    fontSize: 12,
+    fontWeight: 700,
+    color: '#c7d2fe',
+    letterSpacing: '0.02em',
+  },
   logoutBtn: {
     padding: '7px 14px',
     border: '1px solid rgba(255,255,255,0.3)',

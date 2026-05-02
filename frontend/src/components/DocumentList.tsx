@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import type { Document, DocumentType, DocumentStatus } from '../types';
 import { documentsApi } from '../services/api';
+import { useCurrentUser, PERM } from '../contexts/UserContext';
 
 interface Props {
   onSelect: (doc: Document) => void;
@@ -31,7 +32,13 @@ const STATUS_LABELS: Record<DocumentStatus, string> = {
   SAVED: '✅ Saved',
 };
 
+const GRID_WITH_DELETE    = '2fr 90px 120px 110px 130px 80px 100px 90px';
+const GRID_WITHOUT_DELETE = '2fr 90px 120px 110px 130px 80px 100px';
+
 export function DocumentList({ onSelect, refreshTrigger }: Props) {
+  const { hasPermission } = useCurrentUser();
+  const canDelete = hasPermission(PERM.DOCUMENT_DELETE);
+
   const [documents, setDocuments] = useState<Document[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -140,7 +147,7 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
 
       {documents.length > 0 && (
         <div style={styles.table}>
-          <div style={styles.tableHeader}>
+          <div style={{ ...styles.tableHeader, gridTemplateColumns: canDelete ? GRID_WITH_DELETE : GRID_WITHOUT_DELETE }}>
             <span>File</span>
             <span>Type</span>
             <span>Vehicle No</span>
@@ -148,14 +155,14 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
             <span>Status</span>
             <span>Group</span>
             <span></span>
-            <span></span>
+            {canDelete && <span></span>}
           </div>
           {documents.map((doc) => {
             const missingVehicle = !doc.extractedData?.vehicleNo;
             const missingDate = !doc.extractedData?.date;
             const needsFix = !doc.groupId && (missingVehicle || missingDate);
             return (
-              <div key={doc.id} style={{ ...styles.row, ...(needsFix ? styles.rowWarning : {}) }}>
+              <div key={doc.id} style={{ ...styles.row, ...(needsFix ? styles.rowWarning : {}), gridTemplateColumns: canDelete ? GRID_WITH_DELETE : GRID_WITHOUT_DELETE }}>
                 <span style={styles.filename} title={doc.originalFilename}>
                   {doc.originalFilename.length > 28
                     ? doc.originalFilename.slice(0, 26) + '…'
@@ -188,15 +195,17 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
                     {needsFix ? '✏️ Fix Fields' : doc.status === 'PENDING_REVIEW' ? '✏️ Review' : '👁 View'}
                   </button>
                 </span>
-                <span>
-                  <button
-                    style={styles.btnDelete}
-                    onClick={() => void handleDelete(doc)}
-                    disabled={deletingId === doc.id}
-                  >
-                    {deletingId === doc.id ? '…' : '🗑 Delete'}
-                  </button>
-                </span>
+                {canDelete && (
+                  <span>
+                    <button
+                      style={styles.btnDelete}
+                      onClick={() => void handleDelete(doc)}
+                      disabled={deletingId === doc.id}
+                    >
+                      {deletingId === doc.id ? '…' : '🗑 Delete'}
+                    </button>
+                  </span>
+                )}
               </div>
             );
           })}
@@ -234,12 +243,12 @@ const styles: Record<string, React.CSSProperties> = {
   empty: { textAlign: 'center', padding: 40, color: '#888' },
   table: { border: '1px solid #e0e0f0', borderRadius: 8, overflow: 'hidden' },
   tableHeader: {
-    display: 'grid', gridTemplateColumns: '2fr 90px 120px 110px 130px 80px 100px 90px',
+    display: 'grid',
     background: '#f5f6ff', padding: '10px 12px', fontSize: 12, fontWeight: 700,
     color: '#666', textTransform: 'uppercase', letterSpacing: '0.05em', gap: 8,
   },
   row: {
-    display: 'grid', gridTemplateColumns: '2fr 90px 120px 110px 130px 80px 100px 90px',
+    display: 'grid',
     padding: '10px 12px', borderTop: '1px solid #eee', alignItems: 'center',
     fontSize: 13, gap: 8, background: '#fff',
   },
