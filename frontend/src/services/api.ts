@@ -439,6 +439,22 @@ export const customerPortalApi = {
   downloadUrl: (documentId: string): string => `/api/customer/documents/${documentId}/download`,
 };
 
+// ── Master Data API ───────────────────────────────────────────────────────────
+
+export interface PartyDropdownItem {
+  id: string;
+  label: string;
+  code: string;
+  name: string;
+}
+
+export const masterApi = {
+  partiesDropdown: async (): Promise<PartyDropdownItem[]> => {
+    const res = await api.get<PartyDropdownItem[]>('/master/parties/dropdown');
+    return res.data;
+  },
+};
+
 export const adminCustomerPortalApi = {
   create: async (
     partyId: string,

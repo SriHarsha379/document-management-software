@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { adminCustomerPortalApi } from '../services/api';
-import type { CustomerPortalAccess } from '../services/api';
+import { adminCustomerPortalApi, masterApi } from '../services/api';
+import type { CustomerPortalAccess, PartyDropdownItem } from '../services/api';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -63,6 +63,11 @@ export function AdminCustomerPortalAccess() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Party dropdown state
+  const [parties, setParties] = useState<PartyDropdownItem[]>([]);
+  const [partiesLoading, setPartiesLoading] = useState(true);
+  const [partySearch, setPartySearch] = useState('');
+
   // Create form state
   const [partyId, setPartyId] = useState('');
   const [loginEmail, setLoginEmail] = useState('');
@@ -84,7 +89,26 @@ export function AdminCustomerPortalAccess() {
     }
   };
 
-  useEffect(() => { void load(); }, []);
+  const loadParties = async () => {
+    setPartiesLoading(true);
+    try {
+      const data = await masterApi.partiesDropdown();
+      setParties(data);
+    } catch {
+      // Non-fatal: user can still type a party ID manually if dropdown fails
+      setParties([]);
+    } finally {
+      setPartiesLoading(false);
+    }
+  };
+
+  useEffect(() => { void load(); void loadParties(); }, []);
+
+  const filteredParties = partySearch.trim()
+    ? parties.filter((p) =>
+        p.label.toLowerCase().includes(partySearch.toLowerCase())
+      )
+    : parties;
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,6 +123,7 @@ export function AdminCustomerPortalAccess() {
       );
       setNewAccess({ access: result.access, token: result.generatedToken });
       setPartyId('');
+      setPartySearch('');
       setLoginEmail('');
       setDaysValid('30');
       await load();
@@ -144,14 +169,51 @@ export function AdminCustomerPortalAccess() {
         <form onSubmit={handleCreate} style={form}>
           <div style={fieldRow}>
             <div style={fieldGroup}>
-              <label style={label}>Party ID *</label>
-              <input
-                style={input}
-                placeholder="Party UUID from master data"
-                value={partyId}
-                onChange={(e) => setPartyId(e.target.value)}
-                required
-              />
+              <label style={label}>Party *</label>
+              {partiesLoading ? (
+                <div style={hint}>Loading parties…</div>
+              ) : parties.length > 0 ? (
+                <>
+                  <input
+                    style={input}
+                    placeholder="Search party by name or code…"
+                    value={partySearch}
+                    onChange={(e) => {
+                      const search = e.target.value;
+                      setPartySearch(search);
+                      // Clear selection only if the current party is no longer
+                      // visible in the filtered results
+                      if (partyId) {
+                        const stillVisible = parties.some(
+                          (p) =>
+                            p.id === partyId &&
+                            p.label.toLowerCase().includes(search.toLowerCase())
+                        );
+                        if (!stillVisible) setPartyId('');
+                      }
+                    }}
+                  />
+                  <select
+                    style={{ ...input, marginTop: 4 }}
+                    value={partyId}
+                    onChange={(e) => setPartyId(e.target.value)}
+                    required
+                  >
+                    <option value="">— Select a party —</option>
+                    {filteredParties.map((p) => (
+                      <option key={p.id} value={p.id}>{p.label}</option>
+                    ))}
+                  </select>
+                </>
+              ) : (
+                <input
+                  style={input}
+                  placeholder="Party UUID from master data"
+                  value={partyId}
+                  onChange={(e) => setPartyId(e.target.value)}
+                  required
+                />
+              )}
             </div>
             <div style={fieldGroup}>
               <label style={label}>Login Email (optional — defaults to Party email)</label>
