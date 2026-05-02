@@ -375,7 +375,7 @@ export function DocumentBundler({ onBundleSaved }: Props) {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: { maxWidth: 800, margin: '0 auto', padding: 24 },
+  container: { maxWidth: 800, margin: '0 auto', padding: 0 },
   title: { fontSize: 22, fontWeight: 700, color: '#1a1a2e', marginBottom: 4, marginTop: 16 },
   error: { color: '#e53e3e', fontSize: 13, marginBottom: 8, padding: '8px 12px', background: '#fff5f5', borderRadius: 6 },
   loading: { color: '#888', fontStyle: 'italic', fontSize: 14 },
@@ -401,7 +401,7 @@ const styles: Record<string, React.CSSProperties> = {
   // Group grid
   groupGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 8 },
   groupCard: {
-    border: '2px solid #e0e0f0', borderRadius: 8, padding: '12px 14px',
+    border: '2px solid #e0e0f0', borderRadius: 10, padding: '12px 14px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
     cursor: 'pointer', background: '#fff', transition: 'all 0.15s',
   },
   groupCardSelected: { border: '2px solid #4361ee', background: '#eef0ff' },
@@ -412,7 +412,7 @@ const styles: Record<string, React.CSSProperties> = {
   // Recipient grid
   recipientGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 8 },
   recipientCard: {
-    border: '2px solid #e0e0f0', borderRadius: 8, padding: 16,
+    border: '2px solid #e0e0f0', borderRadius: 10, padding: 16,
     cursor: 'pointer', background: '#fff', transition: 'all 0.15s', textAlign: 'center',
   },
   recipientCardSelected: { border: '2px solid #4361ee', background: '#eef0ff' },

@@ -297,8 +297,8 @@ const container: React.CSSProperties = { padding: '0 16px' };
 const title: React.CSSProperties = { fontSize: 22, fontWeight: 700, color: '#1a1a2e', margin: '0 0 6px' };
 const subtitle: React.CSSProperties = { fontSize: 14, color: '#666', margin: '0 0 20px' };
 const card: React.CSSProperties = {
-  background: '#fff', borderRadius: 12, padding: '20px 24px',
-  marginBottom: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+  background: '#fff', borderRadius: 12, padding: '20px 24px', border: '1px solid #e0e0f0',
+  marginBottom: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
 };
 const sectionTitle: React.CSSProperties = { fontSize: 16, fontWeight: 700, margin: '0 0 14px', color: '#1a1a2e' };
 const form: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 12 };

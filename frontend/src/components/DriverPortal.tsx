@@ -373,7 +373,7 @@ const s: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'flex-start',
     padding: '16px',
-    fontFamily: "'Segoe UI', system-ui, sans-serif",
+    fontFamily: "'Inter', system-ui, sans-serif",
   },
   card: {
     background: '#fff',

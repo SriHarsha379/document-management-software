@@ -19,10 +19,6 @@ import type { Document, Bundle } from './types';
 
 type View = 'dashboard' | 'list' | 'upload' | 'review' | 'bundle' | 'search' | 'dispatch' | 'drivers' | 'customers' | 'master';
 
-// ── URL-hash routing helpers ──────────────────────────────────────────────────
-// Views that should be persisted in the URL hash.  'review' is intentionally
-// excluded because it depends on a selected-document state that cannot be
-// serialised into the URL; refreshing from that state falls back to 'list'.
 const HASH_VIEWS: View[] = ['dashboard', 'list', 'upload', 'bundle', 'search', 'dispatch', 'drivers', 'customers', 'master'];
 
 function viewFromHash(): View {
@@ -35,27 +31,15 @@ function App() {
   const [isCustomerPortal, setIsCustomerPortal] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(() => authService.isAuthenticated());
 
-  // Route /driver path to the driver portal, /customer-portal to the customer portal
   useEffect(() => {
     const path = window.location.pathname;
-    if (path.startsWith('/driver')) {
-      setIsDriverPortal(true);
-    } else if (path.startsWith('/customer-portal')) {
-      setIsCustomerPortal(true);
-    }
+    if (path.startsWith('/driver')) setIsDriverPortal(true);
+    else if (path.startsWith('/customer-portal')) setIsCustomerPortal(true);
   }, []);
 
-  if (isDriverPortal) {
-    return <DriverPortal />;
-  }
-
-  if (isCustomerPortal) {
-    return <CustomerPortal />;
-  }
-
-  if (!isAuthenticated) {
-    return <AdminLogin onLogin={() => setIsAuthenticated(true)} />;
-  }
+  if (isDriverPortal) return <DriverPortal />;
+  if (isCustomerPortal) return <CustomerPortal />;
+  if (!isAuthenticated) return <AdminLogin onLogin={() => setIsAuthenticated(true)} />;
 
   return (
     <UserProvider>
@@ -64,23 +48,23 @@ function App() {
   );
 }
 
+interface NavItem { view: View; icon: string; label: string; }
+
 function AdminApp({ onLogout }: { onLogout: () => void }) {
   const { user, hasPermission } = useCurrentUser();
   const [view, setViewState] = useState<View>(viewFromHash);
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [dispatchBundle, setDispatchBundle] = useState<Bundle | null>(null);
 
-  // ── Permission flags for nav / actions ──────────────────────────────────
-  const canUpload   = hasPermission(PERM.DOCUMENT_UPLOAD);
-  const canBundle   = hasPermission(PERM.COMMUNICATION_SEND);
-  const canDispatch = hasPermission(PERM.COMMUNICATION_READ);
+  const canUpload       = hasPermission(PERM.DOCUMENT_UPLOAD);
+  const canBundle       = hasPermission(PERM.COMMUNICATION_SEND);
+  const canDispatch     = hasPermission(PERM.COMMUNICATION_READ);
   const canManageUsers  = hasPermission(PERM.USER_MANAGE);
   const canManageMaster = hasPermission(PERM.MASTER_MANAGE);
   const canReadMaster   = hasPermission(PERM.MASTER_READ);
 
-  // If the initial hash points to a tab the user cannot access, fall back to dashboard.
-  // Intentionally run only on mount — we only want to correct the initial URL-hash view,
-  // not redirect on every permission re-check.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const inaccessible =
@@ -91,236 +75,185 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       (view === 'customers' && !canManageUsers) ||
       (view === 'master'    && !canReadMaster);
     if (inaccessible) setViewState('dashboard');
-  }, []); // only runs on mount to correct stale URL-hash navigation
+  }, []);
 
-  // Keep the URL hash in sync when the view changes programmatically.
   const setView = (v: View) => {
-    if (HASH_VIEWS.includes(v)) {
-      window.location.hash = v;
-    }
+    if (HASH_VIEWS.includes(v)) window.location.hash = v;
     setViewState(v);
   };
 
-  // Sync view ← hash when the user navigates with browser back/forward.
   useEffect(() => {
     const onHashChange = () => setViewState(viewFromHash());
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  const handleDocumentReady = (doc: Document) => {
-    setSelectedDoc(doc);
-    setView('review');
-  };
+  const handleDocumentReady = (doc: Document) => { setSelectedDoc(doc); setView('review'); };
+  const handleSaved = (_doc: Document) => { setRefreshKey((k) => k + 1); setView('list'); setSelectedDoc(null); };
+  const handleSelectFromList = (doc: Document) => { setSelectedDoc(doc); setView('review'); };
+  const handleBundleSaved = (bundle: Bundle) => { setDispatchBundle(bundle); };
 
-  const handleSaved = (_doc: Document) => {
-    setRefreshKey((k) => k + 1);
-    setView('list');
-    setSelectedDoc(null);
-  };
-
-  const handleSelectFromList = (doc: Document) => {
-    setSelectedDoc(doc);
-    setView('review');
-  };
-
-  const [dispatchBundle, setDispatchBundle] = useState<Bundle | null>(null);
-
-  const handleBundleSaved = (bundle: Bundle) => {
-    // Offer to dispatch the newly created bundle immediately
-    setDispatchBundle(bundle);
-  };
+  const allNavItems: (NavItem & { permitted: boolean })[] = [
+    { view: 'dashboard',  icon: '📊', label: 'Dashboard',   permitted: true },
+    { view: 'list',       icon: '📋', label: 'Documents',   permitted: true },
+    { view: 'upload',     icon: '➕', label: 'Upload',       permitted: canUpload },
+    { view: 'bundle',     icon: '📦', label: 'Bundle',       permitted: canBundle },
+    { view: 'search',     icon: '🔍', label: 'Search',       permitted: true },
+    { view: 'dispatch',   icon: '📤', label: 'Dispatch',     permitted: canDispatch },
+    { view: 'drivers',    icon: '🚛', label: 'Drivers',      permitted: canManageUsers },
+    { view: 'customers',  icon: '🏢', label: 'Customers',    permitted: canManageUsers },
+    { view: 'master',     icon: '🗂️', label: 'Master Data',  permitted: canReadMaster },
+  ];
+  const navItems: NavItem[] = allNavItems.filter((n) => n.permitted);
+  const activeItem = navItems.find((n) => n.view === view);
 
   return (
-    <div style={styles.app}>
-      {/* Header */}
-      <header style={styles.header}>
-        <div style={styles.logo}>🚛 Logistics DMS</div>
-        <nav style={styles.nav}>
-          <button
-            style={{ ...styles.navBtn, ...(view === 'dashboard' ? styles.navBtnActive : {}) }}
-            onClick={() => setView('dashboard')}
-          >
-            📊 Dashboard
-          </button>
-          <button
-            style={{ ...styles.navBtn, ...(view === 'list' ? styles.navBtnActive : {}) }}
-            onClick={() => setView('list')}
-          >
-            📋 Documents
-          </button>
-          {canUpload && (
-            <button
-              style={{ ...styles.navBtn, ...(view === 'upload' ? styles.navBtnActive : {}) }}
-              onClick={() => setView('upload')}
-            >
-              ➕ Upload
-            </button>
-          )}
-          {canBundle && (
-            <button
-              style={{ ...styles.navBtn, ...(view === 'bundle' ? styles.navBtnActive : {}) }}
-              onClick={() => setView('bundle')}
-            >
-              📦 Bundle
-            </button>
-          )}
-          <button
-            style={{ ...styles.navBtn, ...(view === 'search' ? styles.navBtnActive : {}) }}
-            onClick={() => setView('search')}
-          >
-            🔍 Search
-          </button>
-          {canDispatch && (
-            <button
-              style={{ ...styles.navBtn, ...(view === 'dispatch' ? styles.navBtnActive : {}) }}
-              onClick={() => setView('dispatch')}
-            >
-              📤 Dispatch
-            </button>
-          )}
-          {canManageUsers && (
-            <button
-              style={{ ...styles.navBtn, ...(view === 'drivers' ? styles.navBtnActive : {}) }}
-              onClick={() => setView('drivers')}
-            >
-              🚛 Drivers
-            </button>
-          )}
-          {canManageUsers && (
-            <button
-              style={{ ...styles.navBtn, ...(view === 'customers' ? styles.navBtnActive : {}) }}
-              onClick={() => setView('customers')}
-            >
-              🏢 Customers
-            </button>
-          )}
-          {canReadMaster && (
-            <button
-              style={{ ...styles.navBtn, ...(view === 'master' ? styles.navBtnActive : {}) }}
-              onClick={() => setView('master')}
-            >
-              🗂️ Master Data
-            </button>
-          )}
-        </nav>
-        <div style={styles.headerRight}>
-          {user?.isSuperAdmin && (
-            <span style={styles.superAdminBadge} title="You have cross-company super-admin access">
-              🌐 Super Admin
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', fontFamily: "'Inter', system-ui, sans-serif", background: '#f4f5ff' }}>
+
+      {/* ── Sidebar ─────────────────────────────────────────────── */}
+      <aside style={{
+        width: sidebarOpen ? 220 : 64,
+        background: '#1a1a2e',
+        boxShadow: '2px 0 8px rgba(0,0,0,0.15)',
+        display: 'flex', flexDirection: 'column', flexShrink: 0,
+        transition: 'width 0.2s ease', overflow: 'hidden',
+      }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12, padding: '0 16px',
+          minHeight: 60, borderBottom: '1px solid rgba(255,255,255,0.08)',
+        }}>
+          <span style={{ fontSize: 22, flexShrink: 0 }}>🚛</span>
+          {sidebarOpen && (
+            <span style={{ fontWeight: 800, color: '#fff', fontSize: 13, letterSpacing: '-0.01em', whiteSpace: 'nowrap' }}>
+              Logistics DMS
             </span>
           )}
-          <button style={styles.logoutBtn} onClick={onLogout}>
-            Sign Out
-          </button>
         </div>
-      </header>
 
-      {/* Main content */}
-      <main style={styles.main}>
-        {view === 'dashboard' && (
-          <LrDashboard />
-        )}
+        <nav style={{ flex: 1, overflowY: 'auto', padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {navItems.map((item) => (
+            <NavBtn
+              key={item.view}
+              item={item}
+              active={view === item.view}
+              collapsed={!sidebarOpen}
+              onClick={() => setView(item.view)}
+            />
+          ))}
+        </nav>
 
-        {view === 'list' && (
-          <DocumentList onSelect={handleSelectFromList} refreshTrigger={refreshKey} />
-        )}
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            gap: 6, padding: '12px 8px',
+            borderTop: '1px solid rgba(255,255,255,0.08)',
+            background: 'transparent', border: 'none',
+            color: 'rgba(255,255,255,0.4)', fontSize: 12, cursor: 'pointer',
+            transition: 'color 0.15s', whiteSpace: 'nowrap',
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = '#fff'; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = 'rgba(255,255,255,0.4)'; }}
+        >
+          {sidebarOpen ? <>◀ <span>Collapse</span></> : '▶'}
+        </button>
+      </aside>
 
-        {view === 'upload' && canUpload && (
-          <DocumentUpload onDocumentReady={handleDocumentReady} />
-        )}
+      {/* ── Right panel ─────────────────────────────────────────── */}
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <header style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '0 24px', minHeight: 60, flexShrink: 0,
+          background: '#fff', borderBottom: '1px solid #e0e0f0',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+        }}>
+          <div style={{ fontWeight: 700, fontSize: 15, color: '#1a1a2e' }}>
+            {activeItem ? `${activeItem.icon} ${activeItem.label}` : '👁 Review'}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {user?.isSuperAdmin && (
+              <span style={{
+                fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 99,
+                background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(165,180,252,0.5)', color: '#6366f1',
+              }}>
+                🌐 Super Admin
+              </span>
+            )}
+            <button
+              onClick={onLogout}
+              style={{
+                padding: '6px 14px', fontSize: 13, fontWeight: 500,
+                background: '#f0f0f8', border: '1px solid #e0e0f0', borderRadius: 7,
+                cursor: 'pointer', color: '#1a1a2e', transition: 'background 0.15s',
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#e4e5f8'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#f0f0f8'; }}
+            >
+              Sign Out
+            </button>
+          </div>
+        </header>
 
-        {view === 'review' && selectedDoc && (
-          <OCRReview
-            document={selectedDoc}
-            onSaved={handleSaved}
-            onCancel={() => {
-              setRefreshKey((k) => k + 1);
-              setView('list');
-              setSelectedDoc(null);
-            }}
-          />
-        )}
+        <main style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
+          <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+            {view === 'dashboard' && <LrDashboard />}
+            {view === 'list' && <DocumentList onSelect={handleSelectFromList} refreshTrigger={refreshKey} />}
+            {view === 'upload' && canUpload && <DocumentUpload onDocumentReady={handleDocumentReady} />}
+            {view === 'review' && selectedDoc && (
+              <OCRReview
+                document={selectedDoc}
+                onSaved={handleSaved}
+                onCancel={() => { setRefreshKey((k) => k + 1); setView('list'); setSelectedDoc(null); }}
+              />
+            )}
+            {view === 'bundle' && canBundle && <DocumentBundler onBundleSaved={handleBundleSaved} />}
+            {view === 'search' && <SmartSearch />}
+            {view === 'dispatch' && canDispatch && <DispatchHistory />}
+            {view === 'drivers' && canManageUsers && <AdminDriverAccess />}
+            {view === 'customers' && canManageUsers && <AdminCustomerPortalAccess />}
+            {view === 'master' && canReadMaster && <MasterParties canManage={canManageMaster} />}
+          </div>
+        </main>
+      </div>
 
-        {view === 'bundle' && canBundle && (
-          <DocumentBundler onBundleSaved={handleBundleSaved} />
-        )}
-
-        {view === 'search' && (
-          <SmartSearch />
-        )}
-
-        {view === 'dispatch' && canDispatch && (
-          <DispatchHistory />
-        )}
-
-        {view === 'drivers' && canManageUsers && (
-          <AdminDriverAccess />
-        )}
-
-        {view === 'customers' && canManageUsers && (
-          <AdminCustomerPortalAccess />
-        )}
-
-        {view === 'master' && canReadMaster && (
-          <MasterParties canManage={canManageMaster} />
-        )}
-
-        {/* Dispatch modal — rendered on top of any view */}
-        {dispatchBundle && (
-          <DispatchModal
-            bundle={dispatchBundle}
-            onClose={() => setDispatchBundle(null)}
-            onSent={() => { /* log recorded on backend */ }}
-          />
-        )}
-      </main>
+      {dispatchBundle && (
+        <DispatchModal
+          bundle={dispatchBundle}
+          onClose={() => setDispatchBundle(null)}
+          onSent={() => { /* log recorded on backend */ }}
+        />
+      )}
     </div>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  app: { fontFamily: "'Segoe UI', system-ui, sans-serif", minHeight: '100vh', background: '#f4f5ff' },
-  header: {
-    background: '#1a1a2e',
-    color: '#fff',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '12px 24px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-  },
-  logo: { fontWeight: 800, fontSize: 18, letterSpacing: '-0.02em' },
-  nav: { display: 'flex', gap: 8 },
-  navBtn: {
-    padding: '8px 16px', border: 'none', borderRadius: 6,
-    cursor: 'pointer', fontSize: 14, fontWeight: 500,
-    background: 'rgba(255,255,255,0.1)', color: '#fff',
-    transition: 'background 0.15s',
-  },
-  navBtnActive: { background: '#4361ee' },
-  headerRight: { display: 'flex', alignItems: 'center', gap: 10 },
-  superAdminBadge: {
-    padding: '5px 10px',
-    background: 'rgba(99,102,241,0.35)',
-    border: '1px solid rgba(165,180,252,0.5)',
-    borderRadius: 6,
-    fontSize: 12,
-    fontWeight: 700,
-    color: '#c7d2fe',
-    letterSpacing: '0.02em',
-  },
-  logoutBtn: {
-    padding: '7px 14px',
-    border: '1px solid rgba(255,255,255,0.3)',
-    borderRadius: 6,
-    cursor: 'pointer',
-    fontSize: 13,
-    fontWeight: 500,
-    background: 'transparent',
-    color: '#fff',
-  },
-  main: { maxWidth: 1100, margin: '0 auto', padding: '24px 0' },
-};
+function NavBtn({ item, active, collapsed, onClick }: {
+  item: NavItem; active: boolean; collapsed: boolean; onClick: () => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      title={collapsed ? item.label : undefined}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: 'flex', alignItems: 'center',
+        gap: collapsed ? 0 : 10,
+        justifyContent: collapsed ? 'center' : 'flex-start',
+        width: '100%', padding: collapsed ? '9px 0' : '9px 12px',
+        borderRadius: 8, border: 'none', cursor: 'pointer',
+        fontSize: 13, fontWeight: active ? 600 : 500,
+        background: active ? 'rgba(67,97,238,0.85)' : hovered ? 'rgba(255,255,255,0.08)' : 'transparent',
+        color: active ? '#fff' : hovered ? '#fff' : 'rgba(255,255,255,0.65)',
+        boxShadow: active ? '0 2px 8px rgba(67,97,238,0.3)' : 'none',
+        transition: 'all 0.15s', whiteSpace: 'nowrap', overflow: 'hidden', outline: 'none',
+      }}
+    >
+      <span style={{ fontSize: 16, flexShrink: 0 }}>{item.icon}</span>
+      {!collapsed && <span>{item.label}</span>}
+    </button>
+  );
+}
 
 export default App;
