@@ -32,6 +32,9 @@ const STATUS_LABELS: Record<DocumentStatus, string> = {
   SAVED: '✅ Saved',
 };
 
+const GRID_WITH_DELETE    = '2fr 90px 120px 110px 130px 80px 100px 90px';
+const GRID_WITHOUT_DELETE = '2fr 90px 120px 110px 130px 80px 100px';
+
 export function DocumentList({ onSelect, refreshTrigger }: Props) {
   const { hasPermission } = useCurrentUser();
   const canDelete = hasPermission(PERM.DOCUMENT_DELETE);
@@ -144,7 +147,7 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
 
       {documents.length > 0 && (
         <div style={styles.table}>
-          <div style={{ ...styles.tableHeader, gridTemplateColumns: canDelete ? '2fr 90px 120px 110px 130px 80px 100px 90px' : '2fr 90px 120px 110px 130px 80px 100px' }}>
+          <div style={{ ...styles.tableHeader, gridTemplateColumns: canDelete ? GRID_WITH_DELETE : GRID_WITHOUT_DELETE }}>
             <span>File</span>
             <span>Type</span>
             <span>Vehicle No</span>
@@ -159,7 +162,7 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
             const missingDate = !doc.extractedData?.date;
             const needsFix = !doc.groupId && (missingVehicle || missingDate);
             return (
-              <div key={doc.id} style={{ ...styles.row, ...(needsFix ? styles.rowWarning : {}), gridTemplateColumns: canDelete ? '2fr 90px 120px 110px 130px 80px 100px 90px' : '2fr 90px 120px 110px 130px 80px 100px' }}>
+              <div key={doc.id} style={{ ...styles.row, ...(needsFix ? styles.rowWarning : {}), gridTemplateColumns: canDelete ? GRID_WITH_DELETE : GRID_WITHOUT_DELETE }}>
                 <span style={styles.filename} title={doc.originalFilename}>
                   {doc.originalFilename.length > 28
                     ? doc.originalFilename.slice(0, 26) + '…'

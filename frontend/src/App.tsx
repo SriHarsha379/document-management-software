@@ -79,6 +79,9 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   const canReadMaster   = hasPermission(PERM.MASTER_READ);
 
   // If the initial hash points to a tab the user cannot access, fall back to dashboard.
+  // Intentionally run only on mount — we only want to correct the initial URL-hash view,
+  // not redirect on every permission re-check.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const inaccessible =
       (view === 'upload'    && !canUpload) ||
@@ -88,7 +91,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       (view === 'customers' && !canManageUsers) ||
       (view === 'master'    && !canReadMaster);
     if (inaccessible) setViewState('dashboard');
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // only runs on mount to correct stale URL-hash navigation
 
   // Keep the URL hash in sync when the view changes programmatically.
   const setView = (v: View) => {
