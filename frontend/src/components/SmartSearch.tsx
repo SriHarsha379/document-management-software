@@ -199,6 +199,7 @@ export function SmartSearch({ onSelectDocument }: Props) {
                     <th style={th}>Party</th>
                     <th style={th}>Date</th>
                     <th style={th}>Status</th>
+                    <th style={th}>View</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -233,6 +234,16 @@ export function SmartSearch({ onSelectDocument }: Props) {
                           <span style={{ padding: '2px 8px', borderRadius: 8, fontSize: 11, fontWeight: 600, background: STATUS_COLORS[doc.status as DocumentStatus] + '22', color: STATUS_COLORS[doc.status as DocumentStatus] }}>
                             {STATUS_LABELS[doc.status as DocumentStatus] ?? doc.status}
                           </span>
+                        </td>
+                        <td style={td} onClick={(e) => e.stopPropagation()}>
+                          <a
+                            href={`/uploads/${doc.filePath}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: '#4361ee', fontSize: 13, fontWeight: 600, textDecoration: 'none', padding: '2px 8px', border: '1px solid #c0c8ff', borderRadius: 6, whiteSpace: 'nowrap' }}
+                          >
+                            👁 View
+                          </a>
                         </td>
                       </tr>
                     );

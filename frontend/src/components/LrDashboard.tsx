@@ -18,7 +18,7 @@ const ALL_COLUMNS: Col[] = [
   { label: 'Principal Co.',      width: 130, render: (lr) => lr.principalCompany ?? '—' },
   { label: 'Branch',             width: 110, render: (lr) => lr.branch?.name ?? '—' },
   { label: 'Source',             width: 90,  render: (lr) => lr.source },
-  { label: 'LR Date',            width: 100, render: (lr) => lr.lrDate ?? lr.date ?? '—' },
+  { label: 'LR Date',            width: 100, render: (lr) => formatDate(lr.lrDate ?? lr.date) },
   { label: 'LR No',              width: 100, render: (lr) => lr.lrNo },
   { label: 'Loading Slip No',    width: 120, render: (lr) => lr.loadingSlipNo ?? '—' },
   { label: 'Inv. Date',          width: 100, render: (lr) => lr.companyInvoiceDate ?? '—' },
@@ -344,6 +344,12 @@ export function LrDashboard() {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+function formatDate(value: string | null | undefined): string {
+  if (!value) return '—';
+  const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) return `${isoMatch[3]}-${isoMatch[2]}-${isoMatch[1]}`;
+  return value;
+}
 function docTypeLabel(t: string) {
   if (t === 'LR') return '📄 LR';
   if (t === 'TOLL') return '🛣️ Toll';
