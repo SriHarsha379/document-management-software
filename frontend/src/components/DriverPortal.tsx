@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { driverPortalApi } from '../services/api';
 import type { DriverDocType, DriverUploadDoc, DriverStatusResponse } from '../services/api';
 
@@ -299,22 +299,48 @@ function UploadScreen({
             <div style={s.hint}>No documents uploaded yet.</div>
           )}
 
-          {uploads.map((u) => (
-            <div key={u.id} style={s.uploadItem}>
-              <div style={s.uploadItemTitle}>
-                {DOC_TYPES.find((d) => d.value === u.docType)?.label ?? u.docType}
-                <span style={{ ...s.statusBadge, ...(u.status === 'PROCESSED' ? s.statusGreen : u.status === 'UNLINKED' ? s.statusOrange : s.statusGray) }}>
-                  {u.status === 'PROCESSED' ? 'Linked' : u.status === 'UNLINKED' ? 'Unlinked' : 'Processing'}
-                </span>
-              </div>
-              <div style={s.uploadItemMeta}>
-                {u.originalFilename} · {new Date(u.uploadedAt).toLocaleString()}
-              </div>
-              {u.vehicleNumber && (
-                <div style={s.uploadItemMeta}>🚛 {u.vehicleNumber} {u.documentDate ? `· 📅 ${u.documentDate}` : ''}</div>
-              )}
+          {uploads.length > 0 && (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    {['Doc Type', 'Filename', 'Vehicle No', 'Date', 'Status', 'Uploaded At'].map((h) => (
+                      <th key={h} style={s.dTh}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {uploads.map((u) => (
+                    <tr
+                      key={u.id}
+                      style={{ borderBottom: '1px solid #f0f0f8', transition: 'background 0.1s' }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = '#fafafe'; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = ''; }}
+                    >
+                      <td style={s.dTd}>
+                        {DOC_TYPES.find((d) => d.value === u.docType)?.label ?? u.docType}
+                      </td>
+                      <td style={{ ...s.dTd, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                          title={u.originalFilename}>
+                        {u.originalFilename}
+                      </td>
+                      <td style={s.dTd}>{u.vehicleNumber ?? '—'}</td>
+                      <td style={s.dTd}>{u.documentDate ?? '—'}</td>
+                      <td style={s.dTd}>
+                        <span style={{
+                          ...s.statusBadge,
+                          ...(u.status === 'PROCESSED' ? s.statusGreen : u.status === 'UNLINKED' ? s.statusOrange : s.statusGray),
+                        }}>
+                          {u.status === 'PROCESSED' ? 'Linked' : u.status === 'UNLINKED' ? 'Unlinked' : 'Processing'}
+                        </span>
+                      </td>
+                      <td style={s.dTd}>{new Date(u.uploadedAt).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ))}
+          )}
         </div>
       </div>
     </div>
@@ -535,4 +561,13 @@ const s: Record<string, React.CSSProperties> = {
   statusGreen: { background: '#c6f6d5', color: '#276749' },
   statusOrange: { background: '#feebc8', color: '#744210' },
   statusGray: { background: '#e2e8f0', color: '#4a5568' },
+  dTh: {
+    padding: '9px 10px', background: '#f5f6ff', color: '#555',
+    fontWeight: 700, fontSize: 11, textAlign: 'left', borderBottom: '1px solid #e0e0f0',
+    whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '0.04em',
+    overflow: 'hidden', textOverflow: 'ellipsis',
+  } as React.CSSProperties,
+  dTd: {
+    padding: '8px 10px', color: '#333', fontSize: 12, verticalAlign: 'middle', whiteSpace: 'nowrap',
+  } as React.CSSProperties,
 };

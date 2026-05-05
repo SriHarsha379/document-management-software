@@ -275,8 +275,9 @@ function buildFilterChips(filters: SearchFilters): { key: string; label: string 
 }
 
 const th: React.CSSProperties = {
-  padding: '10px 12px', background: '#f5f6ff', color: '#555',
-  fontWeight: 700, textAlign: 'left', borderBottom: '1px solid #e8e8f0',
-  whiteSpace: 'nowrap', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em',
+  padding: '9px 10px', background: '#f5f6ff', color: '#555',
+  fontWeight: 700, textAlign: 'left', borderBottom: '1px solid #e0e0f0',
+  whiteSpace: 'nowrap', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em',
+  overflow: 'hidden', textOverflow: 'ellipsis',
 };
-const td: React.CSSProperties = { padding: '9px 12px', color: '#333', verticalAlign: 'middle' };
+const td: React.CSSProperties = { padding: '8px 10px', color: '#333', fontSize: 12, verticalAlign: 'middle', whiteSpace: 'nowrap' };
