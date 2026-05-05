@@ -254,22 +254,24 @@ export function LrDashboard() {
 
         {lrs.length > 0 && (
           <div style={{ overflowX: 'auto' }}>
-            <div style={{ ...gridRow, ...headRow, gridTemplateColumns: gridTemplate }}>
-              {visibleCols.map((col) => <span key={col.label} style={th}>{col.label}</span>)}
-              {!expanded && <span style={th}><button style={expandBtn} onClick={() => setExpanded(true)} title="Show all">▶</button></span>}
-              {canUpdate && <span style={th}>Edit</span>}
-            </div>
-            {lrs.map((lr) => (
-              <div key={lr.id} style={{ ...gridRow, ...dataRow, gridTemplateColumns: gridTemplate }}>
-                {visibleCols.map((col) => <span key={col.label} style={cell}>{col.render(lr)}</span>)}
-                {!expanded && <span style={cell}><button style={expandBtn} onClick={() => setExpanded(true)}>▶</button></span>}
-                {canUpdate && (
-                  <span style={cell}>
-                    <button style={editBtn} onClick={() => setEditingLr(lr)} title="Edit">✏️</button>
-                  </span>
-                )}
+            <div style={{ minWidth: 'max-content' }}>
+              <div style={{ ...gridRow, ...headRow, gridTemplateColumns: gridTemplate }}>
+                {visibleCols.map((col) => <span key={col.label} style={th}>{col.label}</span>)}
+                {!expanded && <span style={th}><button style={expandBtn} onClick={() => setExpanded(true)} title="Show all">▶</button></span>}
+                {canUpdate && <span style={th}>Edit</span>}
               </div>
-            ))}
+              {lrs.map((lr) => (
+                <div key={lr.id} style={{ ...gridRow, ...dataRow, gridTemplateColumns: gridTemplate }}>
+                  {visibleCols.map((col) => <span key={col.label} style={cell}>{col.render(lr)}</span>)}
+                  {!expanded && <span style={cell}><button style={expandBtn} onClick={() => setExpanded(true)}>▶</button></span>}
+                  {canUpdate && (
+                    <span style={cell}>
+                      <button style={editBtn} onClick={() => setEditingLr(lr)} title="Edit">✏️</button>
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -399,7 +401,7 @@ const dataRow: React.CSSProperties = {
 const th: React.CSSProperties = {
   padding: '9px 10px', fontSize: 11, fontWeight: 700, color: '#555',
   textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap',
-  overflow: 'hidden', textOverflow: 'ellipsis',
+  overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'left',
 };
 const cell: React.CSSProperties = {
   padding: '8px 10px', fontSize: 12, color: '#333',
