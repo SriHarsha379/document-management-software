@@ -199,6 +199,7 @@ export function SmartSearch({ onSelectDocument }: Props) {
                     <th style={th}>Party</th>
                     <th style={th}>Date</th>
                     <th style={th}>Status</th>
+                    <th style={th}>View</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -234,6 +235,16 @@ export function SmartSearch({ onSelectDocument }: Props) {
                             {STATUS_LABELS[doc.status as DocumentStatus] ?? doc.status}
                           </span>
                         </td>
+                        <td style={td} onClick={(e) => e.stopPropagation()}>
+                          <a
+                            href={`/uploads/${doc.filePath}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: '#4361ee', fontSize: 13, fontWeight: 600, textDecoration: 'none', padding: '2px 8px', border: '1px solid #c0c8ff', borderRadius: 6, whiteSpace: 'nowrap' }}
+                          >
+                            👁 View
+                          </a>
+                        </td>
                       </tr>
                     );
                   })}
@@ -264,8 +275,9 @@ function buildFilterChips(filters: SearchFilters): { key: string; label: string 
 }
 
 const th: React.CSSProperties = {
-  padding: '10px 12px', background: '#f5f6ff', color: '#555',
-  fontWeight: 700, textAlign: 'left', borderBottom: '1px solid #e8e8f0',
-  whiteSpace: 'nowrap', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em',
+  padding: '9px 10px', background: '#f5f6ff', color: '#555',
+  fontWeight: 700, textAlign: 'left', borderBottom: '1px solid #e0e0f0',
+  whiteSpace: 'nowrap', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em',
+  overflow: 'hidden', textOverflow: 'ellipsis',
 };
-const td: React.CSSProperties = { padding: '9px 12px', color: '#333', verticalAlign: 'middle' };
+const td: React.CSSProperties = { padding: '8px 10px', color: '#333', fontSize: 12, verticalAlign: 'middle', whiteSpace: 'nowrap' };

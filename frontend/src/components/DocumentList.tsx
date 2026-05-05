@@ -132,20 +132,25 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr>
-                  <th style={th}>File</th>
                   <th style={th}>Type</th>
+                  <th style={th}>Filename</th>
+                  <th style={th}>LR No</th>
+                  <th style={th}>Invoice No</th>
                   <th style={th}>Vehicle No</th>
+                  <th style={th}>Party</th>
                   <th style={th}>Date</th>
                   <th style={th}>Status</th>
                   <th style={th}>Group</th>
+                  <th style={th}>View</th>
                   <th style={th}></th>
                   {canDelete && <th style={th}></th>}
                 </tr>
               </thead>
               <tbody>
                 {documents.map((doc) => {
-                  const missingVehicle = !doc.extractedData?.vehicleNo;
-                  const missingDate = !doc.extractedData?.date;
+                  const ed = doc.extractedData;
+                  const missingVehicle = !ed?.vehicleNo;
+                  const missingDate = !ed?.date;
                   const needsFix = !doc.groupId && (missingVehicle || missingDate);
                   return (
                     <tr
@@ -154,17 +159,22 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
                       onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = needsFix ? '#fff1e0' : '#fafafe'; }}
                       onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = needsFix ? '#fff8f0' : '#fff'; }}
                     >
-                      <td style={{ ...td, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={doc.originalFilename}>
-                        {doc.originalFilename.length > 28 ? doc.originalFilename.slice(0, 26) + '…' : doc.originalFilename}
-                      </td>
                       <td style={td}>
                         <span style={{ ...badge, background: TYPE_COLORS[doc.type] }}>{doc.type}</span>
                       </td>
+                      <td style={{ ...td, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={doc.originalFilename}>
+                        {doc.originalFilename.length > 26 ? doc.originalFilename.slice(0, 24) + '…' : doc.originalFilename}
+                      </td>
+                      <td style={td}>{ed?.lrNo ?? '—'}</td>
+                      <td style={td}>{ed?.invoiceNo ?? '—'}</td>
                       <td style={{ ...td, fontFamily: 'monospace', color: missingVehicle ? '#e53e3e' : undefined }}>
-                        {missingVehicle ? '⚠️ missing' : doc.extractedData!.vehicleNo}
+                        {missingVehicle ? '⚠️ missing' : ed!.vehicleNo}
+                      </td>
+                      <td style={{ ...td, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {ed?.partyNames ? ed.partyNames.join(', ') : '—'}
                       </td>
                       <td style={{ ...td, color: missingDate ? '#e53e3e' : undefined }}>
-                        {missingDate ? '⚠️ missing' : doc.extractedData!.date}
+                        {missingDate ? '⚠️ missing' : ed!.date}
                       </td>
                       <td style={td}>
                         <span style={{
@@ -180,14 +190,24 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
                           {doc.groupId ? '🔗 Linked' : '⚠️ No group'}
                         </span>
                       </td>
+                      <td style={td} onClick={(e) => e.stopPropagation()}>
+                        <a
+                          href={`/uploads/${doc.filePath}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: '#4361ee', fontSize: 12, fontWeight: 600, textDecoration: 'none', padding: '2px 8px', border: '1px solid #c0c8ff', borderRadius: 6, whiteSpace: 'nowrap' }}
+                        >
+                          👁 View
+                        </a>
+                      </td>
                       <td style={td}>
                         <button
-                          style={needsFix ? btnFix : btnView}
+                          style={needsFix ? btnFix : btnReview}
                           onClick={() => onSelect(doc)}
                           onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = '0.85'; }}
                           onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
                         >
-                          {needsFix ? '✏️ Fix Fields' : doc.status === 'PENDING_REVIEW' ? '✏️ Review' : '👁 View'}
+                          {needsFix ? '✏️ Fix' : doc.status === 'PENDING_REVIEW' ? '✏️ Review' : '✏️ Edit'}
                         </button>
                       </td>
                       {canDelete && (
@@ -197,7 +217,7 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
                             onClick={(e) => { e.stopPropagation(); void handleDelete(doc); }}
                             disabled={deletingId === doc.id}
                           >
-                            {deletingId === doc.id ? '…' : '🗑 Delete'}
+                            {deletingId === doc.id ? '…' : '🗑'}
                           </button>
                         </td>
                       )}
@@ -231,22 +251,23 @@ const btnRefresh: React.CSSProperties = {
   borderRadius: 7, cursor: 'pointer', fontSize: 13, fontWeight: 500, color: '#4361ee',
 };
 const th: React.CSSProperties = {
-  padding: '10px 12px', background: '#f5f6ff', color: '#555',
+  padding: '9px 10px', background: '#f5f6ff', color: '#555',
   fontWeight: 700, fontSize: 11, textAlign: 'left', borderBottom: '1px solid #e0e0f0',
-  whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '0.05em',
+  whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '0.04em',
+  overflow: 'hidden', textOverflow: 'ellipsis',
 };
-const td: React.CSSProperties = { padding: '10px 12px', color: '#333', verticalAlign: 'middle' };
+const td: React.CSSProperties = { padding: '8px 10px', color: '#333', fontSize: 12, verticalAlign: 'middle', whiteSpace: 'nowrap' };
 const badge: React.CSSProperties = { color: '#fff', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700 };
-const btnView: React.CSSProperties = {
-  padding: '4px 10px', background: '#4361ee', color: '#fff', border: 'none',
-  borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600, transition: 'opacity 0.15s',
+const btnReview: React.CSSProperties = {
+  padding: '3px 8px', background: '#4361ee', color: '#fff', border: 'none',
+  borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 600, transition: 'opacity 0.15s',
 };
 const btnFix: React.CSSProperties = {
-  ...btnView, background: '#e97a00',
+  ...btnReview, background: '#e97a00',
 };
 const btnDelete: React.CSSProperties = {
-  padding: '4px 10px', background: '#ef4444', color: '#fff', border: 'none',
-  borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+  padding: '3px 8px', background: '#ef4444', color: '#fff', border: 'none',
+  borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 600,
 };
 const pageBtn: React.CSSProperties = {
   padding: '6px 14px', background: '#eef0ff', border: '1px solid #c0c8ff',

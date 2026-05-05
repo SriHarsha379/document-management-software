@@ -18,7 +18,7 @@ const ALL_COLUMNS: Col[] = [
   { label: 'Principal Co.',      width: 130, render: (lr) => lr.principalCompany ?? '—' },
   { label: 'Branch',             width: 110, render: (lr) => lr.branch?.name ?? '—' },
   { label: 'Source',             width: 90,  render: (lr) => lr.source },
-  { label: 'LR Date',            width: 100, render: (lr) => lr.lrDate ?? lr.date ?? '—' },
+  { label: 'LR Date',            width: 100, render: (lr) => formatDate(lr.lrDate ?? lr.date) },
   { label: 'LR No',              width: 100, render: (lr) => lr.lrNo },
   { label: 'Loading Slip No',    width: 120, render: (lr) => lr.loadingSlipNo ?? '—' },
   { label: 'Inv. Date',          width: 100, render: (lr) => lr.companyInvoiceDate ?? '—' },
@@ -33,16 +33,7 @@ const ALL_COLUMNS: Col[] = [
   { label: 'Vehicle No',         width: 110, render: (lr) => lr.vehicleNo ?? '—' },
   { label: 'Qty (Bags)',         width: 90,  render: (lr) => lr.quantityInBags ?? '—' },
   { label: 'Qty (MT)',           width: 80,  render: (lr) => lr.quantityInMt ?? '—' },
-  { label: 'Toll ₹',            width: 80,  render: (lr) => lr.tollCharges ?? '—' },
-  { label: 'Weighment ₹',       width: 100, render: (lr) => lr.weighmentCharges ?? '—' },
-  { label: 'Unloading ₹',       width: 100, render: (lr) => lr.unloadingAtSite ?? '—' },
-  { label: 'Driver Bhatta ₹',   width: 110, render: (lr) => lr.driverBhatta ?? '—' },
-  { label: 'Open KM',            width: 80,  render: (lr) => lr.dayOpeningKm ?? '—' },
-  { label: 'Close KM',           width: 80,  render: (lr) => lr.dayClosingKm ?? '—' },
-  { label: 'Total KM',           width: 80,  render: (lr) => lr.totalRunningKm ?? '—' },
-  { label: 'Fuel/KM',            width: 80,  render: (lr) => lr.fuelPerKm ?? '—' },
-  { label: 'Fuel Amt ₹',        width: 90,  render: (lr) => lr.fuelAmount ?? '—' },
-  { label: 'Grand Total ₹',     width: 110, render: (lr) => lr.grandTotal ?? '—' },
+
   { label: 'TPT Code',           width: 90,  render: (lr) => lr.tptCode ?? '—' },
   { label: 'Transporter',        width: 130, render: (lr) => lr.transporterName ?? '—' },
   { label: 'Driver',             width: 110, render: (lr) => lr.driverName ?? '—' },
@@ -353,6 +344,12 @@ export function LrDashboard() {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+function formatDate(value: string | null | undefined): string {
+  if (!value) return '—';
+  const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) return `${isoMatch[3]}-${isoMatch[2]}-${isoMatch[1]}`;
+  return value;
+}
 function docTypeLabel(t: string) {
   if (t === 'LR') return '📄 LR';
   if (t === 'TOLL') return '🛣️ Toll';
