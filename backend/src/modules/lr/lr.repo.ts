@@ -63,8 +63,9 @@ export const lrRepo = {
     where: ScopeWhere;
     limit?: number;
     offset?: number;
+    q?: string;
   }) {
-    const where: LrWhereInput = buildPrismaWhere(opts.where);
+    const where: LrWhereInput = buildPrismaWhere(opts.where, opts.q);
     const [rows, total] = await Promise.all([
       db.lr.findMany({
         where,
@@ -134,7 +135,7 @@ export const lrRepo = {
 
 // ── Internal helper: map ScopeWhere → Prisma WhereInput ───────────────────────
 
-function buildPrismaWhere(scope: ScopeWhere & { id?: string }): LrWhereInput {
+function buildPrismaWhere(scope: ScopeWhere & { id?: string }, q?: string): LrWhereInput {
   const where: LrWhereInput = {};
 
   if (scope.id) where.id = scope.id;
@@ -150,6 +151,23 @@ function buildPrismaWhere(scope: ScopeWhere & { id?: string }): LrWhereInput {
     where.source = scope.source.in.length === 1
       ? scope.source.in[0]
       : { in: scope.source.in };
+  }
+
+  if (q && q.trim()) {
+    const term = q.trim();
+    where.OR = [
+      { lrNo:            { contains: term } },
+      { vehicleNo:       { contains: term } },
+      { principalCompany:{ contains: term } },
+      { billToParty:     { contains: term } },
+      { shipToParty:     { contains: term } },
+      { transporterName: { contains: term } },
+      { driverName:      { contains: term } },
+      { productName:     { contains: term } },
+      { loadingSlipNo:   { contains: term } },
+      { companyInvoiceNo:{ contains: term } },
+      { deliveryDestination: { contains: term } },
+    ];
   }
 
   return where;
