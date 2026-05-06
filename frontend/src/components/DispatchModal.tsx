@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
-import type { Bundle, DispatchChannel, DispatchResult } from '../types';
-import { dispatchApi } from '../services/api';
+import React, { useState, useEffect } from 'react';
+import type { Bundle, DispatchChannel, DispatchResult, RecipientType } from '../types';
+import { dispatchApi, masterApi } from '../services/api';
+import type { PartyDropdownItem, TransporterDropdownItem } from '../services/api';
 
 interface Props { bundle: Bundle; onClose: () => void; onSent?: (result: DispatchResult) => void; }
 type Step = 'compose' | 'sending' | 'done';
+
+type ContactItem = { id: string; label: string; phone: string | null; email: string | null };
 
 const CHANNEL_INFO: Record<DispatchChannel, { icon: string; label: string; placeholder: string; hint: string }> = {
   EMAIL: { icon: '📧', label: 'Email', placeholder: 'recipient@company.com', hint: 'Enter a valid email address.' },
@@ -16,6 +19,36 @@ export function DispatchModal({ bundle, onClose, onSent }: Props) {
   const [ccRecipient, setCcRecipient] = useState('');
   const [step, setStep] = useState<Step>('compose');
   const [result, setResult] = useState<DispatchResult | null>(null);
+
+  // Saved contacts for WhatsApp auto-fill
+  const [contacts, setContacts] = useState<ContactItem[]>([]);
+  const [contactsLoading, setContactsLoading] = useState(false);
+
+  const recipientType: RecipientType = bundle.recipientType;
+
+  // Load saved contacts when channel switches to WHATSAPP
+  useEffect(() => {
+    if (channel !== 'WHATSAPP') return;
+    setContactsLoading(true);
+    const load = async () => {
+      try {
+        if (recipientType === 'PARTY') {
+          const rows: PartyDropdownItem[] = await masterApi.partiesDropdown();
+          setContacts(rows.map((r) => ({ id: r.id, label: r.label, phone: r.phone, email: r.email })));
+        } else if (recipientType === 'TRANSPORTER') {
+          const rows: TransporterDropdownItem[] = await masterApi.transportersDropdown();
+          setContacts(rows.map((r) => ({ id: r.id, label: r.label, phone: r.phone, email: r.email })));
+        } else {
+          setContacts([]);
+        }
+      } catch {
+        setContacts([]);
+      } finally {
+        setContactsLoading(false);
+      }
+    };
+    void load();
+  }, [channel, recipientType]);
 
   const vehicleNo = bundle.group?.vehicleNo ?? 'N/A';
   const date = bundle.group?.date ?? 'N/A';
@@ -35,6 +68,9 @@ export function DispatchModal({ bundle, onClose, onSent }: Props) {
   };
 
   const info = CHANNEL_INFO[channel];
+
+  // Contacts with a saved phone number
+  const phoneContacts = contacts.filter((c) => c.phone);
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }} onClick={onClose}>
@@ -62,6 +98,38 @@ export function DispatchModal({ bundle, onClose, onSent }: Props) {
                 ))}
               </div>
             </div>
+
+            {/* Saved contacts picker — shown only for WhatsApp when contacts exist */}
+            {channel === 'WHATSAPP' && (
+              <div style={section}>
+                <label style={sLabel}>💾 Pick from saved contacts</label>
+                {contactsLoading && <p style={{ fontSize: 13, color: '#888', margin: 0 }}>Loading contacts…</p>}
+                {!contactsLoading && phoneContacts.length === 0 && (
+                  <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>
+                    No saved phone numbers found for {recipientType} in Master Data.
+                  </p>
+                )}
+                {!contactsLoading && phoneContacts.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {phoneContacts.map((c) => (
+                      <button
+                        key={c.id}
+                        onClick={() => setRecipient(c.phone!)}
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          padding: '8px 12px', border: `1.5px solid ${recipient === c.phone ? '#4361ee' : '#e0e0f0'}`,
+                          borderRadius: 8, background: recipient === c.phone ? '#eef0ff' : '#f8f9ff',
+                          cursor: 'pointer', fontSize: 13, textAlign: 'left', gap: 8,
+                        }}
+                      >
+                        <span style={{ fontWeight: 600, color: '#1a1a2e' }}>{c.label}</span>
+                        <span style={{ color: '#4361ee', fontFamily: 'monospace', fontSize: 12 }}>{c.phone}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div style={section}>
               <label style={sLabel}>{info.icon} Recipient {info.label}</label>

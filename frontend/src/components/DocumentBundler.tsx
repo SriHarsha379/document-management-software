@@ -308,9 +308,9 @@ export function DocumentBundler({ onBundleSaved }: Props) {
                 </div>
               )}
 
-              {/* Document chips row */}
+              {/* Document selection list */}
               <div style={styles.sectionTitle}>
-                Documents
+                Select Documents to Send
                 <span style={styles.sectionCount}>{selectedIds.size} selected</span>
               </div>
 
@@ -318,40 +318,26 @@ export function DocumentBundler({ onBundleSaved }: Props) {
                 <p style={styles.empty}>No documents in this group.</p>
               )}
 
-              {groupDocs.length > 0 && (
-                <div style={styles.chipsRow}>
-                  {groupDocs.map((doc) => {
-                    const isChecked = selectedIds.has(doc.documentId);
-                    return (
-                      <button
-                        key={doc.documentId}
-                        onClick={() => toggleDoc(doc.documentId)}
-                        title={doc.originalFilename}
-                        style={{
-                          ...styles.chip,
-                          background: isChecked ? TYPE_COLORS[doc.type] + '22' : '#f5f5f5',
-                          border: `2px solid ${isChecked ? TYPE_COLORS[doc.type] : '#d0d0e0'}`,
-                          color: isChecked ? TYPE_COLORS[doc.type] : '#888',
-                        }}
-                      >
-                        <span style={{ ...styles.chipDot, background: TYPE_COLORS[doc.type] }} />
-                        {doc.type}
-                      </button>
-                    );
-                  })}
-                  <div style={{ flex: 1 }} />
-                  <button
-                    style={{
-                      ...styles.btnSend,
-                      ...(selectedIds.size === 0 || saving ? styles.btnDisabled : {}),
-                    }}
-                    onClick={() => void handleSave()}
-                    disabled={selectedIds.size === 0 || saving}
-                  >
-                    {saving ? '⏳ Saving…' : '📤 Send'}
-                  </button>
-                </div>
-              )}
+              <div style={styles.docList}>
+                {groupDocs.map((doc) => {
+                  const isChecked = selectedIds.has(doc.documentId);
+                  return (
+                    <label
+                      key={doc.documentId}
+                      style={{ ...styles.docRow, ...(isChecked ? styles.docRowChecked : {}) }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => toggleDoc(doc.documentId)}
+                        style={styles.checkbox}
+                      />
+                      <span style={{ ...styles.typeBadge, background: TYPE_COLORS[doc.type] }}>{doc.type}</span>
+                      <span style={styles.docFilename} title={doc.originalFilename}>{doc.originalFilename}</span>
+                    </label>
+                  );
+                })}
+              </div>
 
               <div style={styles.fieldGroup}>
                 <label style={styles.label}>Notes (optional)</label>
@@ -366,6 +352,13 @@ export function DocumentBundler({ onBundleSaved }: Props) {
 
               <div style={styles.actions}>
                 <button style={styles.btnSecondary} onClick={() => setStep('recipient')}>← Back</button>
+                <button
+                  style={{ ...styles.btnSend, ...(selectedIds.size === 0 || saving ? styles.btnDisabled : {}) }}
+                  onClick={() => void handleSave()}
+                  disabled={selectedIds.size === 0 || saving}
+                >
+                  {saving ? '⏳ Saving…' : `📤 Send (${selectedIds.size} doc${selectedIds.size !== 1 ? 's' : ''})`}
+                </button>
               </div>
             </>
           )}
@@ -443,18 +436,6 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   docList: { display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 },
-  chipsRow: {
-    display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8,
-    padding: '12px 14px', background: '#f8f9ff', borderRadius: 8,
-    border: '1px solid #e0e0f0', marginBottom: 16,
-  },
-  chip: {
-    display: 'flex', alignItems: 'center', gap: 5,
-    padding: '5px 12px', borderRadius: 20,
-    cursor: 'pointer', fontSize: 12, fontWeight: 700,
-    transition: 'all 0.15s', whiteSpace: 'nowrap',
-  },
-  chipDot: { width: 8, height: 8, borderRadius: '50%', flexShrink: 0 },
   docRow: {
     display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
     border: '1px solid #e0e0f0', borderRadius: 6, cursor: 'pointer',
@@ -491,9 +472,9 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 14,
   },
   btnSend: {
-    padding: '8px 20px', background: '#4361ee', color: '#fff', border: 'none',
-    borderRadius: 20, cursor: 'pointer', fontWeight: 700, fontSize: 13,
-    whiteSpace: 'nowrap' as const, boxShadow: '0 2px 8px rgba(67,97,238,0.25)',
+    padding: '10px 24px', background: '#4361ee', color: '#fff', border: 'none',
+    borderRadius: 6, cursor: 'pointer', fontWeight: 700, fontSize: 14,
+    boxShadow: '0 2px 8px rgba(67,97,238,0.25)',
   },
   btnSecondary: {
     padding: '10px 16px', background: '#eee', color: '#444', border: 'none',
