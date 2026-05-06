@@ -126,7 +126,14 @@ async function autoCreateLrRecord(
   const company = await prisma.company.findFirst({
     include: { branches: { take: 1, orderBy: { createdAt: 'asc' } } },
   });
-  if (!company || company.branches.length === 0) return false;
+  if (!company || company.branches.length === 0) {
+    console.warn(
+      '[autoCreateLrRecord] No company or branch found in the database. ' +
+      `LR record for lrNo="${lrNo}" was NOT created. ` +
+      'Please ensure at least one Company and Branch are set up in the admin panel.',
+    );
+    return false;
+  }
 
   const companyId = company.id;
   const branchId = company.branches[0].id;

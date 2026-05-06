@@ -7,32 +7,79 @@ const DOCUMENT_TYPE_KEYWORDS: Record<DocumentType, string[]> = {
   LR: ['lorry receipt', 'lr no', 'lr number', 'consignment note', 'bilty', 'goods receipt'],
   INVOICE: ['invoice', 'bill', 'gst invoice', 'tax invoice', 'proforma', 'invoice no', 'invoice number'],
   TOLL: ['toll', 'toll tax', 'toll receipt', 'national highway', 'fastag', 'toll plaza'],
-  WEIGHMENT: ['weighment', 'weight slip', 'gross weight', 'tare weight', 'net weight', 'weighbridge'],
+  WEIGHMENT: ['weighment', 'weight slip', 'gross weight', 'tare weight', 'net weight', 'weighbridge', 'weigh bridge'],
   EWAYBILL: ['e-way bill', 'eway bill', 'e way bill', 'ewb no', 'ewb number', 'eway'],
   RECEIVING: ['receiving', 'delivery receipt', 'pod', 'proof of delivery', 'receiving copy', 'unloading report'],
   UNKNOWN: [],
 };
 
 const OCR_SYSTEM_PROMPT = `You are an expert OCR assistant for a logistics document management system in India.
-Analyze the provided document image and extract structured data.
+Analyze the provided document image and perform TWO steps:
 
-Always respond with a valid JSON object with these exact fields:
+STEP 1 — Identify the document type from the visual layout, printed title, and content:
+- LR: Document titled "LORRY RECEIPT", "LORRY RECEIPT CUM CONSIGNMENT NOTE", "BILTY", "GOODS RECEIPT", or similar. Contains an LR number, consignor/consignee or Bill-To/Ship-To parties, vehicle/truck number, and goods description.
+- INVOICE: Document titled "TAX INVOICE", "GST INVOICE", "INVOICE", "PROFORMA INVOICE". Contains invoice number, HSN/SAC codes, GSTIN, line-item rates and totals.
+- TOLL: Toll receipt from a highway/expressway toll plaza. Contains toll plaza name, vehicle number, and amount collected.
+- WEIGHMENT: Weighbridge or Weigh Bridge slip. Contains vehicle number, gross weight, tare weight, and net weight in KGS.
+- EWAYBILL: E-Way Bill document with EWB/EWay Bill number, GSTIN, and transporter details.
+- RECEIVING: Delivery or receiving acknowledgement, proof of delivery (POD), unloading report.
+
+STEP 2 — Extract fields according to the identified document type using the rules below.
+
+=== FOR LR (Lorry Receipt) ===
+- lrNo: LR / consignment number — look for labels "LR No", "LR No.", "L.R. No.", "LR Number", "Consignment No."
+- loadingSlipNo: Loading slip number — look for labels "LS No", "L.S. No.", "Loading Slip No.", "LS No."
+- invoiceNo: Supplier invoice number on the LR — look for "Invoice No", "Invoice No."
+- companyEwayBillNo: E-Way Bill number — look for "E-Way Bill No", "E-Way Bill No.", "EWB No."
+- vehicleNo: Truck/vehicle registration number — look for "Truck No.", "Vehicle No.", "Lorry No.", "Truck No"
+- date: LR date or document date in YYYY-MM-DD (convert DD/MM/YYYY or DD-MM-YYYY)
+- billToParty: The "BILL TO PARTY" company name
+- shipToParty: The "SHIP TO PARTY" company name (delivery address party)
+- principalCompany: "Code No." / principal company / owner of goods
+- productName: Product or commodity being transported — look for "PRODUCT", "Goods Description", "Item"
+- quantity: Quantity with unit — look for "QUANTITY IN MT", "Qty", e.g. "35.38 MT" or "500 Bags"
+- partyNames: Array [consignor/sender name, consignee/receiver name] — look for "From", "Consignor", "Sender" for index 0; "To", "Consignee", "Receiver" for index 1
+- transporterName: The transport company name (usually printed as the issuing company on the document header)
+- deliveryDestination: "To Destination" city or location
+
+=== FOR WEIGHMENT (Weighbridge Slip) ===
+- vehicleNo: Vehicle registration number — look for "VEHICLE NO", "Vehicle No.", "Veh. No."
+- date: Date from the slip in YYYY-MM-DD. The date may appear as "DT:DD-MM-YYYY TM:HH:MM" (e.g. "DT:16-09-2025 TM:12:05") or "DD/MM/YYYY" — extract only the date part and convert to YYYY-MM-DD.
+- weightInfo: Combine all three weights as "Gross: XXXXX kg, Tare: XXXXX kg, Net: XXXXX kg" using the values in KGS from the slip.
+
+=== FOR INVOICE (Tax Invoice / GST Invoice) ===
+- invoiceNo: Invoice number — look for "Invoice No", "Invoice No."
+- date: Invoice date in YYYY-MM-DD (convert DD/MM/YYYY)
+- vehicleNo: Vehicle number — look for "Vehicle No", "Veh No"
+- lrNo: LR number referenced in the invoice — look for "LR No.", "LR No"
+- billToParty: "BILL TO" party name
+- shipToParty: "SHIP TO" party name
+- productName: Item/product name from line items
+- quantity: Quantity from line items with unit
+- companyEwayBillNo: E-Way Bill number — look for "E-Way Bill No", "E-Way bill No"
+
+=== FOR TOLL ===
+- vehicleNo: Vehicle registration number
+- date: Date in YYYY-MM-DD
+- tollAmount: Amount collected with currency symbol, e.g. "₹120" or "Rs.150"
+
+Always respond with a valid JSON object with EXACTLY these fields:
 {
   "documentType": "<LR|INVOICE|TOLL|WEIGHMENT|EWAYBILL|RECEIVING|UNKNOWN>",
   "confidence": <0.0-1.0>,
   "lrNo": "<LR number or null>",
   "invoiceNo": "<invoice/bill number or null>",
-  "vehicleNo": "<vehicle registration number in format like MH12AB1234 or null>",
-  "quantity": "<quantity with unit, e.g. '10 MT', '500 bags' or null>",
-  "date": "<LR/document date in YYYY-MM-DD format or null>",
+  "vehicleNo": "<vehicle registration number in Indian format like MH12AB1234 or null>",
+  "quantity": "<quantity with unit, e.g. '35.38 MT', '500 Bags' or null>",
+  "date": "<document date in YYYY-MM-DD format or null>",
   "partyNames": ["<consignor/sender name>", "<consignee/receiver name>"],
   "tollAmount": "<toll amount with currency, e.g. '₹120' or null>",
-  "weightInfo": "<weight details, e.g. 'Gross: 15000 kg, Tare: 5000 kg, Net: 10000 kg' or null>",
-  "billToParty": "<name of the party to whom the freight bill is addressed (Bill To) or null>",
-  "shipToParty": "<name of the party at the delivery/ship-to address or null>",
+  "weightInfo": "<weight details, e.g. 'Gross: 49670 kg, Tare: 14290 kg, Net: 35380 kg' or null>",
+  "billToParty": "<name of the Bill To party or null>",
+  "shipToParty": "<name of the Ship To party or null>",
   "principalCompany": "<principal company / owner of goods or null>",
   "loadingSlipNo": "<loading slip number or null>",
-  "companyInvoiceNo": "<company's own invoice number (may differ from supplier invoice) or null>",
+  "companyInvoiceNo": "<company's own invoice number or null>",
   "companyInvoiceDate": "<company invoice date in YYYY-MM-DD format or null>",
   "companyEwayBillNo": "<E-way Bill number or null>",
   "deliveryDestination": "<delivery destination city/location or null>",
@@ -41,17 +88,13 @@ Always respond with a valid JSON object with these exact fields:
   "rawText": "<full text extracted from document>"
 }
 
-Document type detection rules:
-- LR (Lorry Receipt): Has LR number, consignor, consignee, vehicle number, goods description
-- INVOICE: Has invoice number, buyer/seller details, item list, GST number, amounts
-- TOLL: Has toll plaza name, vehicle number, amount, date/time
-- WEIGHMENT: Has weighbridge details, vehicle number, gross/tare/net weight
-- EWAYBILL: Has E-way Bill number, GSTIN, HSN code, transporter details
-- RECEIVING: Has receiving/delivery acknowledgement, POD, signature, unloading details
-
-Extract vehicle numbers carefully - they follow Indian format like MH12AB1234, GJ05CD5678.
-For dates, normalize to YYYY-MM-DD format.
-If a field is not found or unclear, return null for that field.`;
+Important rules:
+- Indian vehicle registration format: MH46CL9571, GJ05CD5678, MH12AB1234 — always uppercase, no spaces.
+- LR numbers may contain slashes, e.g. "SP/DR/LR/25-26/1433" — capture the full value exactly.
+- For dates: convert DD/MM/YYYY → YYYY-MM-DD and DD-MM-YYYY → YYYY-MM-DD. Read the year digit by digit carefully (e.g. 2-0-2-5 = 2025, not 2020).
+- For weighment slips the date often appears alongside a time stamp like "DT:16-09-2025 TM:12:05" — extract only the date portion.
+- If a field is not present or cannot be read clearly, return null for that field.
+- Always extract rawText with the complete readable text from the document.`;
 
 function detectDocumentTypeFromText(text: string): DocumentType {
   const lower = text.toLowerCase();
