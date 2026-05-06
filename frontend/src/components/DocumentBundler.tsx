@@ -308,9 +308,9 @@ export function DocumentBundler({ onBundleSaved }: Props) {
                 </div>
               )}
 
-              {/* Document selection */}
+              {/* Document selection list */}
               <div style={styles.sectionTitle}>
-                Auto-selected Documents
+                Select Documents to Send
                 <span style={styles.sectionCount}>{selectedIds.size} selected</span>
               </div>
 
@@ -320,13 +320,12 @@ export function DocumentBundler({ onBundleSaved }: Props) {
 
               <div style={styles.docList}>
                 {groupDocs.map((doc) => {
-                  const isRequired = preview.requiredTypes.includes(doc.type);
                   const isChecked = selectedIds.has(doc.documentId);
-                  const isAutoSelected = preview.autoSelectedDocuments.some((d) => d.documentId === doc.documentId);
-                  const isManualOverride = isChecked !== isAutoSelected;
-
                   return (
-                    <label key={doc.documentId} style={{ ...styles.docRow, ...(isChecked ? styles.docRowChecked : {}) }}>
+                    <label
+                      key={doc.documentId}
+                      style={{ ...styles.docRow, ...(isChecked ? styles.docRowChecked : {}) }}
+                    >
                       <input
                         type="checkbox"
                         checked={isChecked}
@@ -334,12 +333,7 @@ export function DocumentBundler({ onBundleSaved }: Props) {
                         style={styles.checkbox}
                       />
                       <span style={{ ...styles.typeBadge, background: TYPE_COLORS[doc.type] }}>{doc.type}</span>
-                      <span style={styles.docFilename}>{doc.originalFilename}</span>
-                      <div style={styles.docMeta}>
-                        {isRequired && <span style={styles.requiredTag}>required</span>}
-                        {isManualOverride && <span style={styles.overrideTag}>manual override</span>}
-                        {isAutoSelected && !isManualOverride && <span style={styles.autoTag}>auto</span>}
-                      </div>
+                      <span style={styles.docFilename} title={doc.originalFilename}>{doc.originalFilename}</span>
                     </label>
                   );
                 })}
@@ -359,11 +353,11 @@ export function DocumentBundler({ onBundleSaved }: Props) {
               <div style={styles.actions}>
                 <button style={styles.btnSecondary} onClick={() => setStep('recipient')}>← Back</button>
                 <button
-                  style={{ ...styles.btnPrimary, ...(selectedIds.size === 0 || saving ? styles.btnDisabled : {}) }}
+                  style={{ ...styles.btnSend, ...(selectedIds.size === 0 || saving ? styles.btnDisabled : {}) }}
                   onClick={() => void handleSave()}
                   disabled={selectedIds.size === 0 || saving}
                 >
-                  {saving ? '💾 Saving…' : `✅ Save Bundle (${selectedIds.size} docs)`}
+                  {saving ? '⏳ Saving…' : `📤 Send (${selectedIds.size} doc${selectedIds.size !== 1 ? 's' : ''})`}
                 </button>
               </div>
             </>
@@ -476,6 +470,11 @@ const styles: Record<string, React.CSSProperties> = {
   btnPrimary: {
     padding: '10px 20px', background: '#4361ee', color: '#fff', border: 'none',
     borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 14,
+  },
+  btnSend: {
+    padding: '10px 24px', background: '#4361ee', color: '#fff', border: 'none',
+    borderRadius: 6, cursor: 'pointer', fontWeight: 700, fontSize: 14,
+    boxShadow: '0 2px 8px rgba(67,97,238,0.25)',
   },
   btnSecondary: {
     padding: '10px 16px', background: '#eee', color: '#444', border: 'none',

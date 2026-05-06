@@ -454,6 +454,17 @@ export interface PartyDropdownItem {
   label: string;
   code: string;
   name: string;
+  phone: string | null;
+  email: string | null;
+}
+
+export interface TransporterDropdownItem {
+  id: string;
+  label: string;
+  code: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
 }
 
 export interface Party {
@@ -489,6 +500,11 @@ export interface PaginatedParties {
 export const masterApi = {
   partiesDropdown: async (): Promise<PartyDropdownItem[]> => {
     const res = await api.get<PartyDropdownItem[]>('/master/parties/dropdown');
+    return res.data;
+  },
+
+  transportersDropdown: async (): Promise<TransporterDropdownItem[]> => {
+    const res = await api.get<TransporterDropdownItem[]>('/master/transporters/dropdown');
     return res.data;
   },
 

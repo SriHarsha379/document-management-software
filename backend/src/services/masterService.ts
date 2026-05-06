@@ -205,9 +205,9 @@ export async function transporterDropdown(companyId: string) {
   const rows = await db.transporter.findMany({
     where: { companyId, isActive: true },
     orderBy: { name: 'asc' },
-    select: { id: true, code: true, name: true },
+    select: { id: true, code: true, name: true, phone: true, email: true },
   });
-  return rows.map((r) => ({ id: r.id, label: `${r.name} (${r.code})`, code: r.code, name: r.name }));
+  return rows.map((r) => ({ id: r.id, label: `${r.name} (${r.code})`, code: r.code, name: r.name, phone: r.phone ?? null, email: r.email ?? null }));
 }
 
 // ── Officer ───────────────────────────────────────────────────────────────────
@@ -410,9 +410,9 @@ export async function partyDropdown(companyId: string) {
   const rows = await db.party.findMany({
     where: { companyId, isActive: true },
     orderBy: { name: 'asc' },
-    select: { id: true, code: true, name: true },
+    select: { id: true, code: true, name: true, phone: true, email: true },
   });
-  return rows.map((r) => ({ id: r.id, label: `${r.name} (${r.code})`, code: r.code, name: r.name }));
+  return rows.map((r) => ({ id: r.id, label: `${r.name} (${r.code})`, code: r.code, name: r.name, phone: r.phone ?? null, email: r.email ?? null }));
 }
 
 // ── Product ───────────────────────────────────────────────────────────────────
