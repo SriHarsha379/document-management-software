@@ -1,4 +1,4 @@
-export type DocumentType = 'LR' | 'INVOICE' | 'TOLL' | 'WEIGHMENT' | 'EWAYBILL' | 'RECEIVING' | 'UNKNOWN';
+export type DocumentType = 'LR' | 'INVOICE' | 'TOLL' | 'WEIGHMENT' | 'WEIGHMENT_PARTY' | 'WEIGHMENT_SITE' | 'EWAYBILL' | 'RECEIVING' | 'UNKNOWN';
 export type DocumentStatus = 'PENDING_OCR' | 'PENDING_REVIEW' | 'REVIEWED' | 'SAVED';
 export type RecipientType = 'ACCOUNTS' | 'PARTY' | 'TRANSPORTER';
 export type BundleStatus = 'DRAFT' | 'READY' | 'SENT';

@@ -1,0 +1,3 @@
+-- Add WEIGHMENT_PARTY and WEIGHMENT_SITE to DocumentType enum
+-- SQLite stores enums as plain TEXT, so no ALTER TABLE is needed.
+-- This migration is a schema marker only.

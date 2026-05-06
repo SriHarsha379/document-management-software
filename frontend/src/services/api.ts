@@ -56,9 +56,11 @@ export interface ListDocumentsParams {
 }
 
 export const documentsApi = {
-  upload: async (file: File): Promise<Document> => {
+  upload: async (file: File, opts?: { type?: DocumentType; groupId?: string }): Promise<Document> => {
     const formData = new FormData();
     formData.append('file', file);
+    if (opts?.type) formData.append('type', opts.type);
+    if (opts?.groupId) formData.append('groupId', opts.groupId);
     const res = await api.post<{ document: Document }>('/documents/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });

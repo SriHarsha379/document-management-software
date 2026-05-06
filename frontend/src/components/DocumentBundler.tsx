@@ -24,10 +24,12 @@ const RECIPIENT_DESCRIPTIONS: Record<RecipientType, string> = {
 };
 
 const TYPE_LABELS: Record<DocumentType, string> = {
-  LR: 'Lorry Receipt',
+  LR: 'LR',
   INVOICE: 'Invoice',
-  TOLL: 'Toll Receipt',
+  TOLL: 'Toll',
   WEIGHMENT: 'Weighment Slip',
+  WEIGHMENT_PARTY: 'Party Weighment Slip',
+  WEIGHMENT_SITE: 'Site Weighment Slip',
   EWAYBILL: 'E-Way Bill',
   RECEIVING: 'Receiving Copy',
   UNKNOWN: 'Unknown',
@@ -38,10 +40,17 @@ const TYPE_COLORS: Record<DocumentType, string> = {
   INVOICE: '#06b6d4',
   TOLL: '#f59e0b',
   WEIGHMENT: '#8b5cf6',
+  WEIGHMENT_PARTY: '#7c3aed',
+  WEIGHMENT_SITE: '#a855f7',
   EWAYBILL: '#10b981',
   RECEIVING: '#ec4899',
   UNKNOWN: '#9ca3af',
 };
+
+// The five standard document slots shown on every group card
+const STANDARD_SLOT_TYPES: DocumentType[] = [
+  'LR', 'INVOICE', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE', 'TOLL',
+];
 
 export function DocumentBundler({ onBundleSaved }: Props) {
   // ── Step state ───────────────────────────────────────────────────────────────
@@ -69,6 +78,17 @@ export function DocumentBundler({ onBundleSaved }: Props) {
   const [savedBundle, setSavedBundle] = useState<Bundle | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // ── Inline upload state (group card "Add" slots) ──────────────────────────
+  const [uploadingSlot, setUploadingSlot] = useState<{ groupId: string; type: DocumentType } | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // ── Refresh groups list ───────────────────────────────────────────────────
+  const refreshGroups = useCallback(() => {
+    documentsApi.listGroups()
+      .then((g) => setGroups(g))
+      .catch(() => {/* ignore */});
+  }, []);
+
   // ── Load groups on mount ─────────────────────────────────────────────────────
   useEffect(() => {
     setGroupsLoading(true);
@@ -77,6 +97,20 @@ export function DocumentBundler({ onBundleSaved }: Props) {
       .catch(() => setGroups([]))
       .finally(() => setGroupsLoading(false));
   }, []);
+
+  // ── Handle inline "Add" upload on group card ──────────────────────────────
+  const handleAddDoc = useCallback(async (groupId: string, type: DocumentType, file: File) => {
+    setUploadingSlot({ groupId, type });
+    setUploadError(null);
+    try {
+      await documentsApi.upload(file, { type, groupId });
+      refreshGroups();
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploadingSlot(null);
+    }
+  }, [refreshGroups]);
 
   // ── Fetch preview when both group and recipient are chosen ───────────────────
   const loadPreview = useCallback(async (groupId: string, recipient: RecipientType) => {
@@ -204,6 +238,7 @@ export function DocumentBundler({ onBundleSaved }: Props) {
 
       <h2 style={styles.title}>Create Document Bundle</h2>
       {error && <p style={styles.error}>{error}</p>}
+      {uploadError && <p style={styles.error}>Upload failed: {uploadError}</p>}
 
       {/* ── Step 1: Group ──────────────────────────────────────────────────────── */}
       {step === 'group' && (
@@ -216,19 +251,52 @@ export function DocumentBundler({ onBundleSaved }: Props) {
             <p style={styles.empty}>No document groups found. Upload and link some documents first.</p>
           )}
           <div style={styles.groupGrid}>
-            {groups.map((g) => (
-              <div
-                key={g.id}
-                style={{ ...styles.groupCard, ...(selectedGroupId === g.id ? styles.groupCardSelected : {}) }}
-                onClick={() => setSelectedGroupId(g.id)}
-              >
-                <div style={styles.groupVehicle}>🚛 {g.vehicleNo}</div>
-                <div style={styles.groupDate}>📅 {g.date}</div>
-                <div style={styles.groupDocCount}>
-                  {g.documents ? `${g.documents.length} doc(s)` : ''}
+            {groups.map((g) => {
+              const docTypes = new Set((g.documents ?? []).map((d) => d.type));
+              return (
+                <div
+                  key={g.id}
+                  style={{ ...styles.groupCard, ...(selectedGroupId === g.id ? styles.groupCardSelected : {}) }}
+                  onClick={() => setSelectedGroupId(g.id)}
+                >
+                  <div style={styles.groupVehicle}>🚛 {g.vehicleNo}</div>
+                  <div style={styles.groupDate}>📅 {g.date}</div>
+                  <div style={styles.slotList}>
+                    {STANDARD_SLOT_TYPES.map((slotType) => {
+                      const exists = docTypes.has(slotType)
+                        || (slotType === 'WEIGHMENT_PARTY' && docTypes.has('WEIGHMENT'));
+                      const isUploading =
+                        uploadingSlot?.groupId === g.id && uploadingSlot?.type === slotType;
+                      return (
+                        <div key={slotType} style={styles.slotRow} onClick={(e) => e.stopPropagation()}>
+                          {exists ? (
+                            <span style={{ ...styles.slotPresent, background: TYPE_COLORS[slotType] }}>
+                              ✓ {TYPE_LABELS[slotType]}
+                            </span>
+                          ) : isUploading ? (
+                            <span style={styles.slotUploading}>⏳ {TYPE_LABELS[slotType]}…</span>
+                          ) : (
+                            <label style={styles.slotAdd} title={`Upload ${TYPE_LABELS[slotType]}`}>
+                              <input
+                                type="file"
+                                accept="image/*,application/pdf"
+                                style={{ display: 'none' }}
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0];
+                                  if (f) void handleAddDoc(g.id, slotType, f);
+                                  e.target.value = '';
+                                }}
+                              />
+                              ➕ {TYPE_LABELS[slotType]}
+                            </label>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <div style={styles.actions}>
             <button
@@ -393,15 +461,31 @@ const styles: Record<string, React.CSSProperties> = {
   actions: { display: 'flex', gap: 8, marginTop: 20 },
 
   // Group grid
-  groupGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 8 },
+  groupGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: 12, marginBottom: 8 },
   groupCard: {
     border: '2px solid #e0e0f0', borderRadius: 10, padding: '12px 14px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
     cursor: 'pointer', background: '#fff', transition: 'all 0.15s',
   },
   groupCardSelected: { border: '2px solid #4361ee', background: '#eef0ff' },
   groupVehicle: { fontWeight: 700, fontSize: 14, color: '#1a1a2e', marginBottom: 2 },
-  groupDate: { fontSize: 13, color: '#555' },
-  groupDocCount: { fontSize: 12, color: '#888', marginTop: 4 },
+  groupDate: { fontSize: 12, color: '#555', marginBottom: 8 },
+
+  // Slot list inside group card
+  slotList: { display: 'flex', flexDirection: 'column', gap: 4 },
+  slotRow: { display: 'flex' },
+  slotPresent: {
+    color: '#fff', fontSize: 11, fontWeight: 700,
+    padding: '2px 8px', borderRadius: 10, display: 'inline-block',
+  },
+  slotUploading: {
+    fontSize: 11, color: '#888', fontStyle: 'italic', padding: '2px 0',
+  },
+  slotAdd: {
+    fontSize: 11, color: '#4361ee', cursor: 'pointer',
+    padding: '2px 8px', borderRadius: 10, border: '1px dashed #4361ee',
+    background: '#f0f3ff', display: 'inline-block', userSelect: 'none' as const,
+    lineHeight: '1.4',
+  },
 
   // Recipient grid
   recipientGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 8 },
