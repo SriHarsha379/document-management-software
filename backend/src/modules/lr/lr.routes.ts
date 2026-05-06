@@ -65,6 +65,7 @@ router.post(
         processed: result.processed,
         created: result.created,
         linked: result.linked,
+        backfilled: result.backfilled,
       });
     } catch (err) {
       handleRouteError(err, res, '[lr] POST /lrs/sync-from-documents');

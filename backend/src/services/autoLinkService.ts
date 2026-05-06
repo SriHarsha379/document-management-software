@@ -254,6 +254,54 @@ export async function autoLinkDocument(
 }
 
 /**
+ * Back-fill invoice-related fields on an Lr record from a linked Invoice document.
+ *
+ * Only writes fields that are currently null on the Lr row — never overwrites
+ * data that was already captured from the LR document or entered manually.
+ *
+ * Called after an INVOICE-type document is successfully linked to an Lr record,
+ * so that the dashboard INV. NO / INV. DATE columns are populated even when
+ * the LR document itself did not carry those values.
+ */
+export async function backfillLrFromLinkedInvoice(
+  lrId: string,
+  fields: {
+    invoiceNo?: string | null;
+    companyInvoiceNo?: string | null;
+    companyInvoiceDate?: string | null;
+    companyEwayBillNo?: string | null;
+    date?: string | null;
+  },
+): Promise<void> {
+  const lr = await db.lr.findUnique({
+    where: { id: lrId },
+    select: {
+      invoiceNo: true,
+      companyInvoiceNo: true,
+      companyInvoiceDate: true,
+      companyEwayBillNo: true,
+    },
+  });
+  if (!lr) return;
+
+  const update: Prisma.LrUpdateInput = {};
+
+  // Prefer the dedicated company invoice fields; fall back to generic invoiceNo/date.
+  const incomingInvoiceNo = fields.companyInvoiceNo?.trim() || fields.invoiceNo?.trim() || null;
+  const incomingInvoiceDate = fields.companyInvoiceDate?.trim() || fields.date?.trim() || null;
+
+  if (!lr.companyInvoiceNo && incomingInvoiceNo) update.companyInvoiceNo = incomingInvoiceNo;
+  if (!lr.companyInvoiceDate && incomingInvoiceDate) update.companyInvoiceDate = incomingInvoiceDate;
+  if (!lr.companyEwayBillNo && fields.companyEwayBillNo?.trim()) update.companyEwayBillNo = fields.companyEwayBillNo.trim();
+  // Also fill legacy invoiceNo if blank (used by the auto-link matcher)
+  if (!lr.invoiceNo && incomingInvoiceNo) update.invoiceNo = incomingInvoiceNo;
+
+  if (Object.keys(update).length > 0) {
+    await db.lr.update({ where: { id: lrId }, data: update });
+  }
+}
+
+/**
  * Batch-relink all documents that have no confirmed link yet.
  *
  * Designed for scheduled runs (e.g. nightly cron) to handle delayed uploads
@@ -270,14 +318,37 @@ export async function relinkPendingDocuments(
       extractedData: { isNot: null },
       documentLinks: { none: {} },
     },
-    select: { id: true },
+    select: {
+      id: true,
+      type: true,
+      extractedData: {
+        select: {
+          invoiceNo: true,
+          companyInvoiceNo: true,
+          companyInvoiceDate: true,
+          companyEwayBillNo: true,
+          date: true,
+        },
+      },
+    },
   });
 
   let linked = 0;
 
-  for (const { id } of candidates) {
-    const result = await autoLinkDocument(id, companyId);
-    if (result.linked) linked += 1;
+  for (const doc of candidates) {
+    const result = await autoLinkDocument(doc.id, companyId);
+    if (result.linked) {
+      linked += 1;
+      if (doc.type === 'INVOICE' && result.lrId && doc.extractedData) {
+        await backfillLrFromLinkedInvoice(result.lrId, {
+          invoiceNo: doc.extractedData.invoiceNo,
+          companyInvoiceNo: doc.extractedData.companyInvoiceNo,
+          companyInvoiceDate: doc.extractedData.companyInvoiceDate,
+          companyEwayBillNo: doc.extractedData.companyEwayBillNo,
+          date: doc.extractedData.date,
+        });
+      }
+    }
   }
 
   return { processed: candidates.length, linked };

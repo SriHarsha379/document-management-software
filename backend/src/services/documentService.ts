@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import type { DocumentType, ReviewPayload } from '../types/index.js';
-import { autoLinkDocument, relinkPendingDocuments, normalizeVehicleNo } from './autoLinkService.js';
+import { autoLinkDocument, relinkPendingDocuments, normalizeVehicleNo, backfillLrFromLinkedInvoice } from './autoLinkService.js';
 
 const prisma = new PrismaClient();
 
@@ -116,6 +116,10 @@ async function autoCreateLrRecord(
     deliveryDestination?: string | null;
     productName?: string | null;
     transporterName?: string | null;
+    orderType?: string | null;
+    tptCode?: string | null;
+    quantityInMt?: number | null;
+    quantityInBags?: number | null;
   },
 ): Promise<boolean> {
   if (documentType !== 'LR' || !fields.lrNo?.trim()) return false;
@@ -194,6 +198,10 @@ async function autoCreateLrRecord(
       deliveryDestination: fields.deliveryDestination?.trim() || undefined,
       productName: fields.productName?.trim() || undefined,
       transporterName: fields.transporterName?.trim() || undefined,
+      orderType: fields.orderType?.trim() || undefined,
+      tptCode: fields.tptCode?.trim() || undefined,
+      quantityInMt: fields.quantityInMt ?? undefined,
+      quantityInBags: fields.quantityInBags ?? undefined,
     },
   });
 
@@ -213,6 +221,7 @@ export async function syncLrRecordsFromDocuments(): Promise<{
   processed: number;
   created: number;
   linked: number;
+  backfilled: number;
 }> {
   const docs = await prisma.document.findMany({
     where: { type: 'LR' },
@@ -238,6 +247,10 @@ export async function syncLrRecordsFromDocuments(): Promise<{
       deliveryDestination: doc.extractedData.deliveryDestination,
       productName: doc.extractedData.productName,
       transporterName: doc.extractedData.transporterName,
+      orderType: doc.extractedData.orderType,
+      tptCode: doc.extractedData.tptCode,
+      quantityInMt: doc.extractedData.quantityInMt,
+      quantityInBags: doc.extractedData.quantityInBags,
     });
     if (wasCreated) created++;
   }
@@ -245,7 +258,44 @@ export async function syncLrRecordsFromDocuments(): Promise<{
   // Re-run auto-link for documents that have no LR link yet
   const { linked } = await relinkPendingDocuments();
 
-  return { processed: docs.length, created, linked };
+  // Back-fill invoice fields on Lr records from already-linked INVOICE documents.
+  // This covers invoices that were uploaded before the back-fill logic existed,
+  // so that INV. NO and INV. DATE appear in the dashboard for historical records.
+  const linkedInvoices = await prisma.document.findMany({
+    where: {
+      type: 'INVOICE',
+      extractedData: { isNot: null },
+      documentLinks: { some: {} },
+    },
+    select: {
+      documentLinks: { select: { lrId: true }, take: 1 },
+      extractedData: {
+        select: {
+          invoiceNo: true,
+          companyInvoiceNo: true,
+          companyInvoiceDate: true,
+          companyEwayBillNo: true,
+          date: true,
+        },
+      },
+    },
+  });
+
+  let backfilled = 0;
+  for (const inv of linkedInvoices) {
+    const lrId = inv.documentLinks[0]?.lrId;
+    if (!lrId || !inv.extractedData) continue;
+    await backfillLrFromLinkedInvoice(lrId, {
+      invoiceNo: inv.extractedData.invoiceNo,
+      companyInvoiceNo: inv.extractedData.companyInvoiceNo,
+      companyInvoiceDate: inv.extractedData.companyInvoiceDate,
+      companyEwayBillNo: inv.extractedData.companyEwayBillNo,
+      date: inv.extractedData.date,
+    });
+    backfilled++;
+  }
+
+  return { processed: docs.length, created, linked, backfilled };
 }
 
 /**
@@ -266,6 +316,7 @@ export async function saveOcrResults(
     billToParty?: string;
     shipToParty?: string;
     principalCompany?: string;
+    branchName?: string;
     loadingSlipNo?: string;
     companyInvoiceNo?: string;
     companyInvoiceDate?: string;
@@ -273,6 +324,10 @@ export async function saveOcrResults(
     deliveryDestination?: string;
     productName?: string;
     transporterName?: string;
+    orderType?: string;
+    tptCode?: string;
+    quantityInMt?: number;
+    quantityInBags?: number;
   },
   documentType: DocumentType,
   rawOcrResponse: string
@@ -295,6 +350,7 @@ export async function saveOcrResults(
         billToParty: fields.billToParty ?? null,
         shipToParty: fields.shipToParty ?? null,
         principalCompany: fields.principalCompany ?? null,
+        branchName: fields.branchName ?? null,
         loadingSlipNo: fields.loadingSlipNo ?? null,
         companyInvoiceNo: fields.companyInvoiceNo ?? null,
         companyInvoiceDate: fields.companyInvoiceDate ?? null,
@@ -302,6 +358,10 @@ export async function saveOcrResults(
         deliveryDestination: fields.deliveryDestination ?? null,
         productName: fields.productName ?? null,
         transporterName: fields.transporterName ?? null,
+        orderType: fields.orderType ?? null,
+        tptCode: fields.tptCode ?? null,
+        quantityInMt: fields.quantityInMt ?? null,
+        quantityInBags: fields.quantityInBags ?? null,
       },
       update: {
         lrNo: fields.lrNo ?? null,
@@ -317,6 +377,7 @@ export async function saveOcrResults(
         billToParty: fields.billToParty ?? null,
         shipToParty: fields.shipToParty ?? null,
         principalCompany: fields.principalCompany ?? null,
+        branchName: fields.branchName ?? null,
         loadingSlipNo: fields.loadingSlipNo ?? null,
         companyInvoiceNo: fields.companyInvoiceNo ?? null,
         companyInvoiceDate: fields.companyInvoiceDate ?? null,
@@ -324,6 +385,10 @@ export async function saveOcrResults(
         deliveryDestination: fields.deliveryDestination ?? null,
         productName: fields.productName ?? null,
         transporterName: fields.transporterName ?? null,
+        orderType: fields.orderType ?? null,
+        tptCode: fields.tptCode ?? null,
+        quantityInMt: fields.quantityInMt ?? null,
+        quantityInBags: fields.quantityInBags ?? null,
       },
     });
 
@@ -355,8 +420,23 @@ export async function saveOcrResults(
       deliveryDestination: fields.deliveryDestination,
       productName: fields.productName,
       transporterName: fields.transporterName,
+      orderType: fields.orderType,
+      tptCode: fields.tptCode,
+      quantityInMt: fields.quantityInMt,
+      quantityInBags: fields.quantityInBags,
     });
-    await autoLinkDocument(documentId);
+    const linkResult = await autoLinkDocument(documentId);
+    // When an invoice arrives after the LR (e.g. from a remote office), back-fill
+    // the Lr row's invoice fields so the dashboard columns show the correct values.
+    if (linkResult.linked && linkResult.lrId && documentType === 'INVOICE') {
+      await backfillLrFromLinkedInvoice(linkResult.lrId, {
+        invoiceNo: fields.invoiceNo,
+        companyInvoiceNo: fields.companyInvoiceNo,
+        companyInvoiceDate: fields.companyInvoiceDate,
+        companyEwayBillNo: fields.companyEwayBillNo,
+        date: fields.date,
+      });
+    }
     await autoLinkDocumentToGroup(documentId, {
       vehicleNo: fields.vehicleNo,
       date: fields.date,
@@ -451,7 +531,16 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
         transporterName: updatedExtracted.transporterName,
       });
     }
-    await autoLinkDocument(documentId);
+    const reviewLinkResult = await autoLinkDocument(documentId);
+    if (reviewLinkResult.linked && reviewLinkResult.lrId && updatedDoc?.type === 'INVOICE') {
+      await backfillLrFromLinkedInvoice(reviewLinkResult.lrId, {
+        invoiceNo: updatedExtracted.invoiceNo,
+        companyInvoiceNo: updatedExtracted.companyInvoiceNo,
+        companyInvoiceDate: updatedExtracted.companyInvoiceDate,
+        companyEwayBillNo: updatedExtracted.companyEwayBillNo,
+        date: updatedExtracted.date,
+      });
+    }
     await autoLinkDocumentToGroup(documentId, {
       vehicleNo: updatedExtracted.vehicleNo,
       date: updatedExtracted.date,

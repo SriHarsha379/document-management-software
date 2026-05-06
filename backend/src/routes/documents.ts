@@ -3,13 +3,21 @@ import * as path from 'path';
 import { upload } from '../middleware/upload.js';
 import { processDocumentOcr } from '../services/ocrService.js';
 import { prisma, saveOcrResults, saveReviewedData } from '../services/documentService.js';
-import type { ReviewPayload } from '../types/index.js';
+import type { DocumentType, ReviewPayload } from '../types/index.js';
+
+const VALID_DOCUMENT_TYPES: DocumentType[] = [
+  'LR', 'INVOICE', 'TOLL', 'WEIGHMENT', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE',
+  'EWAYBILL', 'RECEIVING', 'UNKNOWN',
+];
 
 const router = Router();
 
 // ──────────────────────────────────────────────────────────────────────────────
 // POST /api/documents/upload
-// Upload a document file. Creates a Document record with PENDING_OCR status.
+// Upload a document file. Creates a Document record.
+// Optional form-data fields:
+//   type    – DocumentType (defaults to UNKNOWN; if set, status = PENDING_REVIEW)
+//   groupId – link to an existing DocumentGroup immediately
 // ──────────────────────────────────────────────────────────────────────────────
 router.post('/upload', upload.single('file'), async (req: Request, res: Response): Promise<void> => {
   try {
@@ -18,13 +26,33 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
       return;
     }
 
+    const rawType = req.body['type'] as string | undefined;
+    const groupId = req.body['groupId'] as string | undefined;
+
+    const docType: DocumentType =
+      rawType && VALID_DOCUMENT_TYPES.includes(rawType as DocumentType)
+        ? (rawType as DocumentType)
+        : 'UNKNOWN';
+
+    // If a group is specified, validate it exists
+    if (groupId) {
+      const group = await prisma.documentGroup.findUnique({ where: { id: groupId } });
+      if (!group) {
+        res.status(404).json({ error: 'Document group not found' });
+        return;
+      }
+    }
+
     const document = await prisma.document.create({
       data: {
-        type: 'UNKNOWN',
-        status: 'PENDING_OCR',
+        type: docType,
+        // When type is explicitly provided the document is usable without OCR;
+        // mark it PENDING_REVIEW so it appears in the group immediately.
+        status: docType !== 'UNKNOWN' ? 'PENDING_REVIEW' : 'PENDING_OCR',
         originalFilename: req.file.originalname,
         rawFilePath: req.file.path,
         mimeType: req.file.mimetype,
+        ...(groupId ? { groupId } : {}),
       },
     });
 
@@ -36,6 +64,7 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
         status: document.status,
         originalFilename: document.originalFilename,
         uploadedAt: document.uploadedAt,
+        groupId: document.groupId,
       },
     });
   } catch (err) {
@@ -283,6 +312,12 @@ type PrismaDocumentWithRelations = Awaited<ReturnType<typeof prisma.document.fin
     userReviewed: boolean;
     reviewedAt: Date | null;
     userEdits: string | null;
+    principalCompany: string | null;
+    branchName: string | null;
+    orderType: string | null;
+    tptCode: string | null;
+    quantityInMt: number | null;
+    quantityInBags: number | null;
     createdAt: Date;
     updatedAt: Date;
     documentId: string;
@@ -322,6 +357,12 @@ function formatDocument(doc: PrismaDocumentWithRelations | null) {
       userReviewed: ed.userReviewed,
       reviewedAt: ed.reviewedAt,
       userEdits: ed.userEdits ? (JSON.parse(ed.userEdits) as Record<string, unknown>) : null,
+      principalCompany: ed.principalCompany,
+      branchName: ed.branchName,
+      orderType: ed.orderType,
+      tptCode: ed.tptCode,
+      quantityInMt: ed.quantityInMt,
+      quantityInBags: ed.quantityInBags,
     };
   }
 

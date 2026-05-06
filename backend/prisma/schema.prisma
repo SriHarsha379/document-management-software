@@ -270,6 +270,7 @@ model ExtractedData {
   billToParty         String?
   shipToParty         String?
   principalCompany    String?
+  branchName          String?
   loadingSlipNo       String?
   companyInvoiceNo    String?
   companyInvoiceDate  String?
@@ -277,6 +278,10 @@ model ExtractedData {
   deliveryDestination String?
   productName         String?
   transporterName     String?
+  orderType           String?
+  tptCode             String?
+  quantityInMt        Float?
+  quantityInBags      Float?
 
   // OCR metadata
   rawOcrResponse  String  // Full JSON response from OpenAI stored as string
@@ -335,6 +340,8 @@ enum DocumentType {
   INVOICE
   TOLL
   WEIGHMENT
+  WEIGHMENT_PARTY
+  WEIGHMENT_SITE
   EWAYBILL
   RECEIVING
   UNKNOWN

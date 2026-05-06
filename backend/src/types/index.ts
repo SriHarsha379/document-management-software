@@ -1,4 +1,4 @@
-export type DocumentType = 'LR' | 'INVOICE' | 'TOLL' | 'WEIGHMENT' | 'EWAYBILL' | 'RECEIVING' | 'UNKNOWN';
+export type DocumentType = 'LR' | 'INVOICE' | 'TOLL' | 'WEIGHMENT' | 'WEIGHMENT_PARTY' | 'WEIGHMENT_SITE' | 'EWAYBILL' | 'RECEIVING' | 'UNKNOWN';
 export type DocumentStatus = 'PENDING_OCR' | 'PENDING_REVIEW' | 'REVIEWED' | 'SAVED';
 export type RecipientType = 'ACCOUNTS' | 'PARTY' | 'TRANSPORTER';
 export type BundleStatus = 'DRAFT' | 'READY' | 'SENT';
@@ -17,6 +17,7 @@ export interface ExtractedFields {
   billToParty?: string;
   shipToParty?: string;
   principalCompany?: string;
+  branchName?: string;
   loadingSlipNo?: string;
   companyInvoiceNo?: string;
   companyInvoiceDate?: string;
@@ -24,6 +25,10 @@ export interface ExtractedFields {
   deliveryDestination?: string;
   productName?: string;
   transporterName?: string;
+  orderType?: string;
+  tptCode?: string;
+  quantityInMt?: number;
+  quantityInBags?: number;
   documentType?: DocumentType;
   confidence?: number;
 }
