@@ -28,7 +28,7 @@ export function SmartSearch() {
     setLoading(true); setError(null);
     try {
       const offset = (pg - 1) * LIMIT;
-      const res = await lrApi.list({ q: q.trim() || undefined, limit: LIMIT, offset });
+      const res = await lrApi.list({ q: query.trim() || undefined, limit: LIMIT, offset });
       setLrs(res.data); setTotal(res.total); setPage(pg); setHasSearched(true); setLastQuery(q);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Search failed');

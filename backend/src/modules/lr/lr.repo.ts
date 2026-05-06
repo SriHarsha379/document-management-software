@@ -153,21 +153,23 @@ function buildPrismaWhere(scope: ScopeWhere & { id?: string }, q?: string): LrWh
       : { in: scope.source.in };
   }
 
-  if (q && q.trim()) {
+  if (q) {
     const term = q.trim();
-    where.OR = [
-      { lrNo:            { contains: term } },
-      { vehicleNo:       { contains: term } },
-      { principalCompany:{ contains: term } },
-      { billToParty:     { contains: term } },
-      { shipToParty:     { contains: term } },
-      { transporterName: { contains: term } },
-      { driverName:      { contains: term } },
-      { productName:     { contains: term } },
-      { loadingSlipNo:   { contains: term } },
-      { companyInvoiceNo:{ contains: term } },
-      { deliveryDestination: { contains: term } },
-    ];
+    if (term) {
+      where.OR = [
+        { lrNo:            { contains: term } },
+        { vehicleNo:       { contains: term } },
+        { principalCompany:{ contains: term } },
+        { billToParty:     { contains: term } },
+        { shipToParty:     { contains: term } },
+        { transporterName: { contains: term } },
+        { driverName:      { contains: term } },
+        { productName:     { contains: term } },
+        { loadingSlipNo:   { contains: term } },
+        { companyInvoiceNo:{ contains: term } },
+        { deliveryDestination: { contains: term } },
+      ];
+    }
   }
 
   return where;
