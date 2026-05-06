@@ -87,8 +87,9 @@ router.get(
 
       const limit  = parsePaginationInt(req.query.limit,  50, 200);
       const offset = parsePaginationInt(req.query.offset, 0,  Infinity);
+      const q      = typeof req.query.q === 'string' && req.query.q.trim() ? req.query.q.trim() : undefined;
 
-      const { rows, total } = await lrRepo.findMany({ where, limit, offset });
+      const { rows, total } = await lrRepo.findMany({ where, limit, offset, q });
       res.json({ data: rows, total, limit, offset });
     } catch (err) {
       handleRouteError(err, res, '[lr] GET /lrs');

@@ -90,7 +90,6 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
 
   const handleDocumentReady = (doc: Document) => { setSelectedDoc(doc); setView('review'); };
   const handleSaved = (_doc: Document) => { setRefreshKey((k) => k + 1); setView('list'); setSelectedDoc(null); };
-  const handleSelectFromList = (doc: Document) => { setSelectedDoc(doc); setView('review'); };
   const handleBundleSaved = (bundle: Bundle) => { setDispatchBundle(bundle); };
 
   const allNavItems: (NavItem & { permitted: boolean })[] = [
@@ -197,7 +196,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
         <main style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
           <div style={{ maxWidth: 1200, margin: '0 auto' }}>
             {view === 'dashboard' && <LrDashboard />}
-            {view === 'list' && <DocumentList onSelect={handleSelectFromList} refreshTrigger={refreshKey} />}
+            {view === 'list' && <DocumentList refreshTrigger={refreshKey} />}
             {view === 'upload' && canUpload && <DocumentUpload onDocumentReady={handleDocumentReady} />}
             {view === 'review' && selectedDoc && (
               <OCRReview

@@ -156,7 +156,7 @@ import type { Lr, PaginatedLrs, LrSummary } from '../types';
 export type LrCreatePayload = Omit<Lr, 'id' | 'serialNo' | 'createdAt' | 'updatedAt' | 'company' | 'branch'>;
 
 export const lrApi = {
-  list: async (params?: { limit?: number; offset?: number }): Promise<PaginatedLrs> => {
+  list: async (params?: { limit?: number; offset?: number; q?: string }): Promise<PaginatedLrs> => {
     const res = await api.get<PaginatedLrs>('/lrs', { params });
     return res.data;
   },
