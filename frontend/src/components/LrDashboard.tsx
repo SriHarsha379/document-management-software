@@ -110,6 +110,7 @@ export function LrDashboard() {
   const [driverUploadsTotal, setDriverUploadsTotal] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<{ created: number; linked: number } | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const LIMIT = 20;
 
@@ -138,11 +139,11 @@ export function LrDashboard() {
 
   const handleSync = async () => {
     try {
-      setSyncing(true); setSyncResult(null);
+      setSyncing(true); setSyncResult(null); setSyncError(null);
       const result = await lrApi.syncFromDocuments();
       setSyncResult({ created: result.created, linked: result.linked });
       void fetchData();
-    } catch { setSyncResult(null); }
+    } catch { setSyncError('Sync failed. Check that a Company and Branch are configured in the admin panel.'); }
     finally { setSyncing(false); }
   };
 
@@ -179,6 +180,9 @@ export function LrDashboard() {
               : `✅ Created ${syncResult.created} new LR record${syncResult.created !== 1 ? 's' : ''} and linked ${syncResult.linked} document${syncResult.linked !== 1 ? 's' : ''}.`}
           </div>
         )}
+        {syncError !== null && (
+          <div style={{ ...errorBox, marginBottom: 12 }}>⚠️ {syncError}</div>
+        )}
         {summary ? <PieChart lrCount={summary.lrCount} invoiceCount={summary.invoiceCount} /> : <Skeleton width={260} height={160} />}
       </div>
 
@@ -203,6 +207,11 @@ export function LrDashboard() {
           <div style={emptyState}>
             <div style={{ fontSize: 40, marginBottom: 8 }}>📭</div>
             <p style={{ margin: 0, color: '#6b7280' }}>No LR records found.</p>
+            {driverUploadsTotal > 0 && canCreate && (
+              <p style={{ margin: '10px 0 0', fontSize: 13, color: '#92400e', background: '#fef3c7', borderRadius: 8, padding: '8px 14px', display: 'inline-block' }}>
+                ⚠️ {driverUploadsTotal} driver upload{driverUploadsTotal !== 1 ? 's' : ''} detected. Click <strong>Sync from Uploads</strong> above to create LR records from uploaded documents.
+              </p>
+            )}
           </div>
         )}
 
