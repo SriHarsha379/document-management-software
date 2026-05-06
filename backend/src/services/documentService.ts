@@ -221,6 +221,7 @@ export async function syncLrRecordsFromDocuments(): Promise<{
   processed: number;
   created: number;
   linked: number;
+  backfilled: number;
 }> {
   const docs = await prisma.document.findMany({
     where: { type: 'LR' },
@@ -257,7 +258,44 @@ export async function syncLrRecordsFromDocuments(): Promise<{
   // Re-run auto-link for documents that have no LR link yet
   const { linked } = await relinkPendingDocuments();
 
-  return { processed: docs.length, created, linked };
+  // Back-fill invoice fields on Lr records from already-linked INVOICE documents.
+  // This covers invoices that were uploaded before the back-fill logic existed,
+  // so that INV. NO and INV. DATE appear in the dashboard for historical records.
+  const linkedInvoices = await prisma.document.findMany({
+    where: {
+      type: 'INVOICE',
+      extractedData: { isNot: null },
+      documentLinks: { some: {} },
+    },
+    select: {
+      documentLinks: { select: { lrId: true }, take: 1 },
+      extractedData: {
+        select: {
+          invoiceNo: true,
+          companyInvoiceNo: true,
+          companyInvoiceDate: true,
+          companyEwayBillNo: true,
+          date: true,
+        },
+      },
+    },
+  });
+
+  let backfilled = 0;
+  for (const inv of linkedInvoices) {
+    const lrId = inv.documentLinks[0]?.lrId;
+    if (!lrId || !inv.extractedData) continue;
+    await backfillLrFromLinkedInvoice(lrId, {
+      invoiceNo: inv.extractedData.invoiceNo,
+      companyInvoiceNo: inv.extractedData.companyInvoiceNo,
+      companyInvoiceDate: inv.extractedData.companyInvoiceDate,
+      companyEwayBillNo: inv.extractedData.companyEwayBillNo,
+      date: inv.extractedData.date,
+    });
+    backfilled++;
+  }
+
+  return { processed: docs.length, created, linked, backfilled };
 }
 
 /**
