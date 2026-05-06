@@ -116,6 +116,10 @@ async function autoCreateLrRecord(
     deliveryDestination?: string | null;
     productName?: string | null;
     transporterName?: string | null;
+    orderType?: string | null;
+    tptCode?: string | null;
+    quantityInMt?: number | null;
+    quantityInBags?: number | null;
   },
 ): Promise<boolean> {
   if (documentType !== 'LR' || !fields.lrNo?.trim()) return false;
@@ -194,6 +198,10 @@ async function autoCreateLrRecord(
       deliveryDestination: fields.deliveryDestination?.trim() || undefined,
       productName: fields.productName?.trim() || undefined,
       transporterName: fields.transporterName?.trim() || undefined,
+      orderType: fields.orderType?.trim() || undefined,
+      tptCode: fields.tptCode?.trim() || undefined,
+      quantityInMt: fields.quantityInMt ?? undefined,
+      quantityInBags: fields.quantityInBags ?? undefined,
     },
   });
 
@@ -238,6 +246,10 @@ export async function syncLrRecordsFromDocuments(): Promise<{
       deliveryDestination: doc.extractedData.deliveryDestination,
       productName: doc.extractedData.productName,
       transporterName: doc.extractedData.transporterName,
+      orderType: doc.extractedData.orderType,
+      tptCode: doc.extractedData.tptCode,
+      quantityInMt: doc.extractedData.quantityInMt,
+      quantityInBags: doc.extractedData.quantityInBags,
     });
     if (wasCreated) created++;
   }
@@ -266,6 +278,7 @@ export async function saveOcrResults(
     billToParty?: string;
     shipToParty?: string;
     principalCompany?: string;
+    branchName?: string;
     loadingSlipNo?: string;
     companyInvoiceNo?: string;
     companyInvoiceDate?: string;
@@ -273,6 +286,10 @@ export async function saveOcrResults(
     deliveryDestination?: string;
     productName?: string;
     transporterName?: string;
+    orderType?: string;
+    tptCode?: string;
+    quantityInMt?: number;
+    quantityInBags?: number;
   },
   documentType: DocumentType,
   rawOcrResponse: string
@@ -295,6 +312,7 @@ export async function saveOcrResults(
         billToParty: fields.billToParty ?? null,
         shipToParty: fields.shipToParty ?? null,
         principalCompany: fields.principalCompany ?? null,
+        branchName: fields.branchName ?? null,
         loadingSlipNo: fields.loadingSlipNo ?? null,
         companyInvoiceNo: fields.companyInvoiceNo ?? null,
         companyInvoiceDate: fields.companyInvoiceDate ?? null,
@@ -302,6 +320,10 @@ export async function saveOcrResults(
         deliveryDestination: fields.deliveryDestination ?? null,
         productName: fields.productName ?? null,
         transporterName: fields.transporterName ?? null,
+        orderType: fields.orderType ?? null,
+        tptCode: fields.tptCode ?? null,
+        quantityInMt: fields.quantityInMt ?? null,
+        quantityInBags: fields.quantityInBags ?? null,
       },
       update: {
         lrNo: fields.lrNo ?? null,
@@ -317,6 +339,7 @@ export async function saveOcrResults(
         billToParty: fields.billToParty ?? null,
         shipToParty: fields.shipToParty ?? null,
         principalCompany: fields.principalCompany ?? null,
+        branchName: fields.branchName ?? null,
         loadingSlipNo: fields.loadingSlipNo ?? null,
         companyInvoiceNo: fields.companyInvoiceNo ?? null,
         companyInvoiceDate: fields.companyInvoiceDate ?? null,
@@ -324,6 +347,10 @@ export async function saveOcrResults(
         deliveryDestination: fields.deliveryDestination ?? null,
         productName: fields.productName ?? null,
         transporterName: fields.transporterName ?? null,
+        orderType: fields.orderType ?? null,
+        tptCode: fields.tptCode ?? null,
+        quantityInMt: fields.quantityInMt ?? null,
+        quantityInBags: fields.quantityInBags ?? null,
       },
     });
 
@@ -355,6 +382,10 @@ export async function saveOcrResults(
       deliveryDestination: fields.deliveryDestination,
       productName: fields.productName,
       transporterName: fields.transporterName,
+      orderType: fields.orderType,
+      tptCode: fields.tptCode,
+      quantityInMt: fields.quantityInMt,
+      quantityInBags: fields.quantityInBags,
     });
     await autoLinkDocument(documentId);
     await autoLinkDocumentToGroup(documentId, {

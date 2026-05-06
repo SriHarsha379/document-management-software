@@ -83,6 +83,12 @@ export interface ExtractedData {
   userReviewed: boolean;
   reviewedAt: string | null;
   userEdits: Record<string, unknown> | null;
+  principalCompany?: string | null;
+  branchName?: string | null;
+  orderType?: string | null;
+  tptCode?: string | null;
+  quantityInMt?: number | null;
+  quantityInBags?: number | null;
 }
 
 export interface DocumentGroup {

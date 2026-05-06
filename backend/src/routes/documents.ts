@@ -283,6 +283,12 @@ type PrismaDocumentWithRelations = Awaited<ReturnType<typeof prisma.document.fin
     userReviewed: boolean;
     reviewedAt: Date | null;
     userEdits: string | null;
+    principalCompany: string | null;
+    branchName: string | null;
+    orderType: string | null;
+    tptCode: string | null;
+    quantityInMt: number | null;
+    quantityInBags: number | null;
     createdAt: Date;
     updatedAt: Date;
     documentId: string;
@@ -322,6 +328,12 @@ function formatDocument(doc: PrismaDocumentWithRelations | null) {
       userReviewed: ed.userReviewed,
       reviewedAt: ed.reviewedAt,
       userEdits: ed.userEdits ? (JSON.parse(ed.userEdits) as Record<string, unknown>) : null,
+      principalCompany: ed.principalCompany,
+      branchName: ed.branchName,
+      orderType: ed.orderType,
+      tptCode: ed.tptCode,
+      quantityInMt: ed.quantityInMt,
+      quantityInBags: ed.quantityInBags,
     };
   }
 

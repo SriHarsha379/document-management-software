@@ -35,9 +35,14 @@ STEP 2 — Extract fields according to the identified document type using the ru
 - date: LR date or document date in YYYY-MM-DD (convert DD/MM/YYYY or DD-MM-YYYY)
 - billToParty: The "BILL TO PARTY" company name
 - shipToParty: The "SHIP TO PARTY" company name (delivery address party)
-- principalCompany: "Code No." / principal company / owner of goods
+- principalCompany: The sender/issuer company name from the top-left "From" header block (e.g. "SP ASSOCIATES"). This is the company that issued the LR.
+- branchName: The locality/area from the sender's header address block, normalized to UPPERCASE (e.g. "DRONAGIRI"). Look for the locality token before the city/district in the "From" address. Also check "From Destination" label.
 - productName: Product or commodity being transported — look for "PRODUCT", "Goods Description", "Item"
 - quantity: Quantity with unit — look for "QUANTITY IN MT", "Qty", e.g. "35.38 MT" or "500 Bags"
+- quantityInMt: Numeric quantity in metric tonnes — extract only the number from quantity, e.g. 35.38 (float). Return null if unit is not MT/MTS/tonnes.
+- quantityInBags: Numeric quantity in bags — extract only the number, e.g. 500 (float). Return null if not in bags.
+- orderType: Order type — look for "ORDER TYPE", "Order Type", e.g. "BULK ORDER", "BAG ORDER"
+- tptCode: Transport/TPT code — look for "T.P.T Code", "TPT Code", "TPT"
 - partyNames: Array [consignor/sender name, consignee/receiver name] — look for "From", "Consignor", "Sender" for index 0; "To", "Consignee", "Receiver" for index 1
 - transporterName: The transport company name (usually printed as the issuing company on the document header)
 - deliveryDestination: "To Destination" city or location
@@ -54,8 +59,11 @@ STEP 2 — Extract fields according to the identified document type using the ru
 - lrNo: LR number referenced in the invoice — look for "LR No.", "LR No"
 - billToParty: "BILL TO" party name
 - shipToParty: "SHIP TO" party name
+- principalCompany: The sender/issuer company name from the top-left header block (e.g. "SP ASSOCIATES")
+- branchName: The locality/area from the sender's header address block, normalized to UPPERCASE (e.g. "DRONAGIRI")
 - productName: Item/product name from line items
 - quantity: Quantity from line items with unit
+- quantityInMt: Numeric quantity in metric tonnes from line items (float), e.g. 35.38
 - companyEwayBillNo: E-Way Bill number — look for "E-Way Bill No", "E-Way bill No"
 
 === FOR TOLL ===
@@ -71,13 +79,16 @@ Always respond with a valid JSON object with EXACTLY these fields:
   "invoiceNo": "<invoice/bill number or null>",
   "vehicleNo": "<vehicle registration number in Indian format like MH12AB1234 or null>",
   "quantity": "<quantity with unit, e.g. '35.38 MT', '500 Bags' or null>",
+  "quantityInMt": <numeric MT value e.g. 35.38, or null>,
+  "quantityInBags": <numeric bags count e.g. 500, or null>,
   "date": "<document date in YYYY-MM-DD format or null>",
   "partyNames": ["<consignor/sender name>", "<consignee/receiver name>"],
   "tollAmount": "<toll amount with currency, e.g. '₹120' or null>",
   "weightInfo": "<weight details, e.g. 'Gross: 49670 kg, Tare: 14290 kg, Net: 35380 kg' or null>",
   "billToParty": "<name of the Bill To party or null>",
   "shipToParty": "<name of the Ship To party or null>",
-  "principalCompany": "<principal company / owner of goods or null>",
+  "principalCompany": "<company name from the top-left header block (sender/issuer) — e.g. 'SP ASSOCIATES' or null>",
+  "branchName": "<locality/area from the sender's header address block, normalized to UPPERCASE — e.g. 'DRONAGIRI' or null>",
   "loadingSlipNo": "<loading slip number or null>",
   "companyInvoiceNo": "<company's own invoice number or null>",
   "companyInvoiceDate": "<company invoice date in YYYY-MM-DD format or null>",
@@ -85,6 +96,8 @@ Always respond with a valid JSON object with EXACTLY these fields:
   "deliveryDestination": "<delivery destination city/location or null>",
   "productName": "<name of the product/commodity being transported or null>",
   "transporterName": "<name of the transport company/transporter or null>",
+  "orderType": "<order type e.g. 'BULK ORDER', 'BAG ORDER' or null>",
+  "tptCode": "<T.P.T code / TPT code or null>",
   "rawText": "<full text extracted from document>"
 }
 
@@ -93,6 +106,7 @@ Important rules:
 - LR numbers may contain slashes, e.g. "SP/DR/LR/25-26/1433" — capture the full value exactly.
 - For dates: convert DD/MM/YYYY → YYYY-MM-DD and DD-MM-YYYY → YYYY-MM-DD. Read the year digit by digit carefully (e.g. 2-0-2-5 = 2025, not 2020).
 - For weighment slips the date often appears alongside a time stamp like "DT:16-09-2025 TM:12:05" — extract only the date portion.
+- quantityInMt and quantityInBags must be plain numbers (no units), e.g. 35.38 not "35.38 MT".
 - If a field is not present or cannot be read clearly, return null for that field.
 - Always extract rawText with the complete readable text from the document.`;
 
@@ -205,6 +219,7 @@ export async function processDocumentOcr(filePath: string, mimeType: string): Pr
     billToParty: typeof parsed.billToParty === 'string' ? parsed.billToParty : undefined,
     shipToParty: typeof parsed.shipToParty === 'string' ? parsed.shipToParty : undefined,
     principalCompany: typeof parsed.principalCompany === 'string' ? parsed.principalCompany : undefined,
+    branchName: typeof parsed.branchName === 'string' ? parsed.branchName.trim().toUpperCase() : undefined,
     loadingSlipNo: typeof parsed.loadingSlipNo === 'string' ? parsed.loadingSlipNo : undefined,
     companyInvoiceNo: typeof parsed.companyInvoiceNo === 'string' ? parsed.companyInvoiceNo : undefined,
     companyInvoiceDate: typeof parsed.companyInvoiceDate === 'string' ? parsed.companyInvoiceDate : undefined,
@@ -212,6 +227,10 @@ export async function processDocumentOcr(filePath: string, mimeType: string): Pr
     deliveryDestination: typeof parsed.deliveryDestination === 'string' ? parsed.deliveryDestination : undefined,
     productName: typeof parsed.productName === 'string' ? parsed.productName : undefined,
     transporterName: typeof parsed.transporterName === 'string' ? parsed.transporterName : undefined,
+    orderType: typeof parsed.orderType === 'string' ? parsed.orderType : undefined,
+    tptCode: typeof parsed.tptCode === 'string' ? parsed.tptCode : undefined,
+    quantityInMt: typeof parsed.quantityInMt === 'number' ? parsed.quantityInMt : undefined,
+    quantityInBags: typeof parsed.quantityInBags === 'number' ? parsed.quantityInBags : undefined,
     documentType,
     confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
   };

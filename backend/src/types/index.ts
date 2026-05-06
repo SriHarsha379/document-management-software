@@ -17,6 +17,7 @@ export interface ExtractedFields {
   billToParty?: string;
   shipToParty?: string;
   principalCompany?: string;
+  branchName?: string;
   loadingSlipNo?: string;
   companyInvoiceNo?: string;
   companyInvoiceDate?: string;
@@ -24,6 +25,10 @@ export interface ExtractedFields {
   deliveryDestination?: string;
   productName?: string;
   transporterName?: string;
+  orderType?: string;
+  tptCode?: string;
+  quantityInMt?: number;
+  quantityInBags?: number;
   documentType?: DocumentType;
   confidence?: number;
 }
