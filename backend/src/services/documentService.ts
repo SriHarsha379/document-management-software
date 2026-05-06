@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import type { DocumentType, ReviewPayload } from '../types/index.js';
-import { autoLinkDocument, relinkPendingDocuments, normalizeVehicleNo } from './autoLinkService.js';
+import { autoLinkDocument, relinkPendingDocuments, normalizeVehicleNo, backfillLrFromLinkedInvoice } from './autoLinkService.js';
 
 const prisma = new PrismaClient();
 
@@ -387,7 +387,18 @@ export async function saveOcrResults(
       quantityInMt: fields.quantityInMt,
       quantityInBags: fields.quantityInBags,
     });
-    await autoLinkDocument(documentId);
+    const linkResult = await autoLinkDocument(documentId);
+    // When an invoice arrives after the LR (e.g. from a remote office), back-fill
+    // the Lr row's invoice fields so the dashboard columns show the correct values.
+    if (linkResult.linked && linkResult.lrId && documentType === 'INVOICE') {
+      await backfillLrFromLinkedInvoice(linkResult.lrId, {
+        invoiceNo: fields.invoiceNo,
+        companyInvoiceNo: fields.companyInvoiceNo,
+        companyInvoiceDate: fields.companyInvoiceDate,
+        companyEwayBillNo: fields.companyEwayBillNo,
+        date: fields.date,
+      });
+    }
     await autoLinkDocumentToGroup(documentId, {
       vehicleNo: fields.vehicleNo,
       date: fields.date,
@@ -482,7 +493,16 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
         transporterName: updatedExtracted.transporterName,
       });
     }
-    await autoLinkDocument(documentId);
+    const reviewLinkResult = await autoLinkDocument(documentId);
+    if (reviewLinkResult.linked && reviewLinkResult.lrId && updatedDoc?.type === 'INVOICE') {
+      await backfillLrFromLinkedInvoice(reviewLinkResult.lrId, {
+        invoiceNo: updatedExtracted.invoiceNo,
+        companyInvoiceNo: updatedExtracted.companyInvoiceNo,
+        companyInvoiceDate: updatedExtracted.companyInvoiceDate,
+        companyEwayBillNo: updatedExtracted.companyEwayBillNo,
+        date: updatedExtracted.date,
+      });
+    }
     await autoLinkDocumentToGroup(documentId, {
       vehicleNo: updatedExtracted.vehicleNo,
       date: updatedExtracted.date,
