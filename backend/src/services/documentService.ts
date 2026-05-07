@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import type { DocumentType, ReviewPayload } from '../types/index.js';
-import { autoLinkDocument, relinkPendingDocuments, normalizeVehicleNo, backfillLrFromLinkedInvoice } from './autoLinkService.js';
+import { autoLinkDocument, relinkPendingDocuments, normalizeVehicleNo, backfillLrFromLinkedInvoice, daysBetween } from './autoLinkService.js';
 
 const prisma = new PrismaClient();
 
@@ -10,7 +10,13 @@ export { prisma };
  * Auto-link a document to a DocumentGroup based on common fields.
  *
  * Matching strategy (in priority order):
- *  1. vehicleNo + date   — upserts the group (creates it if absent)
+ *  1. vehicleNo + date   — fuzzy match: if an existing group for the same
+ *                          vehicleNo has a date within 7 days of the document's
+ *                          date, the document joins that group (handles
+ *                          late-arriving docs like site weighment slips and
+ *                          acknowledgements that arrive 1-3 days after trip
+ *                          start).  If no nearby group exists, a new group is
+ *                          created with the document's exact date.
  *  2. lrNo               — joins an existing group that contains a document
  *                          with the same lrNo in its extracted data
  *  3. invoiceNo          — joins an existing group that contains a document
@@ -29,16 +35,38 @@ async function autoLinkDocumentToGroup(
 ): Promise<string | null> {
   const { vehicleNo, date, lrNo, invoiceNo } = fields;
 
-  // ── Strategy 1: vehicleNo + date (create or find group) ──────────────────
+  // ── Strategy 1: vehicleNo + date (fuzzy match within 7 days, else create) ──
+  //
+  // Business rule: a lorry trip typically starts on the day the LR and party
+  // weighment slip are generated.  The driver may take up to ~3 days to deliver
+  // the goods and return; late-arriving documents (site weighment slip,
+  // acknowledgement) therefore carry dates 1–7 days after the trip start date.
+  // Rather than creating a separate DocumentGroup for those later documents,
+  // we link them into the existing group for the same vehicle whose date is
+  // closest within a 7-day window.
   if (vehicleNo?.trim() && date?.trim()) {
     const normalizedVehicle = vehicleNo.trim().toUpperCase().replace(/\s+/g, '');
     const normalizedDate = date.trim();
 
-    const group = await prisma.documentGroup.upsert({
-      where: { vehicleNo_date: { vehicleNo: normalizedVehicle, date: normalizedDate } },
-      update: {},
-      create: { vehicleNo: normalizedVehicle, date: normalizedDate },
+    // Look for an existing group for the same vehicle within 7 days
+    const TRIP_TOLERANCE_DAYS = 7;
+    const candidateGroups = await prisma.documentGroup.findMany({
+      where: { vehicleNo: normalizedVehicle },
     });
+
+    const nearbyGroup =
+      candidateGroups
+        .map((g) => ({ g, diff: daysBetween(g.date, normalizedDate) }))
+        .filter(({ diff }) => diff !== null && (diff as number) <= TRIP_TOLERANCE_DAYS)
+        .sort((a, b) => (a.diff as number) - (b.diff as number))[0]?.g ?? null;
+
+    const group =
+      nearbyGroup ??
+      (await prisma.documentGroup.upsert({
+        where: { vehicleNo_date: { vehicleNo: normalizedVehicle, date: normalizedDate } },
+        update: {},
+        create: { vehicleNo: normalizedVehicle, date: normalizedDate },
+      }));
 
     await prisma.document.update({
       where: { id: documentId },
