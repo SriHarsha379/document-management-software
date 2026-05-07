@@ -4,13 +4,15 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../services/documentService.js';
 
 const router = Router();
+const DRIVER_ACCESS_TABLE = 'temporary_driver_accesses';
+const DRIVER_UPLOADS_TABLE = 'driver_upload_documents';
 
 function isMissingDriverTableError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;
   const maybe = err as { code?: string; message?: string };
   if (maybe.code !== 'P2021') return false;
   const msg = maybe.message ?? '';
-  return msg.includes('temporary_driver_accesses') || msg.includes('driver_upload_documents');
+  return msg.includes(DRIVER_ACCESS_TABLE) || msg.includes(DRIVER_UPLOADS_TABLE);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
