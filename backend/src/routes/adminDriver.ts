@@ -92,6 +92,7 @@ router.get('/', async (_req: Request, res: Response): Promise<void> => {
     });
   } catch (err) {
     if (isMissingDriverTableError(err)) {
+      console.warn('[adminDriver] Driver access tables are missing; returning empty access list.');
       res.json({ accesses: [] });
       return;
     }
