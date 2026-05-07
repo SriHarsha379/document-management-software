@@ -322,8 +322,6 @@ export function DocumentBundler({ onBundleSaved }: Props) {
       if (failedCount > 0) {
         setUploadError(`Delete failed for ${failedCount} document(s).`);
       }
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Delete failed');
     } finally {
       setDeletingSlot(null);
     }
@@ -402,7 +400,7 @@ export function DocumentBundler({ onBundleSaved }: Props) {
                               <button
                                 type="button"
                                 style={styles.deleteCellBtn}
-                                onClick={() => { handleDeleteDocs(g, col); }}
+                                onClick={() => handleDeleteDocs(g, col)}
                                 title={`Delete uploaded ${col.header}`}
                               >
                                 🗑️
