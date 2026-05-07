@@ -312,8 +312,16 @@ export function DocumentBundler({ onBundleSaved }: Props) {
     setUploadError(null);
 
     try {
-      await Promise.all(docsInSlot.map((doc) => documentsApi.delete(doc.id)));
-      refreshGroups();
+      const results = await Promise.allSettled(docsInSlot.map((doc) => documentsApi.delete(doc.id)));
+      const failedCount = results.filter((result) => result.status === 'rejected').length;
+      const deletedCount = results.length - failedCount;
+
+      if (deletedCount > 0) {
+        refreshGroups();
+      }
+      if (failedCount > 0) {
+        setUploadError(`Delete failed for ${failedCount} document(s).`);
+      }
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Delete failed');
     } finally {
@@ -394,7 +402,7 @@ export function DocumentBundler({ onBundleSaved }: Props) {
                               <button
                                 type="button"
                                 style={styles.deleteCellBtn}
-                                onClick={() => { void handleDeleteDocs(g, col); }}
+                                onClick={() => { handleDeleteDocs(g, col); }}
                                 title={`Delete uploaded ${col.header}`}
                               >
                                 🗑️
