@@ -122,7 +122,7 @@ router.get('/status', requireDriverAuth, async (req: Request, res: Response): Pr
 // ──────────────────────────────────────────────────────────────────────────────
 // POST /api/driver/upload
 // Upload a document. Requires auth. Runs OCR and auto-links.
-// Form fields: file (multipart), docType (LR | TOLL | WEIGHMENT_SLIP)
+// Form fields: file (multipart), docType (LR | TOLL | WEIGHMENT_PARTY | WEIGHMENT_SITE | PARTY_ACK)
 // ──────────────────────────────────────────────────────────────────────────────
 router.post(
   '/upload',
@@ -150,7 +150,7 @@ router.post(
       }
 
       const { docType } = req.body as { docType?: string };
-      const validDocTypes = ['LR', 'TOLL', 'WEIGHMENT_SLIP'] as const;
+      const validDocTypes = ['LR', 'TOLL', 'WEIGHMENT_SLIP', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE', 'PARTY_ACK'] as const;
       if (!docType || !validDocTypes.includes(docType as (typeof validDocTypes)[number])) {
         res.status(400).json({ error: `docType must be one of: ${validDocTypes.join(', ')}` });
         return;
@@ -159,7 +159,7 @@ router.post(
       // Create initial DB record
       const driverDoc = await prisma.driverUploadDocument.create({
         data: {
-          docType: docType as 'LR' | 'TOLL' | 'WEIGHMENT_SLIP',
+          docType: docType as 'LR' | 'TOLL' | 'WEIGHMENT_SLIP' | 'WEIGHMENT_PARTY' | 'WEIGHMENT_SITE' | 'PARTY_ACK',
           storageKey: req.file.path,
           originalFilename: req.file.originalname,
           mimeType: req.file.mimetype,

@@ -10,7 +10,8 @@ interface Props {
 
 const TYPE_COLORS: Record<DocumentType, string> = {
   LR: '#4361ee', INVOICE: '#06b6d4', TOLL: '#f59e0b',
-  WEIGHMENT: '#8b5cf6', EWAYBILL: '#10b981', RECEIVING: '#ec4899', UNKNOWN: '#9ca3af',
+  WEIGHMENT: '#8b5cf6', WEIGHMENT_PARTY: '#7c3aed', WEIGHMENT_SITE: '#6d28d9',
+  EWAYBILL: '#10b981', RECEIVING: '#ec4899', UNKNOWN: '#9ca3af',
 };
 
 const STATUS_COLORS: Record<DocumentStatus, string> = {

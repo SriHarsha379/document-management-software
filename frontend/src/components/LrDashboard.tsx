@@ -137,6 +137,18 @@ export function LrDashboard() {
 
   useEffect(() => { void fetchData(); }, [fetchData]);
 
+  useEffect(() => {
+    if (syncResult === null) return;
+    const t = setTimeout(() => setSyncResult(null), 7000);
+    return () => clearTimeout(t);
+  }, [syncResult]);
+
+  useEffect(() => {
+    if (syncError === null) return;
+    const t = setTimeout(() => setSyncError(null), 7000);
+    return () => clearTimeout(t);
+  }, [syncError]);
+
   const handleSync = async () => {
     try {
       setSyncing(true); setSyncResult(null); setSyncError(null);
