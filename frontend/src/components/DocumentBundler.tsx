@@ -265,8 +265,9 @@ function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
 export function DocumentBundler({ onBundleSaved }: Props) {
   const [groups, setGroups] = useState<DocumentGroup[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [operationError, setOperationError] = useState<string | null>(null);
   const [uploadingSlot, setUploadingSlot] = useState<{ groupId: string; type: DocumentType } | null>(null);
+  const [deletingSlot, setDeletingSlot] = useState<{ groupId: string; type: DocumentType } | null>(null);
 
   // The group for which the QuickSendModal is open (null = closed)
   const [sendGroup, setSendGroup] = useState<DocumentGroup | null>(null);
@@ -287,14 +288,48 @@ export function DocumentBundler({ onBundleSaved }: Props) {
 
   const handleAddDoc = useCallback(async (groupId: string, type: DocumentType, file: File) => {
     setUploadingSlot({ groupId, type });
-    setUploadError(null);
+    setOperationError(null);
     try {
       await documentsApi.upload(file, { type, groupId });
       refreshGroups();
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Upload failed');
+      setOperationError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setUploadingSlot(null);
+    }
+  }, [refreshGroups]);
+
+  const handleDeleteDocs = useCallback(async (group: DocumentGroup, col: TableColumn) => {
+    const docsInSlot = (group.documents ?? []).filter((doc) => (
+      col.key === 'WEIGHMENT_PARTY'
+        ? doc.type === 'WEIGHMENT_PARTY' || doc.type === 'WEIGHMENT'
+        : doc.type === col.checkType
+    ));
+
+    if (docsInSlot.length === 0) return;
+
+    setDeletingSlot({ groupId: group.id, type: col.uploadType });
+    setOperationError(null);
+
+    try {
+      const results = await Promise.allSettled(docsInSlot.map((doc) => documentsApi.delete(doc.id)));
+      const failedCount = results.filter((result) => result.status === 'rejected').length;
+      const deletedCount = results.length - failedCount;
+      const failedDocIds = results.flatMap((result, index) => (
+        result.status === 'rejected' ? [docsInSlot[index]?.id ?? 'unknown'] : []
+      ));
+      const failureReasons = results.flatMap((result) => (
+        result.status === 'rejected' ? [result.reason instanceof Error ? result.reason.message : String(result.reason)] : []
+      ));
+
+      if (deletedCount > 0) {
+        refreshGroups();
+      }
+      if (failedCount > 0) {
+        setOperationError(`Delete failed for ${failedCount} document(s) [${failedDocIds.join(', ')}]: ${failureReasons.join(' | ')}`);
+      }
+    } finally {
+      setDeletingSlot(null);
     }
   }, [refreshGroups]);
 
@@ -307,8 +342,8 @@ export function DocumentBundler({ onBundleSaved }: Props) {
         {' '}“Other 1/2” are quick dummy upload slots (no OCR required).
       </p>
 
-      {uploadError && (
-        <p style={styles.error}>Upload failed: {uploadError}</p>
+      {operationError && (
+        <p style={styles.error}>Action failed: {operationError}</p>
       )}
 
       {groupsLoading && <p style={styles.loading}>Loading groups…</p>}
@@ -357,12 +392,34 @@ export function DocumentBundler({ onBundleSaved }: Props) {
                         (col.key === 'WEIGHMENT_PARTY' && docTypeSet.has('WEIGHMENT'));
                       const isUploading =
                         uploadingSlot?.groupId === g.id && uploadingSlot?.type === col.uploadType;
+                      const isDeleting =
+                        deletingSlot?.groupId === g.id && deletingSlot?.type === col.uploadType;
                       return (
                         <td key={col.key} style={{ ...styles.td, textAlign: 'center' }}>
-                          {exists ? (
+                          {isDeleting ? (
+                            <span
+                              style={styles.uploadingCell}
+                              role="status"
+                              aria-live="polite"
+                              aria-label="Deleting uploaded document"
+                            >
+                              🗑️
+                            </span>
+                          ) : exists ? (
+                            <div style={styles.presentCell}>
                             <span style={{ ...styles.presentBadge, background: col.color }}>
                               ✓
                             </span>
+                              <button
+                                type="button"
+                                style={styles.deleteCellBtn}
+                                onClick={() => handleDeleteDocs(g, col)}
+                                title={`Delete uploaded ${col.header}`}
+                                aria-label={`Delete uploaded ${col.header}`}
+                              >
+                                🗑️
+                              </button>
+                            </div>
                           ) : isUploading ? (
                             <span style={styles.uploadingCell}>⏳</span>
                           ) : (
@@ -480,6 +537,20 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'inline-block',
     opacity: 0.5,
     transition: 'opacity 0.15s',
+  },
+  presentCell: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 8,
+  },
+  deleteCellBtn: {
+    border: 'none',
+    background: 'transparent',
+    cursor: 'pointer',
+    fontSize: 13,
+    lineHeight: 1,
+    padding: 0,
+    opacity: 0.8,
   },
   sendBtn: {
     padding: '6px 14px',
