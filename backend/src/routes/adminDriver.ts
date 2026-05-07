@@ -5,6 +5,14 @@ import { prisma } from '../services/documentService.js';
 
 const router = Router();
 
+function isMissingDriverTableError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const maybe = err as { code?: string; message?: string };
+  if (maybe.code !== 'P2021') return false;
+  const msg = maybe.message ?? '';
+  return msg.includes('temporary_driver_accesses') || msg.includes('driver_upload_documents');
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // POST /api/admin/driver-access
 // Create a temporary driver access entry. Returns the plain-text password once.
@@ -83,6 +91,10 @@ router.get('/', async (_req: Request, res: Response): Promise<void> => {
       })),
     });
   } catch (err) {
+    if (isMissingDriverTableError(err)) {
+      res.json({ accesses: [] });
+      return;
+    }
     const message = err instanceof Error ? err.message : 'Failed to list driver accesses';
     res.status(500).json({ error: message });
   }
