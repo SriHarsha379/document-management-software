@@ -48,7 +48,13 @@ async function autoLinkDocumentToGroup(
     const normalizedVehicle = vehicleNo.trim().toUpperCase().replace(/\s+/g, '');
     const normalizedDate = date.trim();
 
-    // Look for an existing group for the same vehicle within 7 days
+    // Look for an existing group for the same vehicle within the trip tolerance.
+    //
+    // The window is intentionally bidirectional (absolute diff): a party
+    // weighment tare reading can be taken the day *before* the trip start, so
+    // a doc dated 1 day prior to an existing group should still join it.
+    // 7 days = up to 3 days for the lorry to deliver and return, plus a
+    // comfortable buffer for administrative delays in submitting the docs.
     const TRIP_TOLERANCE_DAYS = 7;
     const candidateGroups = await prisma.documentGroup.findMany({
       where: { vehicleNo: normalizedVehicle },
