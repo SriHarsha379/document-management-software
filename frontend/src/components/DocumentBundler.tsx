@@ -267,6 +267,7 @@ export function DocumentBundler({ onBundleSaved }: Props) {
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadingSlot, setUploadingSlot] = useState<{ groupId: string; type: DocumentType } | null>(null);
+  const [deletingSlot, setDeletingSlot] = useState<{ groupId: string; type: DocumentType } | null>(null);
 
   // The group for which the QuickSendModal is open (null = closed)
   const [sendGroup, setSendGroup] = useState<DocumentGroup | null>(null);
@@ -295,6 +296,28 @@ export function DocumentBundler({ onBundleSaved }: Props) {
       setUploadError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setUploadingSlot(null);
+    }
+  }, [refreshGroups]);
+
+  const handleDeleteDocs = useCallback(async (group: DocumentGroup, col: TableColumn) => {
+    const docsInSlot = (group.documents ?? []).filter((doc) => (
+      col.key === 'WEIGHMENT_PARTY'
+        ? doc.type === 'WEIGHMENT_PARTY' || doc.type === 'WEIGHMENT'
+        : doc.type === col.checkType
+    ));
+
+    if (docsInSlot.length === 0) return;
+
+    setDeletingSlot({ groupId: group.id, type: col.uploadType });
+    setUploadError(null);
+
+    try {
+      await Promise.all(docsInSlot.map((doc) => documentsApi.delete(doc.id)));
+      refreshGroups();
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Delete failed');
+    } finally {
+      setDeletingSlot(null);
     }
   }, [refreshGroups]);
 
@@ -357,12 +380,26 @@ export function DocumentBundler({ onBundleSaved }: Props) {
                         (col.key === 'WEIGHMENT_PARTY' && docTypeSet.has('WEIGHMENT'));
                       const isUploading =
                         uploadingSlot?.groupId === g.id && uploadingSlot?.type === col.uploadType;
+                      const isDeleting =
+                        deletingSlot?.groupId === g.id && deletingSlot?.type === col.uploadType;
                       return (
                         <td key={col.key} style={{ ...styles.td, textAlign: 'center' }}>
-                          {exists ? (
+                          {isDeleting ? (
+                            <span style={styles.uploadingCell}>🗑️</span>
+                          ) : exists ? (
+                            <div style={styles.presentCell}>
                             <span style={{ ...styles.presentBadge, background: col.color }}>
                               ✓
                             </span>
+                              <button
+                                type="button"
+                                style={styles.deleteCellBtn}
+                                onClick={() => { void handleDeleteDocs(g, col); }}
+                                title={`Delete uploaded ${col.header}`}
+                              >
+                                🗑️
+                              </button>
+                            </div>
                           ) : isUploading ? (
                             <span style={styles.uploadingCell}>⏳</span>
                           ) : (
@@ -480,6 +517,20 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'inline-block',
     opacity: 0.5,
     transition: 'opacity 0.15s',
+  },
+  presentCell: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 8,
+  },
+  deleteCellBtn: {
+    border: 'none',
+    background: 'transparent',
+    cursor: 'pointer',
+    fontSize: 13,
+    lineHeight: 1,
+    padding: 0,
+    opacity: 0.8,
   },
   sendBtn: {
     padding: '6px 14px',
