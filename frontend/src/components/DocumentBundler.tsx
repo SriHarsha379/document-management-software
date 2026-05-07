@@ -24,18 +24,6 @@ const RECIPIENT_DESCRIPTIONS: Record<RecipientType, string> = {
   TRANSPORTER: 'LR, Invoice, Weighment, Toll',
 };
 
-const TYPE_LABELS: Record<DocumentType, string> = {
-  LR: 'LR',
-  INVOICE: 'Invoice',
-  TOLL: 'Toll',
-  WEIGHMENT: 'Weighment',
-  WEIGHMENT_PARTY: 'Party Wt.',
-  WEIGHMENT_SITE: 'Site Wt.',
-  EWAYBILL: 'E-Way Bill',
-  RECEIVING: 'Receiving',
-  UNKNOWN: 'Unknown',
-};
-
 const TYPE_COLORS: Record<DocumentType, string> = {
   LR: '#4361ee',
   INVOICE: '#06b6d4',
@@ -48,9 +36,23 @@ const TYPE_COLORS: Record<DocumentType, string> = {
   UNKNOWN: '#9ca3af',
 };
 
-// Ordered column definitions for the table
-const TABLE_COL_TYPES: DocumentType[] = [
-  'LR', 'INVOICE', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE', 'TOLL', 'EWAYBILL', 'RECEIVING',
+type TableColumn = {
+  key: 'INVOICE' | 'LR' | 'WEIGHMENT_PARTY' | 'WEIGHMENT_SITE' | 'TOLL' | 'OTHER_1' | 'OTHER_2';
+  header: string;
+  checkType: DocumentType;
+  uploadType: DocumentType;
+  color: string;
+  isOther?: boolean;
+};
+
+const TABLE_COLUMNS: TableColumn[] = [
+  { key: 'INVOICE', header: 'Tax Invoice',           checkType: 'INVOICE',         uploadType: 'INVOICE',         color: TYPE_COLORS.INVOICE },
+  { key: 'LR',      header: 'Lorry Receipt',         checkType: 'LR',              uploadType: 'LR',              color: TYPE_COLORS.LR },
+  { key: 'WEIGHMENT_PARTY', header: 'Party Weighment Slip', checkType: 'WEIGHMENT_PARTY', uploadType: 'WEIGHMENT_PARTY', color: TYPE_COLORS.WEIGHMENT_PARTY },
+  { key: 'WEIGHMENT_SITE',  header: 'Site Weighment Slip',  checkType: 'WEIGHMENT_SITE',  uploadType: 'WEIGHMENT_SITE',  color: TYPE_COLORS.WEIGHMENT_SITE },
+  { key: 'TOLL',    header: 'Tollgate',              checkType: 'TOLL',            uploadType: 'TOLL',            color: TYPE_COLORS.TOLL },
+  { key: 'OTHER_1', header: 'Other 1 (Add)',         checkType: 'EWAYBILL',        uploadType: 'EWAYBILL',        color: TYPE_COLORS.EWAYBILL, isOther: true },
+  { key: 'OTHER_2', header: 'Other 2 (Add)',         checkType: 'RECEIVING',       uploadType: 'RECEIVING',       color: TYPE_COLORS.RECEIVING, isOther: true },
 ];
 
 const CHANNEL_INFO: Record<DispatchChannel, { icon: string; label: string; placeholder: string }> = {
@@ -83,7 +85,11 @@ function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
     try {
       // 1. Get auto-selected document IDs via preview
       const preview = await bundlesApi.preview(group.id, recipientType);
-      const docIds = preview.autoSelectedDocuments.map((d) => d.documentId);
+      const autoSelectedDocIds = preview.autoSelectedDocuments.map((d) => d.documentId);
+      const otherDocIds = (group.documents ?? [])
+        .filter((d) => d.type === 'EWAYBILL' || d.type === 'RECEIVING')
+        .map((d) => d.id);
+      const docIds = Array.from(new Set([...autoSelectedDocIds, ...otherDocIds]));
 
       // 2. Create the bundle
       const bundle = await bundlesApi.create({
@@ -298,6 +304,7 @@ export function DocumentBundler({ onBundleSaved }: Props) {
       <p style={styles.subtitle}>
         Each row is a vehicle trip. Click{' '}
         <strong>📤 Send</strong> to bundle and dispatch documents via Email or WhatsApp.
+        {' '}“Other 1/2” are quick dummy upload slots (no OCR required).
       </p>
 
       {uploadError && (
@@ -319,10 +326,10 @@ export function DocumentBundler({ onBundleSaved }: Props) {
               <tr>
                 <th style={{ ...styles.th, ...styles.thFixed, minWidth: 110 }}>Vehicle No.</th>
                 <th style={{ ...styles.th, ...styles.thFixed, minWidth: 90 }}>Date</th>
-                {TABLE_COL_TYPES.map((t) => (
-                  <th key={t} style={{ ...styles.th, minWidth: 90 }}>
-                    <span style={{ ...styles.colBadge, background: TYPE_COLORS[t] }}>
-                      {TYPE_LABELS[t]}
+                {TABLE_COLUMNS.map((col) => (
+                  <th key={col.key} style={{ ...styles.th, minWidth: 120 }}>
+                    <span style={{ ...styles.colBadge, background: col.color }}>
+                      {col.header}
                     </span>
                   </th>
                 ))}
@@ -344,29 +351,29 @@ export function DocumentBundler({ onBundleSaved }: Props) {
                       {g.date}
                     </td>
                     {/* Doc type cells */}
-                    {TABLE_COL_TYPES.map((colType) => {
+                    {TABLE_COLUMNS.map((col) => {
                       const exists =
-                        docTypeSet.has(colType) ||
-                        (colType === 'WEIGHMENT_PARTY' && docTypeSet.has('WEIGHMENT'));
+                        docTypeSet.has(col.checkType) ||
+                        (col.key === 'WEIGHMENT_PARTY' && docTypeSet.has('WEIGHMENT'));
                       const isUploading =
-                        uploadingSlot?.groupId === g.id && uploadingSlot?.type === colType;
+                        uploadingSlot?.groupId === g.id && uploadingSlot?.type === col.uploadType;
                       return (
-                        <td key={colType} style={{ ...styles.td, textAlign: 'center' }}>
+                        <td key={col.key} style={{ ...styles.td, textAlign: 'center' }}>
                           {exists ? (
-                            <span style={{ ...styles.presentBadge, background: TYPE_COLORS[colType] }}>
+                            <span style={{ ...styles.presentBadge, background: col.color }}>
                               ✓
                             </span>
                           ) : isUploading ? (
                             <span style={styles.uploadingCell}>⏳</span>
                           ) : (
-                            <label style={styles.addCell} title={`Upload ${TYPE_LABELS[colType]}`}>
+                            <label style={styles.addCell} title={col.isOther ? `Upload dummy image (${col.header})` : `Upload ${col.header}`}>
                               <input
                                 type="file"
                                 accept="image/*,application/pdf"
                                 style={{ display: 'none' }}
                                 onChange={(e) => {
                                   const f = e.target.files?.[0];
-                                  if (f) void handleAddDoc(g.id, colType, f);
+                                  if (f) void handleAddDoc(g.id, col.uploadType, f);
                                   e.target.value = '';
                                 }}
                               />
