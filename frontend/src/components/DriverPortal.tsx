@@ -5,7 +5,8 @@ import type { DriverDocType, DriverUploadDoc, DriverStatusResponse } from '../se
 const DOC_TYPES: { value: DriverDocType; label: string }[] = [
   { value: 'LR', label: '📄 LR (Lorry Receipt)' },
   { value: 'TOLL', label: '🛣️ Toll Receipt' },
-  { value: 'WEIGHMENT_SLIP', label: '⚖️ Weighment Slip' },
+  { value: 'WEIGHMENT_PARTY', label: '⚖️ Party Weighment Slip' },
+  { value: 'WEIGHMENT_SITE', label: '⚖️ Site Weighment Slip' },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
