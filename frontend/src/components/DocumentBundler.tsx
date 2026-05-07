@@ -265,7 +265,7 @@ function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
 export function DocumentBundler({ onBundleSaved }: Props) {
   const [groups, setGroups] = useState<DocumentGroup[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [operationError, setOperationError] = useState<string | null>(null);
   const [uploadingSlot, setUploadingSlot] = useState<{ groupId: string; type: DocumentType } | null>(null);
   const [deletingSlot, setDeletingSlot] = useState<{ groupId: string; type: DocumentType } | null>(null);
 
@@ -288,12 +288,12 @@ export function DocumentBundler({ onBundleSaved }: Props) {
 
   const handleAddDoc = useCallback(async (groupId: string, type: DocumentType, file: File) => {
     setUploadingSlot({ groupId, type });
-    setUploadError(null);
+    setOperationError(null);
     try {
       await documentsApi.upload(file, { type, groupId });
       refreshGroups();
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Upload failed');
+      setOperationError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setUploadingSlot(null);
     }
@@ -309,7 +309,7 @@ export function DocumentBundler({ onBundleSaved }: Props) {
     if (docsInSlot.length === 0) return;
 
     setDeletingSlot({ groupId: group.id, type: col.uploadType });
-    setUploadError(null);
+    setOperationError(null);
 
     try {
       const results = await Promise.allSettled(docsInSlot.map((doc) => documentsApi.delete(doc.id)));
@@ -318,12 +318,15 @@ export function DocumentBundler({ onBundleSaved }: Props) {
       const failedDocIds = results.flatMap((result, index) => (
         result.status === 'rejected' ? [docsInSlot[index]?.id ?? 'unknown'] : []
       ));
+      const failureReasons = results.flatMap((result) => (
+        result.status === 'rejected' ? [result.reason instanceof Error ? result.reason.message : String(result.reason)] : []
+      ));
 
       if (deletedCount > 0) {
         refreshGroups();
       }
       if (failedCount > 0) {
-        setUploadError(`Delete failed for ${failedCount} document(s): ${failedDocIds.join(', ')}`);
+        setOperationError(`Delete failed for ${failedCount} document(s) [${failedDocIds.join(', ')}]: ${failureReasons.join(' | ')}`);
       }
     } finally {
       setDeletingSlot(null);
@@ -339,8 +342,8 @@ export function DocumentBundler({ onBundleSaved }: Props) {
         {' '}“Other 1/2” are quick dummy upload slots (no OCR required).
       </p>
 
-      {uploadError && (
-        <p style={styles.error}>Upload failed: {uploadError}</p>
+      {operationError && (
+        <p style={styles.error}>Action failed: {operationError}</p>
       )}
 
       {groupsLoading && <p style={styles.loading}>Loading groups…</p>}
