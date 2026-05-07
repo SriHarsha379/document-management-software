@@ -223,7 +223,7 @@ export const dispatchApi = {
 
 // ── Driver Portal API ─────────────────────────────────────────────────────────
 
-export type DriverDocType = 'LR' | 'TOLL' | 'WEIGHMENT_PARTY' | 'WEIGHMENT_SITE';
+export type DriverDocType = 'LR' | 'TOLL' | 'WEIGHMENT_PARTY' | 'WEIGHMENT_SITE' | 'PARTY_ACK';
 
 export interface DriverAccess {
   id: string;

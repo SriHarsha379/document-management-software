@@ -413,6 +413,9 @@ enum DriverDocType {
   LR
   TOLL
   WEIGHMENT_SLIP
+  WEIGHMENT_PARTY
+  WEIGHMENT_SITE
+  PARTY_ACK
 }
 
 enum DriverUploadStatus {

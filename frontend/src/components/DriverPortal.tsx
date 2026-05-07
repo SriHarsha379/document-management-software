@@ -7,6 +7,7 @@ const DOC_TYPES: { value: DriverDocType; label: string }[] = [
   { value: 'TOLL', label: '🛣️ Toll Receipt' },
   { value: 'WEIGHMENT_PARTY', label: '⚖️ Party Weighment Slip' },
   { value: 'WEIGHMENT_SITE', label: '⚖️ Site Weighment Slip' },
+  { value: 'PARTY_ACK', label: '✅ Party Acknowledgement Slip' },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
