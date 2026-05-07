@@ -4,6 +4,16 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../services/documentService.js';
 
 const router = Router();
+const DRIVER_ACCESS_TABLE = 'temporary_driver_accesses';
+const DRIVER_UPLOADS_TABLE = 'driver_upload_documents';
+
+function isMissingDriverTableError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const maybe = err as { code?: string; message?: string };
+  if (maybe.code !== 'P2021') return false;
+  const msg = maybe.message ?? '';
+  return msg.includes(DRIVER_ACCESS_TABLE) || msg.includes(DRIVER_UPLOADS_TABLE);
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // POST /api/admin/driver-access
@@ -83,6 +93,11 @@ router.get('/', async (_req: Request, res: Response): Promise<void> => {
       })),
     });
   } catch (err) {
+    if (isMissingDriverTableError(err)) {
+      console.warn('[adminDriver] Driver access tables are missing; returning empty access list.');
+      res.json({ accesses: [] });
+      return;
+    }
     const message = err instanceof Error ? err.message : 'Failed to list driver accesses';
     res.status(500).json({ error: message });
   }
