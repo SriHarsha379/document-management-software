@@ -315,12 +315,15 @@ export function DocumentBundler({ onBundleSaved }: Props) {
       const results = await Promise.allSettled(docsInSlot.map((doc) => documentsApi.delete(doc.id)));
       const failedCount = results.filter((result) => result.status === 'rejected').length;
       const deletedCount = results.length - failedCount;
+      const failedDocIds = results.flatMap((result, index) => (
+        result.status === 'rejected' ? [docsInSlot[index]?.id ?? 'unknown'] : []
+      ));
 
       if (deletedCount > 0) {
         refreshGroups();
       }
       if (failedCount > 0) {
-        setUploadError(`Delete failed for ${failedCount} document(s).`);
+        setUploadError(`Delete failed for ${failedCount} document(s): ${failedDocIds.join(', ')}`);
       }
     } finally {
       setDeletingSlot(null);
@@ -391,7 +394,14 @@ export function DocumentBundler({ onBundleSaved }: Props) {
                       return (
                         <td key={col.key} style={{ ...styles.td, textAlign: 'center' }}>
                           {isDeleting ? (
-                            <span style={styles.uploadingCell}>🗑️</span>
+                            <span
+                              style={styles.uploadingCell}
+                              role="status"
+                              aria-live="polite"
+                              aria-label="Deleting uploaded document"
+                            >
+                              🗑️
+                            </span>
                           ) : exists ? (
                             <div style={styles.presentCell}>
                             <span style={{ ...styles.presentBadge, background: col.color }}>
@@ -402,6 +412,7 @@ export function DocumentBundler({ onBundleSaved }: Props) {
                                 style={styles.deleteCellBtn}
                                 onClick={() => handleDeleteDocs(g, col)}
                                 title={`Delete uploaded ${col.header}`}
+                                aria-label={`Delete uploaded ${col.header}`}
                               >
                                 🗑️
                               </button>
