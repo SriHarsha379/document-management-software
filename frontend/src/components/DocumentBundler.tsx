@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type {
-  DocumentGroup, DocumentType, RecipientType, BundlePreview,
-  BundleDocumentItem, Bundle,
+  DocumentGroup, DocumentType, RecipientType, DispatchChannel, Bundle,
 } from '../types';
-import { documentsApi, bundlesApi } from '../services/api';
+import { documentsApi, bundlesApi, dispatchApi } from '../services/api';
 
 interface Props {
   onBundleSaved?: (bundle: Bundle) => void;
 }
+
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 const RECIPIENT_TYPES: RecipientType[] = ['ACCOUNTS', 'PARTY', 'TRANSPORTER'];
 
@@ -18,20 +19,20 @@ const RECIPIENT_LABELS: Record<RecipientType, string> = {
 };
 
 const RECIPIENT_DESCRIPTIONS: Record<RecipientType, string> = {
-  ACCOUNTS: 'Invoice, E-Way Bill, LR, Weighment, Toll, Receiving — up to 9 docs',
-  PARTY: 'Invoice, LR, Receiving Copy, Weighment — 4 docs',
-  TRANSPORTER: 'LR, Invoice, Weighment, Toll Copies — 5 docs',
+  ACCOUNTS: 'Invoice, E-Way Bill, LR, Weighment, Toll, Receiving',
+  PARTY: 'Invoice, LR, Receiving, Weighment',
+  TRANSPORTER: 'LR, Invoice, Weighment, Toll',
 };
 
 const TYPE_LABELS: Record<DocumentType, string> = {
   LR: 'LR',
   INVOICE: 'Invoice',
   TOLL: 'Toll',
-  WEIGHMENT: 'Weighment Slip',
-  WEIGHMENT_PARTY: 'Party Weighment Slip',
-  WEIGHMENT_SITE: 'Site Weighment Slip',
+  WEIGHMENT: 'Weighment',
+  WEIGHMENT_PARTY: 'Party Wt.',
+  WEIGHMENT_SITE: 'Site Wt.',
   EWAYBILL: 'E-Way Bill',
-  RECEIVING: 'Receiving Copy',
+  RECEIVING: 'Receiving',
   UNKNOWN: 'Unknown',
 };
 
@@ -47,49 +48,229 @@ const TYPE_COLORS: Record<DocumentType, string> = {
   UNKNOWN: '#9ca3af',
 };
 
-// The five standard document slots shown on every group card
-const STANDARD_SLOT_TYPES: DocumentType[] = [
-  'LR', 'INVOICE', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE', 'TOLL',
+// Ordered column definitions for the table
+const TABLE_COL_TYPES: DocumentType[] = [
+  'LR', 'INVOICE', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE', 'TOLL', 'EWAYBILL', 'RECEIVING',
 ];
 
-export function DocumentBundler({ onBundleSaved }: Props) {
-  // ── Step state ───────────────────────────────────────────────────────────────
-  const [step, setStep] = useState<'group' | 'recipient' | 'review'>('group');
+const CHANNEL_INFO: Record<DispatchChannel, { icon: string; label: string; placeholder: string }> = {
+  EMAIL:    { icon: '📧', label: 'Email',    placeholder: 'recipient@company.com' },
+  WHATSAPP: { icon: '💬', label: 'WhatsApp', placeholder: '+919876543210' },
+};
 
-  // ── Group selection ──────────────────────────────────────────────────────────
+// ── QuickSendModal ─────────────────────────────────────────────────────────────
+// Opens when the user clicks "Send" on a table row. Handles recipient-type
+// selection, channel selection, address entry, and the full
+// preview → bundle create → dispatch pipeline.
+
+interface QuickSendModalProps {
+  group: DocumentGroup;
+  onClose: () => void;
+  onSent?: (bundle: Bundle) => void;
+}
+
+function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
+  const [recipientType, setRecipientType] = useState<RecipientType | ''>('');
+  const [channel, setChannel] = useState<DispatchChannel>('EMAIL');
+  const [recipient, setRecipient] = useState('');
+  const [ccRecipient, setCcRecipient] = useState('');
+  const [step, setStep] = useState<'setup' | 'sending' | 'done'>('setup');
+  const [result, setResult] = useState<{ success: boolean; error?: string; logId?: string } | null>(null);
+
+  const handleSend = async () => {
+    if (!recipientType || !recipient.trim()) return;
+    setStep('sending');
+    try {
+      // 1. Get auto-selected document IDs via preview
+      const preview = await bundlesApi.preview(group.id, recipientType);
+      const docIds = preview.autoSelectedDocuments.map((d) => d.documentId);
+
+      // 2. Create the bundle
+      const bundle = await bundlesApi.create({
+        groupId: group.id,
+        recipientType,
+        documentIds: docIds,
+      });
+
+      // 3. Dispatch
+      const res = await dispatchApi.send({
+        bundleId: bundle.id,
+        channel,
+        recipient: recipient.trim(),
+        ccRecipient: ccRecipient.trim() || undefined,
+      });
+
+      setResult({ success: res.success, logId: res.logId, error: res.error });
+      onSent?.(bundle);
+    } catch (err) {
+      setResult({ success: false, error: err instanceof Error ? err.message : 'Send failed' });
+    } finally {
+      setStep('done');
+    }
+  };
+
+  const canSend = !!recipientType && !!recipient.trim();
+  const info = CHANNEL_INFO[channel];
+
+  return (
+    <div style={qs.backdrop} onClick={onClose}>
+      <div style={qs.modal} onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div style={qs.header}>
+          <div>
+            <h2 style={qs.title}>📤 Send Documents</h2>
+            <p style={qs.subtitle}>
+              🚛 <strong>{group.vehicleNo}</strong> &nbsp;·&nbsp; 📅 {group.date}
+            </p>
+          </div>
+          <button style={qs.closeBtn} onClick={onClose}>✕</button>
+        </div>
+
+        {step === 'setup' && (
+          <>
+            {/* Recipient type */}
+            <div style={qs.section}>
+              <label style={qs.sLabel}>Send to</label>
+              <div style={qs.recipientRow}>
+                {RECIPIENT_TYPES.map((rt) => (
+                  <button
+                    key={rt}
+                    style={{ ...qs.rtBtn, ...(recipientType === rt ? qs.rtBtnActive : {}) }}
+                    onClick={() => setRecipientType(rt)}
+                  >
+                    <span style={qs.rtBtnTitle}>{RECIPIENT_LABELS[rt]}</span>
+                    <span style={qs.rtBtnDesc}>{RECIPIENT_DESCRIPTIONS[rt]}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Channel */}
+            <div style={qs.section}>
+              <label style={qs.sLabel}>Send via</label>
+              <div style={{ display: 'flex', gap: 10 }}>
+                {(['EMAIL', 'WHATSAPP'] as DispatchChannel[]).map((ch) => (
+                  <button
+                    key={ch}
+                    style={{ ...qs.chBtn, ...(channel === ch ? qs.chBtnActive : {}) }}
+                    onClick={() => setChannel(ch)}
+                  >
+                    {CHANNEL_INFO[ch].icon} {CHANNEL_INFO[ch].label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Recipient address */}
+            <div style={qs.section}>
+              <label style={qs.sLabel}>{info.icon} Recipient {info.label}</label>
+              <input
+                style={qs.input}
+                type={channel === 'EMAIL' ? 'email' : 'tel'}
+                value={recipient}
+                onChange={(e) => setRecipient(e.target.value)}
+                placeholder={info.placeholder}
+                autoFocus
+              />
+            </div>
+
+            {/* Optional CC */}
+            <div style={qs.section}>
+              <label style={qs.sLabel}>CC (optional)</label>
+              <input
+                style={qs.input}
+                type={channel === 'EMAIL' ? 'email' : 'tel'}
+                value={ccRecipient}
+                onChange={(e) => setCcRecipient(e.target.value)}
+                placeholder={channel === 'EMAIL' ? 'accounts@company.com' : '+910000000000'}
+              />
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
+              <button style={qs.cancelBtn} onClick={onClose}>Cancel</button>
+              <button
+                style={{ ...qs.sendBtn, ...(!canSend ? qs.sendBtnDisabled : {}) }}
+                onClick={() => { void handleSend(); }}
+                disabled={!canSend}
+              >
+                {info.icon} Send via {info.label}
+              </button>
+            </div>
+          </>
+        )}
+
+        {step === 'sending' && (
+          <div style={{ textAlign: 'center', padding: '32px 0' }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>⏳</div>
+            <p style={{ fontSize: 17, fontWeight: 700, color: '#1a1a2e', margin: '0 0 6px' }}>
+              Sending via {info.label}…
+            </p>
+            <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>
+              Building bundle and dispatching documents.
+            </p>
+          </div>
+        )}
+
+        {step === 'done' && result && (
+          <div style={{ textAlign: 'center', padding: '24px 0' }}>
+            {result.success ? (
+              <>
+                <div style={{ fontSize: 52 }}>✅</div>
+                <p style={{ fontSize: 17, fontWeight: 700, color: '#1a1a2e', margin: '12px 0 6px' }}>
+                  Sent successfully!
+                </p>
+                <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>
+                  Documents dispatched to <strong>{recipient}</strong>
+                  {ccRecipient ? ` (CC: ${ccRecipient})` : ''} via {info.label}.
+                </p>
+                {result.logId && (
+                  <div style={{ marginTop: 8, fontSize: 11, color: '#aaa', fontFamily: 'monospace' }}>
+                    Log ID: {result.logId}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 52 }}>❌</div>
+                <p style={{ fontSize: 17, fontWeight: 700, color: '#1a1a2e', margin: '12px 0 6px' }}>
+                  Send failed
+                </p>
+                <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>{result.error}</p>
+              </>
+            )}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 20 }}>
+              <button style={qs.sendBtn} onClick={onClose}>Close</button>
+              {!result.success && (
+                <button style={qs.cancelBtn} onClick={() => { setStep('setup'); setResult(null); }}>
+                  Try again
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── DocumentBundler ────────────────────────────────────────────────────────────
+
+export function DocumentBundler({ onBundleSaved }: Props) {
   const [groups, setGroups] = useState<DocumentGroup[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
-  const [selectedGroupId, setSelectedGroupId] = useState('');
-
-  // ── Recipient selection ──────────────────────────────────────────────────────
-  const [recipientType, setRecipientType] = useState<RecipientType | ''>('');
-
-  // ── Preview / selection state ────────────────────────────────────────────────
-  const [preview, setPreview] = useState<BundlePreview | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-
-  // ── All docs in the group (for manual add) ───────────────────────────────────
-  const [groupDocs, setGroupDocs] = useState<BundleDocumentItem[]>([]);
-
-  // ── Notes & save ────────────────────────────────────────────────────────────
-  const [notes, setNotes] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [savedBundle, setSavedBundle] = useState<Bundle | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  // ── Inline upload state (group card "Add" slots) ──────────────────────────
-  const [uploadingSlot, setUploadingSlot] = useState<{ groupId: string; type: DocumentType } | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadingSlot, setUploadingSlot] = useState<{ groupId: string; type: DocumentType } | null>(null);
 
-  // ── Refresh groups list ───────────────────────────────────────────────────
+  // The group for which the QuickSendModal is open (null = closed)
+  const [sendGroup, setSendGroup] = useState<DocumentGroup | null>(null);
+
   const refreshGroups = useCallback(() => {
     documentsApi.listGroups()
       .then((g) => setGroups(g))
       .catch(() => {/* ignore */});
   }, []);
 
-  // ── Load groups on mount ─────────────────────────────────────────────────────
   useEffect(() => {
     setGroupsLoading(true);
     documentsApi.listGroups()
@@ -98,7 +279,6 @@ export function DocumentBundler({ onBundleSaved }: Props) {
       .finally(() => setGroupsLoading(false));
   }, []);
 
-  // ── Handle inline "Add" upload on group card ──────────────────────────────
   const handleAddDoc = useCallback(async (groupId: string, type: DocumentType, file: File) => {
     setUploadingSlot({ groupId, type });
     setUploadError(null);
@@ -112,464 +292,247 @@ export function DocumentBundler({ onBundleSaved }: Props) {
     }
   }, [refreshGroups]);
 
-  // ── Fetch preview when both group and recipient are chosen ───────────────────
-  const loadPreview = useCallback(async (groupId: string, recipient: RecipientType) => {
-    setPreviewLoading(true);
-    setError(null);
-    try {
-      const p = await bundlesApi.preview(groupId, recipient);
-      setPreview(p);
-      // Auto-select all documents returned by the preview
-      setSelectedIds(new Set(p.autoSelectedDocuments.map((d) => d.documentId)));
-
-      // Also load all docs in the group for the "add more" section
-      const group = await documentsApi.getGroup(groupId);
-      const allDocs: BundleDocumentItem[] = (group.documents ?? []).map((doc) => ({
-        documentId: doc.id,
-        type: doc.type,
-        originalFilename: doc.originalFilename,
-        status: doc.status,
-        isOverride: false,
-      }));
-      setGroupDocs(allDocs);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load preview');
-    } finally {
-      setPreviewLoading(false);
-    }
-  }, []);
-
-  // ── Navigation ───────────────────────────────────────────────────────────────
-  const goToRecipient = () => {
-    if (!selectedGroupId) return;
-    setStep('recipient');
-  };
-
-  const goToReview = async () => {
-    if (!selectedGroupId || !recipientType) return;
-    await loadPreview(selectedGroupId, recipientType);
-    setStep('review');
-  };
-
-  const toggleDoc = (docId: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(docId)) {
-        next.delete(docId);
-      } else {
-        next.add(docId);
-      }
-      return next;
-    });
-  };
-
-  const handleSave = async () => {
-    if (!selectedGroupId || !recipientType) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const bundle = await bundlesApi.create({
-        groupId: selectedGroupId,
-        recipientType,
-        documentIds: Array.from(selectedIds),
-        notes: notes.trim() || undefined,
-      });
-      setSavedBundle(bundle);
-      onBundleSaved?.(bundle);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save bundle');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const reset = () => {
-    setStep('group');
-    setSelectedGroupId('');
-    setRecipientType('');
-    setPreview(null);
-    setSelectedIds(new Set());
-    setGroupDocs([]);
-    setNotes('');
-    setSavedBundle(null);
-    setError(null);
-  };
-
-  // ── Render saved state ───────────────────────────────────────────────────────
-  if (savedBundle) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.successBox}>
-          <div style={styles.successIcon}>✅</div>
-          <h2 style={styles.successTitle}>Bundle Saved</h2>
-          <p style={styles.successSub}>
-            <strong>{savedBundle.recipientType}</strong> bundle created with{' '}
-            <strong>{savedBundle.items.length}</strong> document(s)
-          </p>
-          <p style={styles.successId}>Bundle ID: {savedBundle.id}</p>
-          <button style={styles.btnPrimary} onClick={reset}>
-            ➕ Create Another Bundle
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const selectedGroup = groups.find((g) => g.id === selectedGroupId);
-
   return (
     <div style={styles.container}>
-      {/* Step indicator */}
-      <div style={styles.stepper}>
-        {(['group', 'recipient', 'review'] as const).map((s, i) => (
-          <React.Fragment key={s}>
-            <div style={{ ...styles.stepDot, ...(step === s ? styles.stepDotActive : (i < ['group', 'recipient', 'review'].indexOf(step) ? styles.stepDotDone : {})) }}>
-              {i + 1}
-            </div>
-            {i < 2 && <div style={styles.stepLine} />}
-          </React.Fragment>
-        ))}
-      </div>
-      <div style={styles.stepLabels}>
-        <span style={step === 'group' ? styles.stepLabelActive : styles.stepLabel}>Select Group</span>
-        <span style={step === 'recipient' ? styles.stepLabelActive : styles.stepLabel}>Recipient</span>
-        <span style={step === 'review' ? styles.stepLabelActive : styles.stepLabel}>Review & Save</span>
-      </div>
+      <h2 style={styles.title}>📦 Document Bundles</h2>
+      <p style={styles.subtitle}>
+        Each row is a vehicle trip. Click{' '}
+        <strong>📤 Send</strong> to bundle and dispatch documents via Email or WhatsApp.
+      </p>
 
-      <h2 style={styles.title}>Create Document Bundle</h2>
-      {error && <p style={styles.error}>{error}</p>}
-      {uploadError && <p style={styles.error}>Upload failed: {uploadError}</p>}
+      {uploadError && (
+        <p style={styles.error}>Upload failed: {uploadError}</p>
+      )}
 
-      {/* ── Step 1: Group ──────────────────────────────────────────────────────── */}
-      {step === 'group' && (
-        <div style={styles.stepPanel}>
-          <p style={styles.stepDesc}>
-            Select the vehicle trip (Document Group) to bundle documents from.
-          </p>
-          {groupsLoading && <p style={styles.loading}>Loading groups…</p>}
-          {!groupsLoading && groups.length === 0 && (
-            <p style={styles.empty}>No document groups found. Upload and link some documents first.</p>
-          )}
-          <div style={styles.groupGrid}>
-            {groups.map((g) => {
-              const docTypes = new Set((g.documents ?? []).map((d) => d.type));
-              return (
-                <div
-                  key={g.id}
-                  style={{ ...styles.groupCard, ...(selectedGroupId === g.id ? styles.groupCardSelected : {}) }}
-                  onClick={() => setSelectedGroupId(g.id)}
-                >
-                  <div style={styles.groupVehicle}>🚛 {g.vehicleNo}</div>
-                  <div style={styles.groupDate}>📅 {g.date}</div>
-                  <div style={styles.slotList}>
-                    {STANDARD_SLOT_TYPES.map((slotType) => {
-                      const exists = docTypes.has(slotType)
-                        || (slotType === 'WEIGHMENT_PARTY' && docTypes.has('WEIGHMENT'));
+      {groupsLoading && <p style={styles.loading}>Loading groups…</p>}
+
+      {!groupsLoading && groups.length === 0 && (
+        <p style={styles.empty}>
+          No document groups found. Upload and link documents to create a group.
+        </p>
+      )}
+
+      {!groupsLoading && groups.length > 0 && (
+        <div style={styles.tableWrapper}>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={{ ...styles.th, ...styles.thFixed, minWidth: 110 }}>Vehicle No.</th>
+                <th style={{ ...styles.th, ...styles.thFixed, minWidth: 90 }}>Date</th>
+                {TABLE_COL_TYPES.map((t) => (
+                  <th key={t} style={{ ...styles.th, minWidth: 90 }}>
+                    <span style={{ ...styles.colBadge, background: TYPE_COLORS[t] }}>
+                      {TYPE_LABELS[t]}
+                    </span>
+                  </th>
+                ))}
+                <th style={{ ...styles.th, minWidth: 90 }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groups.map((g, rowIdx) => {
+                const docTypeSet = new Set((g.documents ?? []).map((d) => d.type));
+                const rowBg = rowIdx % 2 === 0 ? '#fff' : '#f8f9ff';
+                return (
+                  <tr key={g.id} style={{ background: rowBg }}>
+                    {/* Vehicle No */}
+                    <td style={{ ...styles.td, fontWeight: 700, color: '#1a1a2e' }}>
+                      🚛 {g.vehicleNo}
+                    </td>
+                    {/* Date */}
+                    <td style={{ ...styles.td, color: '#555', fontSize: 12 }}>
+                      {g.date}
+                    </td>
+                    {/* Doc type cells */}
+                    {TABLE_COL_TYPES.map((colType) => {
+                      const exists =
+                        docTypeSet.has(colType) ||
+                        (colType === 'WEIGHMENT_PARTY' && docTypeSet.has('WEIGHMENT'));
                       const isUploading =
-                        uploadingSlot?.groupId === g.id && uploadingSlot?.type === slotType;
+                        uploadingSlot?.groupId === g.id && uploadingSlot?.type === colType;
                       return (
-                        <div key={slotType} style={styles.slotRow} onClick={(e) => e.stopPropagation()}>
+                        <td key={colType} style={{ ...styles.td, textAlign: 'center' }}>
                           {exists ? (
-                            <span style={{ ...styles.slotPresent, background: TYPE_COLORS[slotType] }}>
-                              ✓ {TYPE_LABELS[slotType]}
+                            <span style={{ ...styles.presentBadge, background: TYPE_COLORS[colType] }}>
+                              ✓
                             </span>
                           ) : isUploading ? (
-                            <span style={styles.slotUploading}>⏳ {TYPE_LABELS[slotType]}…</span>
+                            <span style={styles.uploadingCell}>⏳</span>
                           ) : (
-                            <label style={styles.slotAdd} title={`Upload ${TYPE_LABELS[slotType]}`}>
+                            <label style={styles.addCell} title={`Upload ${TYPE_LABELS[colType]}`}>
                               <input
                                 type="file"
                                 accept="image/*,application/pdf"
                                 style={{ display: 'none' }}
                                 onChange={(e) => {
                                   const f = e.target.files?.[0];
-                                  if (f) void handleAddDoc(g.id, slotType, f);
+                                  if (f) void handleAddDoc(g.id, colType, f);
                                   e.target.value = '';
                                 }}
                               />
-                              ➕ {TYPE_LABELS[slotType]}
+                              ➕
                             </label>
                           )}
-                        </div>
+                        </td>
                       );
                     })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div style={styles.actions}>
-            <button
-              style={{ ...styles.btnPrimary, ...(!selectedGroupId ? styles.btnDisabled : {}) }}
-              onClick={goToRecipient}
-              disabled={!selectedGroupId}
-            >
-              Next: Choose Recipient →
-            </button>
-          </div>
+                    {/* Send button */}
+                    <td style={{ ...styles.td, textAlign: 'center' }}>
+                      <button
+                        style={styles.sendBtn}
+                        onClick={() => setSendGroup(g)}
+                      >
+                        📤 Send
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
-      {/* ── Step 2: Recipient ──────────────────────────────────────────────────── */}
-      {step === 'recipient' && (
-        <div style={styles.stepPanel}>
-          <p style={styles.stepDesc}>
-            Choose who will receive this bundle. Each recipient type automatically selects the required documents.
-          </p>
-          <div style={styles.recipientGrid}>
-            {RECIPIENT_TYPES.map((rt) => (
-              <div
-                key={rt}
-                style={{ ...styles.recipientCard, ...(recipientType === rt ? styles.recipientCardSelected : {}) }}
-                onClick={() => setRecipientType(rt)}
-              >
-                <div style={styles.recipientLabel}>{RECIPIENT_LABELS[rt]}</div>
-                <div style={styles.recipientDesc}>{RECIPIENT_DESCRIPTIONS[rt]}</div>
-              </div>
-            ))}
-          </div>
-          <div style={styles.actions}>
-            <button style={styles.btnSecondary} onClick={() => setStep('group')}>← Back</button>
-            <button
-              style={{ ...styles.btnPrimary, ...(!recipientType ? styles.btnDisabled : {}) }}
-              onClick={() => void goToReview()}
-              disabled={!recipientType}
-            >
-              Next: Review Documents →
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Step 3: Review ─────────────────────────────────────────────────────── */}
-      {step === 'review' && (
-        <div style={styles.stepPanel}>
-          <div style={styles.reviewHeader}>
-            <div>
-              <strong>Group:</strong> {selectedGroup?.vehicleNo} · {selectedGroup?.date}
-            </div>
-            <div>
-              <strong>Recipient:</strong> {recipientType && RECIPIENT_LABELS[recipientType as RecipientType]}
-            </div>
-          </div>
-
-          {previewLoading && <p style={styles.loading}>🤖 Computing auto-selection…</p>}
-
-          {!previewLoading && preview && (
-            <>
-              {/* Missing documents warning */}
-              {preview.missingTypes.length > 0 && (
-                <div style={styles.warningBox}>
-                  <strong>⚠️ Missing required documents:</strong>
-                  <ul style={styles.missingList}>
-                    {preview.missingTypes.map((t) => (
-                      <li key={t} style={styles.missingItem}>
-                        <span style={{ ...styles.typeBadge, background: TYPE_COLORS[t] }}>{t}</span>
-                        {' '}{TYPE_LABELS[t]}
-                      </li>
-                    ))}
-                  </ul>
-                  <p style={styles.warningNote}>
-                    These document types are required for <strong>{recipientType}</strong> but are not available in this group.
-                    Upload them first, or proceed with the available documents.
-                  </p>
-                </div>
-              )}
-
-              {/* Document selection list */}
-              <div style={styles.sectionTitle}>
-                Select Documents to Send
-                <span style={styles.sectionCount}>{selectedIds.size} selected</span>
-              </div>
-
-              {groupDocs.length === 0 && (
-                <p style={styles.empty}>No documents in this group.</p>
-              )}
-
-              <div style={styles.docList}>
-                {groupDocs.map((doc) => {
-                  const isChecked = selectedIds.has(doc.documentId);
-                  return (
-                    <label
-                      key={doc.documentId}
-                      style={{ ...styles.docRow, ...(isChecked ? styles.docRowChecked : {}) }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => toggleDoc(doc.documentId)}
-                        style={styles.checkbox}
-                      />
-                      <span style={{ ...styles.typeBadge, background: TYPE_COLORS[doc.type] }}>{doc.type}</span>
-                      <span style={styles.docFilename} title={doc.originalFilename}>{doc.originalFilename}</span>
-                    </label>
-                  );
-                })}
-              </div>
-
-              <div style={styles.fieldGroup}>
-                <label style={styles.label}>Notes (optional)</label>
-                <textarea
-                  style={styles.textarea}
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={2}
-                  placeholder="Any notes for this bundle…"
-                />
-              </div>
-
-              <div style={styles.actions}>
-                <button style={styles.btnSecondary} onClick={() => setStep('recipient')}>← Back</button>
-                <button
-                  style={{ ...styles.btnSend, ...(selectedIds.size === 0 || saving ? styles.btnDisabled : {}) }}
-                  onClick={() => void handleSave()}
-                  disabled={selectedIds.size === 0 || saving}
-                >
-                  {saving ? '⏳ Saving…' : `📤 Send (${selectedIds.size} doc${selectedIds.size !== 1 ? 's' : ''})`}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
+      {/* Quick-send modal */}
+      {sendGroup && (
+        <QuickSendModal
+          group={sendGroup}
+          onClose={() => setSendGroup(null)}
+          onSent={(bundle) => {
+            onBundleSaved?.(bundle);
+            setSendGroup(null);
+          }}
+        />
       )}
     </div>
   );
 }
 
+// ── Styles ─────────────────────────────────────────────────────────────────────
+
 const styles: Record<string, React.CSSProperties> = {
-  container: { maxWidth: 800, margin: '0 auto', padding: 0 },
-  title: { fontSize: 22, fontWeight: 700, color: '#1a1a2e', marginBottom: 4, marginTop: 16 },
+  container: { maxWidth: '100%', padding: 0 },
+  title: { fontSize: 22, fontWeight: 700, color: '#1a1a2e', marginBottom: 4, marginTop: 0 },
+  subtitle: { fontSize: 14, color: '#555', marginBottom: 16, marginTop: 0 },
   error: { color: '#e53e3e', fontSize: 13, marginBottom: 8, padding: '8px 12px', background: '#fff5f5', borderRadius: 6 },
   loading: { color: '#888', fontStyle: 'italic', fontSize: 14 },
   empty: { color: '#888', fontSize: 14 },
 
-  // Stepper
-  stepper: { display: 'flex', alignItems: 'center', gap: 0, marginBottom: 4 },
-  stepDot: {
-    width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center',
-    justifyContent: 'center', fontSize: 13, fontWeight: 700, background: '#e0e0f0', color: '#888',
+  tableWrapper: {
+    overflowX: 'auto',
+    borderRadius: 10,
+    border: '1.5px solid #e0e0f0',
+    boxShadow: '0 2px 10px rgba(0,0,0,0.06)',
   },
-  stepDotActive: { background: '#4361ee', color: '#fff' },
-  stepDotDone: { background: '#22c55e', color: '#fff' },
-  stepLine: { flex: 1, height: 2, background: '#e0e0f0' },
-  stepLabels: { display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#888', marginBottom: 8 },
-  stepLabel: { flex: 1, textAlign: 'center' },
-  stepLabelActive: { flex: 1, textAlign: 'center', color: '#4361ee', fontWeight: 600 },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: 13,
+  },
+  th: {
+    padding: '10px 12px',
+    background: '#f0f3ff',
+    color: '#333',
+    fontWeight: 700,
+    textAlign: 'center',
+    borderBottom: '2px solid #d8dcf8',
+    whiteSpace: 'nowrap',
+  },
+  thFixed: {
+    textAlign: 'left',
+  },
+  colBadge: {
+    color: '#fff',
+    padding: '2px 8px',
+    borderRadius: 10,
+    fontSize: 11,
+    fontWeight: 700,
+    display: 'inline-block',
+  },
+  td: {
+    padding: '9px 12px',
+    borderBottom: '1px solid #eef0f8',
+    verticalAlign: 'middle',
+    whiteSpace: 'nowrap',
+  },
+  presentBadge: {
+    color: '#fff',
+    padding: '3px 10px',
+    borderRadius: 12,
+    fontSize: 12,
+    fontWeight: 700,
+    display: 'inline-block',
+  },
+  uploadingCell: {
+    fontSize: 14,
+    color: '#888',
+  },
+  addCell: {
+    fontSize: 16,
+    cursor: 'pointer',
+    display: 'inline-block',
+    opacity: 0.5,
+    transition: 'opacity 0.15s',
+  },
+  sendBtn: {
+    padding: '6px 14px',
+    background: '#4361ee',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 6,
+    cursor: 'pointer',
+    fontWeight: 700,
+    fontSize: 13,
+    boxShadow: '0 1px 4px rgba(67,97,238,0.25)',
+    whiteSpace: 'nowrap',
+  },
+};
 
-  stepPanel: { marginTop: 8 },
-  stepDesc: { fontSize: 14, color: '#555', marginBottom: 16 },
-  actions: { display: 'flex', gap: 8, marginTop: 20 },
-
-  // Group grid
-  groupGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: 12, marginBottom: 8 },
-  groupCard: {
-    border: '2px solid #e0e0f0', borderRadius: 10, padding: '12px 14px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-    cursor: 'pointer', background: '#fff', transition: 'all 0.15s',
+// QuickSendModal styles
+const qs: Record<string, React.CSSProperties> = {
+  backdrop: {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    zIndex: 1000, padding: 16,
   },
-  groupCardSelected: { border: '2px solid #4361ee', background: '#eef0ff' },
-  groupVehicle: { fontWeight: 700, fontSize: 14, color: '#1a1a2e', marginBottom: 2 },
-  groupDate: { fontSize: 12, color: '#555', marginBottom: 8 },
-
-  // Slot list inside group card
-  slotList: { display: 'flex', flexDirection: 'column', gap: 4 },
-  slotRow: { display: 'flex' },
-  slotPresent: {
-    color: '#fff', fontSize: 11, fontWeight: 700,
-    padding: '2px 8px', borderRadius: 10, display: 'inline-block',
+  modal: {
+    background: '#fff', borderRadius: 16, boxShadow: '0 8px 40px rgba(0,0,0,0.2)',
+    width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto', padding: 28,
   },
-  slotUploading: {
-    fontSize: 11, color: '#888', fontStyle: 'italic', padding: '2px 0',
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22 },
+  title: { margin: '0 0 4px', fontSize: 20, fontWeight: 800, color: '#1a1a2e' },
+  subtitle: { margin: 0, fontSize: 13, color: '#6b7280' },
+  closeBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#9ca3af', lineHeight: 1 },
+  section: { marginBottom: 18 },
+  sLabel: { display: 'block', fontWeight: 700, fontSize: 13, color: '#555', marginBottom: 8 },
+  recipientRow: { display: 'flex', gap: 8 },
+  rtBtn: {
+    flex: 1, padding: '10px 8px', border: '2px solid #e0e0f0', borderRadius: 9,
+    cursor: 'pointer', background: '#f8f8ff', textAlign: 'center',
+    display: 'flex', flexDirection: 'column', gap: 4, transition: 'all 0.15s',
   },
-  slotAdd: {
-    fontSize: 11, color: '#4361ee', cursor: 'pointer',
-    padding: '2px 8px', borderRadius: 10, border: '1px dashed #4361ee',
-    background: '#f0f3ff', display: 'inline-block', userSelect: 'none' as const,
-    lineHeight: '1.4',
+  rtBtnActive: { border: '2px solid #4361ee', background: '#eef0ff' },
+  rtBtnTitle: { fontSize: 13, fontWeight: 700, color: '#1a1a2e' },
+  rtBtnDesc: { fontSize: 10, color: '#888', lineHeight: 1.3 },
+  chBtn: {
+    flex: 1, padding: '10px 0', border: '2px solid #e0e0f0', borderRadius: 9,
+    cursor: 'pointer', fontSize: 14, fontWeight: 600, background: '#f8f8ff',
+    color: '#555', transition: 'all 0.15s',
   },
-
-  // Recipient grid
-  recipientGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 8 },
-  recipientCard: {
-    border: '2px solid #e0e0f0', borderRadius: 10, padding: 16,
-    cursor: 'pointer', background: '#fff', transition: 'all 0.15s', textAlign: 'center',
+  chBtnActive: { border: '2px solid #4361ee', background: '#eef0ff', color: '#4361ee' },
+  input: {
+    width: '100%', padding: '10px 12px', border: '1.5px solid #d0d0e0',
+    borderRadius: 8, fontSize: 14, outline: 'none', boxSizing: 'border-box',
+    color: '#1a1a2e', fontFamily: 'inherit',
   },
-  recipientCardSelected: { border: '2px solid #4361ee', background: '#eef0ff' },
-  recipientLabel: { fontSize: 16, fontWeight: 700, marginBottom: 6 },
-  recipientDesc: { fontSize: 12, color: '#666', lineHeight: 1.4 },
-
-  // Review
-  reviewHeader: {
-    display: 'flex', gap: 24, fontSize: 14, background: '#f5f6ff',
-    borderRadius: 8, padding: '10px 14px', marginBottom: 16,
+  cancelBtn: {
+    padding: '10px 20px', border: '1.5px solid #d0d0e0', borderRadius: 8,
+    background: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: '#555',
   },
-  warningBox: {
-    background: '#fffbeb', border: '1px solid #f59e0b', borderRadius: 8,
-    padding: '12px 14px', marginBottom: 16, fontSize: 13,
-  },
-  missingList: { margin: '6px 0', paddingLeft: 20 },
-  missingItem: { marginBottom: 4 },
-  warningNote: { margin: '8px 0 0', color: '#555' },
-
-  sectionTitle: {
-    fontSize: 14, fontWeight: 700, color: '#333', marginBottom: 8,
-    display: 'flex', alignItems: 'center', gap: 8,
-  },
-  sectionCount: {
-    background: '#4361ee', color: '#fff', borderRadius: 10, padding: '1px 8px',
-    fontSize: 12, fontWeight: 600,
-  },
-
-  docList: { display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 },
-  docRow: {
-    display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
-    border: '1px solid #e0e0f0', borderRadius: 6, cursor: 'pointer',
-    background: '#fff', fontSize: 13,
-  },
-  docRowChecked: { background: '#f0f3ff', borderColor: '#c0c8ff' },
-  checkbox: { width: 16, height: 16, cursor: 'pointer', flexShrink: 0 },
-  typeBadge: {
-    color: '#fff', padding: '2px 7px', borderRadius: 10,
-    fontSize: 11, fontWeight: 700, flexShrink: 0,
-  },
-  docFilename: { flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  docMeta: { display: 'flex', gap: 4, flexShrink: 0 },
-  requiredTag: {
-    fontSize: 10, padding: '1px 6px', borderRadius: 8,
-    background: '#fef3c7', color: '#92400e', fontWeight: 600,
-  },
-  overrideTag: {
-    fontSize: 10, padding: '1px 6px', borderRadius: 8,
-    background: '#fce7f3', color: '#9d174d', fontWeight: 600,
-  },
-  autoTag: {
-    fontSize: 10, padding: '1px 6px', borderRadius: 8,
-    background: '#dcfce7', color: '#166534', fontWeight: 600,
-  },
-
-  fieldGroup: { marginBottom: 12 },
-  label: { display: 'block', fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' },
-  textarea: { width: '100%', padding: '8px 10px', border: '1px solid #d0d0e0', borderRadius: 6, fontSize: 14, resize: 'vertical', boxSizing: 'border-box' },
-
-  // Buttons
-  btnPrimary: {
-    padding: '10px 20px', background: '#4361ee', color: '#fff', border: 'none',
-    borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 14,
-  },
-  btnSend: {
+  sendBtn: {
     padding: '10px 24px', background: '#4361ee', color: '#fff', border: 'none',
-    borderRadius: 6, cursor: 'pointer', fontWeight: 700, fontSize: 14,
-    boxShadow: '0 2px 8px rgba(67,97,238,0.25)',
+    borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 700,
+    boxShadow: '0 2px 8px rgba(67,97,238,0.3)',
   },
-  btnSecondary: {
-    padding: '10px 16px', background: '#eee', color: '#444', border: 'none',
-    borderRadius: 6, cursor: 'pointer', fontSize: 14,
-  },
-  btnDisabled: { opacity: 0.5, cursor: 'not-allowed' },
-
-  // Success
-  successBox: { textAlign: 'center', padding: 40 },
-  successIcon: { fontSize: 48, marginBottom: 12 },
-  successTitle: { fontSize: 22, fontWeight: 700, color: '#1a1a2e', marginBottom: 8 },
-  successSub: { fontSize: 15, color: '#555', marginBottom: 4 },
-  successId: { fontSize: 12, color: '#888', marginBottom: 20 },
+  sendBtnDisabled: { background: '#9ca3af', cursor: 'not-allowed', boxShadow: 'none' },
 };
