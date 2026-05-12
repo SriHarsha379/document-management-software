@@ -151,11 +151,10 @@ export async function getContextualOcrHints(documentType: DocumentType, fields: 
   const principalCompany = fields.principalCompany?.trim().toUpperCase();
   const branchName = fields.branchName?.trim().toUpperCase();
   const transporterName = fields.transporterName?.trim().toUpperCase();
-  const orFilters: Array<Record<string, string>> = [
-    principalCompany ? { principalCompany } : undefined,
-    branchName ? { branchName } : undefined,
-    transporterName ? { transporterName } : undefined,
-  ].filter(Boolean) as Array<Record<string, string>>;
+  const orFilters: Array<{ principalCompany?: string; branchName?: string; transporterName?: string }> = [];
+  if (principalCompany) orFilters.push({ principalCompany });
+  if (branchName) orFilters.push({ branchName });
+  if (transporterName) orFilters.push({ transporterName });
 
   if (orFilters.length === 0) return [];
 
