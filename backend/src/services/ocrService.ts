@@ -2,6 +2,13 @@ import OpenAI from 'openai';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { DocumentType, ExtractedFields, OcrResult } from '../types/index.js';
+import {
+  computeFieldConfidence,
+  getContextualOcrHints,
+  getValidationIssues,
+  normalizeExtractedFields,
+  shouldRetryOcr,
+} from './ocrLearningService.js';
 
 const DOCUMENT_TYPE_KEYWORDS: Record<DocumentType, string[]> = {
   LR: ['lorry receipt', 'lr no', 'lr number', 'consignment note', 'bilty', 'goods receipt'],
@@ -157,51 +164,61 @@ export async function processDocumentOcr(filePath: string, mimeType: string): Pr
   else if (ext === '.gif') imageMediaType = 'image/gif';
   else if (ext === '.webp') imageMediaType = 'image/webp';
 
-  const response = await client.chat.completions.create({
-    model: 'gpt-4o',
-    messages: [
-      {
-        role: 'system',
-        content: OCR_SYSTEM_PROMPT,
-      },
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'image_url',
-            image_url: {
-              url: `data:${imageMediaType};base64,${base64Image}`,
-              detail: 'high',
+  const runOcrPass = async (extraGuidance?: string): Promise<{ parsed: Record<string, unknown>; rawResponse: string; rawContent: string }> => {
+    const response = await client.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        {
+          role: 'system',
+          content: OCR_SYSTEM_PROMPT,
+        },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${imageMediaType};base64,${base64Image}`,
+                detail: 'high',
+              },
             },
-          },
-          {
-            type: 'text',
-            text: 'Extract all structured fields from this logistics document. Return only the JSON object.',
-          },
-        ],
-      },
-    ],
-    max_tokens: 1500,
-    temperature: 0,
-  });
+            {
+              type: 'text',
+              text: extraGuidance
+                ? `Extract all structured fields from this logistics document. Return only the JSON object.\n\nAdditional context from previously corrected similar documents:\n${extraGuidance}`
+                : 'Extract all structured fields from this logistics document. Return only the JSON object.',
+            },
+          ],
+        },
+      ],
+      max_tokens: 1500,
+      temperature: 0,
+    });
 
-  const rawContent = response.choices[0]?.message?.content ?? '';
-  const rawResponse = JSON.stringify(response);
+    const rawContent = response.choices[0]?.message?.content ?? '';
+    const rawResponse = JSON.stringify(response);
 
-  let parsed: Record<string, unknown> = {};
-  try {
-    const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+    let parsed: Record<string, unknown> = {};
+    try {
+      const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+      }
+    } catch {
+      parsed = { rawText: rawContent };
     }
-  } catch {
-    parsed = { rawText: rawContent };
-  }
+    return { parsed, rawResponse, rawContent };
+  };
+
+  const firstPass = await runOcrPass();
+  let parsed = firstPass.parsed;
+  let rawResponse = firstPass.rawResponse;
+  const rawContent = firstPass.rawContent;
 
   const rawText = typeof parsed.rawText === 'string' ? parsed.rawText : rawContent;
   let documentType = (parsed.documentType as DocumentType) ?? 'UNKNOWN';
 
-  const validTypes: DocumentType[] = ['LR', 'INVOICE', 'TOLL', 'WEIGHMENT', 'EWAYBILL', 'RECEIVING', 'UNKNOWN'];
+  const validTypes: DocumentType[] = ['LR', 'INVOICE', 'TOLL', 'WEIGHMENT', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE', 'EWAYBILL', 'RECEIVING', 'UNKNOWN'];
   if (!validTypes.includes(documentType)) {
     documentType = detectDocumentTypeFromText(rawText);
   }
@@ -211,7 +228,7 @@ export async function processDocumentOcr(filePath: string, mimeType: string): Pr
     ? partyNamesRaw.filter((p): p is string => typeof p === 'string')
     : [];
 
-  const fields: ExtractedFields = {
+  let fields: ExtractedFields = {
     lrNo: typeof parsed.lrNo === 'string' ? parsed.lrNo : undefined,
     invoiceNo: typeof parsed.invoiceNo === 'string' ? parsed.invoiceNo : undefined,
     vehicleNo: typeof parsed.vehicleNo === 'string' ? parsed.vehicleNo : undefined,
@@ -238,6 +255,60 @@ export async function processDocumentOcr(filePath: string, mimeType: string): Pr
     documentType,
     confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
   };
+
+  fields = normalizeExtractedFields(fields);
+  let issues = getValidationIssues(fields, documentType);
+
+  if (shouldRetryOcr(issues, fields.confidence ?? 0.5)) {
+    const hints = await getContextualOcrHints(documentType, fields);
+    if (hints.length > 0) {
+      const secondPass = await runOcrPass(hints.map((h) => `- ${h}`).join('\n'));
+      const retryParsed = secondPass.parsed;
+      let retryDocumentType = (retryParsed.documentType as DocumentType) ?? documentType;
+      if (!validTypes.includes(retryDocumentType)) retryDocumentType = documentType;
+
+      let retryFields: ExtractedFields = {
+        lrNo: typeof retryParsed.lrNo === 'string' ? retryParsed.lrNo : undefined,
+        invoiceNo: typeof retryParsed.invoiceNo === 'string' ? retryParsed.invoiceNo : undefined,
+        vehicleNo: typeof retryParsed.vehicleNo === 'string' ? retryParsed.vehicleNo : undefined,
+        quantity: typeof retryParsed.quantity === 'string' ? retryParsed.quantity : undefined,
+        date: typeof retryParsed.date === 'string' ? retryParsed.date : undefined,
+        partyNames: Array.isArray(retryParsed.partyNames) ? retryParsed.partyNames.filter((p): p is string => typeof p === 'string') : undefined,
+        tollAmount: typeof retryParsed.tollAmount === 'string' ? retryParsed.tollAmount : undefined,
+        weightInfo: typeof retryParsed.weightInfo === 'string' ? retryParsed.weightInfo : undefined,
+        billToParty: typeof retryParsed.billToParty === 'string' ? retryParsed.billToParty : undefined,
+        shipToParty: typeof retryParsed.shipToParty === 'string' ? retryParsed.shipToParty : undefined,
+        principalCompany: typeof retryParsed.principalCompany === 'string' ? retryParsed.principalCompany : undefined,
+        branchName: typeof retryParsed.branchName === 'string' ? retryParsed.branchName : undefined,
+        loadingSlipNo: typeof retryParsed.loadingSlipNo === 'string' ? retryParsed.loadingSlipNo : undefined,
+        companyInvoiceNo: typeof retryParsed.companyInvoiceNo === 'string' ? retryParsed.companyInvoiceNo : undefined,
+        companyInvoiceDate: typeof retryParsed.companyInvoiceDate === 'string' ? retryParsed.companyInvoiceDate : undefined,
+        companyEwayBillNo: typeof retryParsed.companyEwayBillNo === 'string' ? retryParsed.companyEwayBillNo : undefined,
+        deliveryDestination: typeof retryParsed.deliveryDestination === 'string' ? retryParsed.deliveryDestination : undefined,
+        productName: typeof retryParsed.productName === 'string' ? retryParsed.productName : undefined,
+        transporterName: typeof retryParsed.transporterName === 'string' ? retryParsed.transporterName : undefined,
+        orderType: typeof retryParsed.orderType === 'string' ? retryParsed.orderType : undefined,
+        tptCode: typeof retryParsed.tptCode === 'string' ? retryParsed.tptCode : undefined,
+        quantityInMt: typeof retryParsed.quantityInMt === 'number' ? retryParsed.quantityInMt : undefined,
+        quantityInBags: typeof retryParsed.quantityInBags === 'number' ? retryParsed.quantityInBags : undefined,
+        documentType: retryDocumentType,
+        confidence: typeof retryParsed.confidence === 'number' ? retryParsed.confidence : fields.confidence,
+      };
+      retryFields = normalizeExtractedFields(retryFields);
+      const retryIssues = getValidationIssues(retryFields, retryDocumentType);
+      const retryScore = (retryFields.confidence ?? 0) - retryIssues.length * 0.1;
+      const currentScore = (fields.confidence ?? 0) - issues.length * 0.1;
+      if (retryScore >= currentScore) {
+        fields = retryFields;
+        documentType = retryDocumentType;
+        rawResponse = secondPass.rawResponse;
+        issues = retryIssues;
+      }
+    }
+  }
+
+  fields.validationIssues = issues;
+  fields.fieldConfidence = computeFieldConfidence(fields, fields.confidence ?? 0.5, issues);
 
   return {
     fields,

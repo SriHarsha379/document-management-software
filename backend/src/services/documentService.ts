@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import type { DocumentType, ReviewPayload } from '../types/index.js';
 import { autoLinkDocument, relinkPendingDocuments, normalizeVehicleNo, backfillLrFromLinkedInvoice, daysBetween } from './autoLinkService.js';
+import { getTrackedReviewFields, getOcrQualityMetrics, learnFromDocumentReview, shouldAutoAccept } from './ocrLearningService.js';
 
 const prisma = new PrismaClient();
 
@@ -426,11 +427,32 @@ export async function saveOcrResults(
       },
     });
 
+    const autoAccepted = shouldAutoAccept({
+      ...fields,
+      documentType,
+    }, documentType);
+
     await tx.document.update({
       where: { id: documentId },
-      data: { type: documentType, status: 'PENDING_REVIEW' },
+      data: { type: documentType, status: autoAccepted ? 'SAVED' : 'PENDING_REVIEW' },
     });
   });
+
+  const autoAcceptedDoc = await prisma.document.findUnique({
+    where: { id: documentId },
+    select: { status: true },
+  });
+  if (autoAcceptedDoc?.status === 'SAVED') {
+    await learnFromDocumentReview(
+      documentId,
+      documentType,
+      {
+        ...fields,
+        documentType,
+      },
+      []
+    );
+  }
 
   // Auto-link to DocumentGroup using all common fields.
   // Strategy 1 (vehicleNo+date) is tried first inside autoLinkDocumentToGroup;
@@ -491,16 +513,13 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
 
   // Compute what fields the user changed compared to OCR output
   const userEdits: Record<string, unknown> = {};
-  const fields: (keyof ReviewPayload)[] = [
-    'lrNo', 'invoiceNo', 'vehicleNo', 'quantity', 'date',
-    'partyNames', 'tollAmount', 'weightInfo',
-  ];
+  const fields = getTrackedReviewFields() as (keyof ReviewPayload)[];
 
   for (const field of fields) {
     const newVal = payload[field];
     const oldVal = field === 'partyNames'
       ? (existing.partyNames ? (JSON.parse(existing.partyNames) as string[]) : null)
-      : (existing[field as keyof typeof existing] as string | null);
+      : (existing[field as keyof typeof existing] as string | number | null);
 
     const newSer = newVal !== undefined ? JSON.stringify(newVal) : null;
     const oldSer = oldVal !== null ? JSON.stringify(oldVal) : null;
@@ -524,6 +543,21 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
           : existing.partyNames,
         tollAmount: payload.tollAmount ?? existing.tollAmount,
         weightInfo: payload.weightInfo ?? existing.weightInfo,
+        billToParty: payload.billToParty ?? existing.billToParty,
+        shipToParty: payload.shipToParty ?? existing.shipToParty,
+        principalCompany: payload.principalCompany ?? existing.principalCompany,
+        branchName: payload.branchName ?? existing.branchName,
+        loadingSlipNo: payload.loadingSlipNo ?? existing.loadingSlipNo,
+        companyInvoiceNo: payload.companyInvoiceNo ?? existing.companyInvoiceNo,
+        companyInvoiceDate: payload.companyInvoiceDate ?? existing.companyInvoiceDate,
+        companyEwayBillNo: payload.companyEwayBillNo ?? existing.companyEwayBillNo,
+        deliveryDestination: payload.deliveryDestination ?? existing.deliveryDestination,
+        productName: payload.productName ?? existing.productName,
+        transporterName: payload.transporterName ?? existing.transporterName,
+        orderType: payload.orderType ?? existing.orderType,
+        tptCode: payload.tptCode ?? existing.tptCode,
+        quantityInMt: payload.quantityInMt ?? existing.quantityInMt,
+        quantityInBags: payload.quantityInBags ?? existing.quantityInBags,
         userReviewed: true,
         reviewedAt: new Date(),
         userEdits: Object.keys(userEdits).length > 0 ? JSON.stringify(userEdits) : existing.userEdits,
@@ -544,6 +578,40 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
   // Use || so lrNo/invoiceNo fallback is available when date is missing.
   const updatedExtracted = await prisma.extractedData.findUnique({ where: { documentId } });
   const updatedDoc = await prisma.document.findUnique({ where: { id: documentId }, select: { type: true } });
+  if (updatedExtracted && updatedDoc?.type) {
+    await learnFromDocumentReview(
+      documentId,
+      updatedDoc.type,
+      {
+        lrNo: updatedExtracted.lrNo ?? undefined,
+        invoiceNo: updatedExtracted.invoiceNo ?? undefined,
+        vehicleNo: updatedExtracted.vehicleNo ?? undefined,
+        quantity: updatedExtracted.quantity ?? undefined,
+        date: updatedExtracted.date ?? undefined,
+        partyNames: updatedExtracted.partyNames ? (JSON.parse(updatedExtracted.partyNames) as string[]) : undefined,
+        tollAmount: updatedExtracted.tollAmount ?? undefined,
+        weightInfo: updatedExtracted.weightInfo ?? undefined,
+        billToParty: updatedExtracted.billToParty ?? undefined,
+        shipToParty: updatedExtracted.shipToParty ?? undefined,
+        principalCompany: updatedExtracted.principalCompany ?? undefined,
+        branchName: updatedExtracted.branchName ?? undefined,
+        loadingSlipNo: updatedExtracted.loadingSlipNo ?? undefined,
+        companyInvoiceNo: updatedExtracted.companyInvoiceNo ?? undefined,
+        companyInvoiceDate: updatedExtracted.companyInvoiceDate ?? undefined,
+        companyEwayBillNo: updatedExtracted.companyEwayBillNo ?? undefined,
+        deliveryDestination: updatedExtracted.deliveryDestination ?? undefined,
+        productName: updatedExtracted.productName ?? undefined,
+        transporterName: updatedExtracted.transporterName ?? undefined,
+        orderType: updatedExtracted.orderType ?? undefined,
+        tptCode: updatedExtracted.tptCode ?? undefined,
+        quantityInMt: updatedExtracted.quantityInMt ?? undefined,
+        quantityInBags: updatedExtracted.quantityInBags ?? undefined,
+        documentType: updatedDoc.type,
+      },
+      Object.keys(userEdits)
+    );
+  }
+
   if (updatedExtracted?.vehicleNo || updatedExtracted?.lrNo || updatedExtracted?.invoiceNo) {
     // Auto-create LR record from confirmed reviewed data before linking
     if (updatedDoc?.type === 'LR') {
@@ -582,4 +650,8 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
       invoiceNo: updatedExtracted.invoiceNo,
     });
   }
+}
+
+export async function getOcrMetrics() {
+  return getOcrQualityMetrics();
 }

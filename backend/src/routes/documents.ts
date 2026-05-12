@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import * as path from 'path';
 import { upload } from '../middleware/upload.js';
 import { processDocumentOcr } from '../services/ocrService.js';
-import { prisma, saveOcrResults, saveReviewedData } from '../services/documentService.js';
+import { getOcrMetrics, prisma, saveOcrResults, saveReviewedData } from '../services/documentService.js';
 import type { DocumentType, ReviewPayload } from '../types/index.js';
 
 const VALID_DOCUMENT_TYPES: DocumentType[] = [
@@ -202,6 +202,20 @@ router.get('/groups', async (_req: Request, res: Response): Promise<void> => {
     res.json({ groups });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch groups';
+    res.status(500).json({ error: message });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// GET /api/documents/ocr-metrics
+// OCR quality metrics for continuous improvement.
+// ──────────────────────────────────────────────────────────────────────────────
+router.get('/ocr-metrics', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const metrics = await getOcrMetrics();
+    res.json({ metrics });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch OCR metrics';
     res.status(500).json({ error: message });
   }
 });

@@ -31,6 +31,8 @@ export interface ExtractedFields {
   quantityInBags?: number;
   documentType?: DocumentType;
   confidence?: number;
+  fieldConfidence?: Record<string, number>;
+  validationIssues?: string[];
 }
 
 export interface OcrResult {
@@ -80,6 +82,21 @@ export interface ReviewPayload {
   tollAmount?: string;
   weightInfo?: string;
   transporter?: string;
+  billToParty?: string;
+  shipToParty?: string;
+  principalCompany?: string;
+  branchName?: string;
+  loadingSlipNo?: string;
+  companyInvoiceNo?: string;
+  companyInvoiceDate?: string;
+  companyEwayBillNo?: string;
+  deliveryDestination?: string;
+  productName?: string;
+  transporterName?: string;
+  orderType?: string;
+  tptCode?: string;
+  quantityInMt?: number;
+  quantityInBags?: number;
   documentType?: DocumentType;
 }
 
@@ -181,4 +198,3 @@ export interface SavedFilterPayload {
   name: string;
   filters: AdvancedSearchFilters;
 }
-
