@@ -7,6 +7,71 @@ const prisma = new PrismaClient();
 
 export { prisma };
 
+function mapExtractedRecordToLearnedFields(
+  extracted: {
+    lrNo: string | null;
+    invoiceNo: string | null;
+    vehicleNo: string | null;
+    quantity: string | null;
+    date: string | null;
+    partyNames: string | null;
+    tollAmount: string | null;
+    weightInfo: string | null;
+    billToParty: string | null;
+    shipToParty: string | null;
+    principalCompany: string | null;
+    branchName: string | null;
+    loadingSlipNo: string | null;
+    companyInvoiceNo: string | null;
+    companyInvoiceDate: string | null;
+    companyEwayBillNo: string | null;
+    deliveryDestination: string | null;
+    productName: string | null;
+    transporterName: string | null;
+    orderType: string | null;
+    tptCode: string | null;
+    quantityInMt: number | null;
+    quantityInBags: number | null;
+  },
+  documentType: DocumentType,
+) {
+  let partyNames: string[] | undefined;
+  if (extracted.partyNames) {
+    try {
+      partyNames = JSON.parse(extracted.partyNames) as string[];
+    } catch {
+      partyNames = undefined;
+    }
+  }
+
+  return {
+    lrNo: extracted.lrNo ?? undefined,
+    invoiceNo: extracted.invoiceNo ?? undefined,
+    vehicleNo: extracted.vehicleNo ?? undefined,
+    quantity: extracted.quantity ?? undefined,
+    date: extracted.date ?? undefined,
+    partyNames,
+    tollAmount: extracted.tollAmount ?? undefined,
+    weightInfo: extracted.weightInfo ?? undefined,
+    billToParty: extracted.billToParty ?? undefined,
+    shipToParty: extracted.shipToParty ?? undefined,
+    principalCompany: extracted.principalCompany ?? undefined,
+    branchName: extracted.branchName ?? undefined,
+    loadingSlipNo: extracted.loadingSlipNo ?? undefined,
+    companyInvoiceNo: extracted.companyInvoiceNo ?? undefined,
+    companyInvoiceDate: extracted.companyInvoiceDate ?? undefined,
+    companyEwayBillNo: extracted.companyEwayBillNo ?? undefined,
+    deliveryDestination: extracted.deliveryDestination ?? undefined,
+    productName: extracted.productName ?? undefined,
+    transporterName: extracted.transporterName ?? undefined,
+    orderType: extracted.orderType ?? undefined,
+    tptCode: extracted.tptCode ?? undefined,
+    quantityInMt: extracted.quantityInMt ?? undefined,
+    quantityInBags: extracted.quantityInBags ?? undefined,
+    documentType,
+  };
+}
+
 /**
  * Auto-link a document to a DocumentGroup based on common fields.
  *
@@ -427,10 +492,7 @@ export async function saveOcrResults(
       },
     });
 
-    const autoAccepted = shouldAutoAccept({
-      ...fields,
-      documentType,
-    }, documentType);
+    const autoAccepted = shouldAutoAccept(fields, documentType);
 
     await tx.document.update({
       where: { id: documentId },
@@ -519,7 +581,7 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
     const newVal = payload[field];
     const oldVal = field === 'partyNames'
       ? (existing.partyNames ? (JSON.parse(existing.partyNames) as string[]) : null)
-      : (existing[field as keyof typeof existing] as string | number | null);
+      : existing[field as keyof typeof existing];
 
     const newSer = newVal !== undefined ? JSON.stringify(newVal) : null;
     const oldSer = oldVal !== null ? JSON.stringify(oldVal) : null;
@@ -582,32 +644,7 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
     await learnFromDocumentReview(
       documentId,
       updatedDoc.type,
-      {
-        lrNo: updatedExtracted.lrNo ?? undefined,
-        invoiceNo: updatedExtracted.invoiceNo ?? undefined,
-        vehicleNo: updatedExtracted.vehicleNo ?? undefined,
-        quantity: updatedExtracted.quantity ?? undefined,
-        date: updatedExtracted.date ?? undefined,
-        partyNames: updatedExtracted.partyNames ? (JSON.parse(updatedExtracted.partyNames) as string[]) : undefined,
-        tollAmount: updatedExtracted.tollAmount ?? undefined,
-        weightInfo: updatedExtracted.weightInfo ?? undefined,
-        billToParty: updatedExtracted.billToParty ?? undefined,
-        shipToParty: updatedExtracted.shipToParty ?? undefined,
-        principalCompany: updatedExtracted.principalCompany ?? undefined,
-        branchName: updatedExtracted.branchName ?? undefined,
-        loadingSlipNo: updatedExtracted.loadingSlipNo ?? undefined,
-        companyInvoiceNo: updatedExtracted.companyInvoiceNo ?? undefined,
-        companyInvoiceDate: updatedExtracted.companyInvoiceDate ?? undefined,
-        companyEwayBillNo: updatedExtracted.companyEwayBillNo ?? undefined,
-        deliveryDestination: updatedExtracted.deliveryDestination ?? undefined,
-        productName: updatedExtracted.productName ?? undefined,
-        transporterName: updatedExtracted.transporterName ?? undefined,
-        orderType: updatedExtracted.orderType ?? undefined,
-        tptCode: updatedExtracted.tptCode ?? undefined,
-        quantityInMt: updatedExtracted.quantityInMt ?? undefined,
-        quantityInBags: updatedExtracted.quantityInBags ?? undefined,
-        documentType: updatedDoc.type,
-      },
+      mapExtractedRecordToLearnedFields(updatedExtracted, updatedDoc.type),
       Object.keys(userEdits)
     );
   }

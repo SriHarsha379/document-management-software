@@ -6,9 +6,46 @@ import {
   computeFieldConfidence,
   getContextualOcrHints,
   getValidationIssues,
+  ISSUE_PENALTY_WEIGHT,
   normalizeExtractedFields,
   shouldRetryOcr,
+  VEHICLE_NO_PATTERN,
 } from './ocrLearningService.js';
+
+function parseExtractedFields(parsed: Record<string, unknown>, documentType: DocumentType, defaultConfidence = 0.5): ExtractedFields {
+  const partyNames = Array.isArray(parsed.partyNames)
+    ? parsed.partyNames.filter((p): p is string => typeof p === 'string')
+    : undefined;
+
+  const fields: ExtractedFields = {
+    lrNo: typeof parsed.lrNo === 'string' ? parsed.lrNo : undefined,
+    invoiceNo: typeof parsed.invoiceNo === 'string' ? parsed.invoiceNo : undefined,
+    vehicleNo: typeof parsed.vehicleNo === 'string' ? parsed.vehicleNo : undefined,
+    quantity: typeof parsed.quantity === 'string' ? parsed.quantity : undefined,
+    date: typeof parsed.date === 'string' ? parsed.date : undefined,
+    partyNames,
+    tollAmount: typeof parsed.tollAmount === 'string' ? parsed.tollAmount : undefined,
+    weightInfo: typeof parsed.weightInfo === 'string' ? parsed.weightInfo : undefined,
+    billToParty: typeof parsed.billToParty === 'string' ? parsed.billToParty : undefined,
+    shipToParty: typeof parsed.shipToParty === 'string' ? parsed.shipToParty : undefined,
+    principalCompany: typeof parsed.principalCompany === 'string' ? parsed.principalCompany : undefined,
+    branchName: typeof parsed.branchName === 'string' ? parsed.branchName : undefined,
+    loadingSlipNo: typeof parsed.loadingSlipNo === 'string' ? parsed.loadingSlipNo : undefined,
+    companyInvoiceNo: typeof parsed.companyInvoiceNo === 'string' ? parsed.companyInvoiceNo : undefined,
+    companyInvoiceDate: typeof parsed.companyInvoiceDate === 'string' ? parsed.companyInvoiceDate : undefined,
+    companyEwayBillNo: typeof parsed.companyEwayBillNo === 'string' ? parsed.companyEwayBillNo : undefined,
+    deliveryDestination: typeof parsed.deliveryDestination === 'string' ? parsed.deliveryDestination : undefined,
+    productName: typeof parsed.productName === 'string' ? parsed.productName : undefined,
+    transporterName: typeof parsed.transporterName === 'string' ? parsed.transporterName : undefined,
+    orderType: typeof parsed.orderType === 'string' ? parsed.orderType : undefined,
+    tptCode: typeof parsed.tptCode === 'string' ? parsed.tptCode : undefined,
+    quantityInMt: typeof parsed.quantityInMt === 'number' ? parsed.quantityInMt : undefined,
+    quantityInBags: typeof parsed.quantityInBags === 'number' ? parsed.quantityInBags : undefined,
+    documentType,
+    confidence: typeof parsed.confidence === 'number' ? parsed.confidence : defaultConfidence,
+  };
+  return normalizeExtractedFields(fields);
+}
 
 const DOCUMENT_TYPE_KEYWORDS: Record<DocumentType, string[]> = {
   LR: ['lorry receipt', 'lr no', 'lr number', 'consignment note', 'bilty', 'goods receipt'],
@@ -223,40 +260,10 @@ export async function processDocumentOcr(filePath: string, mimeType: string): Pr
     documentType = detectDocumentTypeFromText(rawText);
   }
 
-  const partyNamesRaw = parsed.partyNames;
-  const partyNames: string[] = Array.isArray(partyNamesRaw)
-    ? partyNamesRaw.filter((p): p is string => typeof p === 'string')
-    : [];
-
-  let fields: ExtractedFields = {
-    lrNo: typeof parsed.lrNo === 'string' ? parsed.lrNo : undefined,
-    invoiceNo: typeof parsed.invoiceNo === 'string' ? parsed.invoiceNo : undefined,
-    vehicleNo: typeof parsed.vehicleNo === 'string' ? parsed.vehicleNo : undefined,
-    quantity: typeof parsed.quantity === 'string' ? parsed.quantity : undefined,
-    date: typeof parsed.date === 'string' ? parsed.date : undefined,
-    partyNames: partyNames.length > 0 ? partyNames : undefined,
-    tollAmount: typeof parsed.tollAmount === 'string' ? parsed.tollAmount : undefined,
-    weightInfo: typeof parsed.weightInfo === 'string' ? parsed.weightInfo : undefined,
-    billToParty: typeof parsed.billToParty === 'string' ? parsed.billToParty : undefined,
-    shipToParty: typeof parsed.shipToParty === 'string' ? parsed.shipToParty : undefined,
-    principalCompany: typeof parsed.principalCompany === 'string' ? parsed.principalCompany : undefined,
-    branchName: typeof parsed.branchName === 'string' ? parsed.branchName.trim().toUpperCase() : undefined,
-    loadingSlipNo: typeof parsed.loadingSlipNo === 'string' ? parsed.loadingSlipNo : undefined,
-    companyInvoiceNo: typeof parsed.companyInvoiceNo === 'string' ? parsed.companyInvoiceNo : undefined,
-    companyInvoiceDate: typeof parsed.companyInvoiceDate === 'string' ? parsed.companyInvoiceDate : undefined,
-    companyEwayBillNo: typeof parsed.companyEwayBillNo === 'string' ? parsed.companyEwayBillNo : undefined,
-    deliveryDestination: typeof parsed.deliveryDestination === 'string' ? parsed.deliveryDestination : undefined,
-    productName: typeof parsed.productName === 'string' ? parsed.productName : undefined,
-    transporterName: typeof parsed.transporterName === 'string' ? parsed.transporterName : undefined,
-    orderType: typeof parsed.orderType === 'string' ? parsed.orderType : undefined,
-    tptCode: typeof parsed.tptCode === 'string' ? parsed.tptCode : undefined,
-    quantityInMt: typeof parsed.quantityInMt === 'number' ? parsed.quantityInMt : undefined,
-    quantityInBags: typeof parsed.quantityInBags === 'number' ? parsed.quantityInBags : undefined,
-    documentType,
-    confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
-  };
-
-  fields = normalizeExtractedFields(fields);
+  let fields = parseExtractedFields(parsed, documentType, 0.5);
+  if (fields.vehicleNo && !VEHICLE_NO_PATTERN.test(fields.vehicleNo)) {
+    fields.vehicleNo = undefined;
+  }
   let issues = getValidationIssues(fields, documentType);
 
   if (shouldRetryOcr(issues, fields.confidence ?? 0.5)) {
@@ -267,37 +274,10 @@ export async function processDocumentOcr(filePath: string, mimeType: string): Pr
       let retryDocumentType = (retryParsed.documentType as DocumentType) ?? documentType;
       if (!validTypes.includes(retryDocumentType)) retryDocumentType = documentType;
 
-      let retryFields: ExtractedFields = {
-        lrNo: typeof retryParsed.lrNo === 'string' ? retryParsed.lrNo : undefined,
-        invoiceNo: typeof retryParsed.invoiceNo === 'string' ? retryParsed.invoiceNo : undefined,
-        vehicleNo: typeof retryParsed.vehicleNo === 'string' ? retryParsed.vehicleNo : undefined,
-        quantity: typeof retryParsed.quantity === 'string' ? retryParsed.quantity : undefined,
-        date: typeof retryParsed.date === 'string' ? retryParsed.date : undefined,
-        partyNames: Array.isArray(retryParsed.partyNames) ? retryParsed.partyNames.filter((p): p is string => typeof p === 'string') : undefined,
-        tollAmount: typeof retryParsed.tollAmount === 'string' ? retryParsed.tollAmount : undefined,
-        weightInfo: typeof retryParsed.weightInfo === 'string' ? retryParsed.weightInfo : undefined,
-        billToParty: typeof retryParsed.billToParty === 'string' ? retryParsed.billToParty : undefined,
-        shipToParty: typeof retryParsed.shipToParty === 'string' ? retryParsed.shipToParty : undefined,
-        principalCompany: typeof retryParsed.principalCompany === 'string' ? retryParsed.principalCompany : undefined,
-        branchName: typeof retryParsed.branchName === 'string' ? retryParsed.branchName : undefined,
-        loadingSlipNo: typeof retryParsed.loadingSlipNo === 'string' ? retryParsed.loadingSlipNo : undefined,
-        companyInvoiceNo: typeof retryParsed.companyInvoiceNo === 'string' ? retryParsed.companyInvoiceNo : undefined,
-        companyInvoiceDate: typeof retryParsed.companyInvoiceDate === 'string' ? retryParsed.companyInvoiceDate : undefined,
-        companyEwayBillNo: typeof retryParsed.companyEwayBillNo === 'string' ? retryParsed.companyEwayBillNo : undefined,
-        deliveryDestination: typeof retryParsed.deliveryDestination === 'string' ? retryParsed.deliveryDestination : undefined,
-        productName: typeof retryParsed.productName === 'string' ? retryParsed.productName : undefined,
-        transporterName: typeof retryParsed.transporterName === 'string' ? retryParsed.transporterName : undefined,
-        orderType: typeof retryParsed.orderType === 'string' ? retryParsed.orderType : undefined,
-        tptCode: typeof retryParsed.tptCode === 'string' ? retryParsed.tptCode : undefined,
-        quantityInMt: typeof retryParsed.quantityInMt === 'number' ? retryParsed.quantityInMt : undefined,
-        quantityInBags: typeof retryParsed.quantityInBags === 'number' ? retryParsed.quantityInBags : undefined,
-        documentType: retryDocumentType,
-        confidence: typeof retryParsed.confidence === 'number' ? retryParsed.confidence : fields.confidence,
-      };
-      retryFields = normalizeExtractedFields(retryFields);
+      const retryFields = parseExtractedFields(retryParsed, retryDocumentType, fields.confidence ?? 0.5);
       const retryIssues = getValidationIssues(retryFields, retryDocumentType);
-      const retryScore = (retryFields.confidence ?? 0) - retryIssues.length * 0.1;
-      const currentScore = (fields.confidence ?? 0) - issues.length * 0.1;
+      const retryScore = (retryFields.confidence ?? 0) - retryIssues.length * ISSUE_PENALTY_WEIGHT;
+      const currentScore = (fields.confidence ?? 0) - issues.length * ISSUE_PENALTY_WEIGHT;
       if (retryScore >= currentScore) {
         fields = retryFields;
         documentType = retryDocumentType;

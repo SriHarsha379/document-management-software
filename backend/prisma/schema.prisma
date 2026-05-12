@@ -302,6 +302,7 @@ model ExtractedData {
   @@index([invoiceNo])
   @@index([date])
   @@index([transporter])
+  @@index([reviewedAt])
 
   @@map("extracted_data")
 }

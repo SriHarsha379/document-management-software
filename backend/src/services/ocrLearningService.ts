@@ -2,6 +2,12 @@ import { PrismaClient } from '@prisma/client';
 import type { DocumentType, ExtractedFields } from '../types/index.js';
 
 const prisma = new PrismaClient();
+// Indian registration examples: MH12AB1234, GJ05CD5678, KA01AB1234.
+export const VEHICLE_NO_PATTERN = /^[A-Z]{2}\d{1,2}[A-Z]{1,3}\d{1,4}$/;
+export const ISSUE_PENALTY_WEIGHT = 0.08;
+const RETRY_CONFIDENCE_THRESHOLD = 0.75;
+const MAX_CONTEXT_HINTS = 15;
+const METRICS_SAMPLE_LIMIT = 2000;
 
 type ProfileData = {
   stableFields: Record<string, string>;
@@ -99,7 +105,7 @@ export function getValidationIssues(fields: ExtractedFields, documentType: Docum
     if (!fields.date) issues.push('date missing');
   }
 
-  if (fields.vehicleNo && !/^[A-Z]{2}\d{1,2}[A-Z]{1,3}\d{1,4}$/.test(fields.vehicleNo)) {
+  if (fields.vehicleNo && !VEHICLE_NO_PATTERN.test(fields.vehicleNo)) {
     issues.push('vehicleNo format invalid');
   }
   if (fields.date && !/^\d{4}-\d{2}-\d{2}$/.test(fields.date)) {
@@ -110,7 +116,7 @@ export function getValidationIssues(fields: ExtractedFields, documentType: Docum
 
 export function computeFieldConfidence(fields: ExtractedFields, baseConfidence: number, issues: string[]): Record<string, number> {
   const clamp = (n: number) => Math.max(0, Math.min(1, n));
-  const penalty = issues.length * 0.08;
+  const penalty = issues.length * ISSUE_PENALTY_WEIGHT;
   const base = clamp(baseConfidence - penalty);
   const perField: Record<string, number> = {};
 
@@ -130,7 +136,8 @@ export function computeFieldConfidence(fields: ExtractedFields, baseConfidence: 
 }
 
 export function shouldRetryOcr(issues: string[], currentConfidence: number): boolean {
-  return issues.length > 0 || currentConfidence < 0.75;
+  // Retry when confidence is under threshold or required fields are invalid/missing.
+  return issues.length > 0 || currentConfidence < RETRY_CONFIDENCE_THRESHOLD;
 }
 
 export function shouldAutoAccept(fields: ExtractedFields, documentType: DocumentType): boolean {
@@ -178,10 +185,11 @@ export async function getContextualOcrHints(documentType: DocumentType, fields: 
       // ignore malformed profile
     }
   }
-  return [...new Set(hints)].slice(0, 15);
+  // Keep hints bounded to avoid unnecessary token usage in retry prompts.
+  return [...new Set(hints)].slice(0, MAX_CONTEXT_HINTS);
 }
 
-export async function learnFromDocumentReview(documentId: string, documentType: DocumentType, stableFields: ExtractedFields, editedFields: string[]): Promise<void> {
+export async function learnFromDocumentReview(_documentId: string, documentType: DocumentType, stableFields: ExtractedFields, editedFields: string[]): Promise<void> {
   const principalCompany = stableFields.principalCompany?.trim().toUpperCase();
   const branchName = stableFields.branchName?.trim().toUpperCase();
   const transporterName = stableFields.transporterName?.trim().toUpperCase();
@@ -237,9 +245,6 @@ export async function learnFromDocumentReview(documentId: string, documentType: 
       lastUsedAt: new Date(),
     },
   });
-
-  // Keep relation for future traceability via notes in profileData.
-  void documentId;
 }
 
 export function getTrackedReviewFields(): string[] {
@@ -253,7 +258,8 @@ export async function getOcrQualityMetrics(): Promise<OcrQualityMetrics> {
     prisma.extractedData.findMany({
       where: { userEdits: { not: null } },
       select: { userEdits: true },
-      take: 2000,
+      // Large enough for trend visibility while keeping endpoint fast on SQLite.
+      take: METRICS_SAMPLE_LIMIT,
       orderBy: { reviewedAt: 'desc' },
     }),
   ]);
