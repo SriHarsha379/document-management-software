@@ -7,8 +7,20 @@ import { requireDriverAuth, signDriverToken } from '../middleware/driverAuth.js'
 import type { DriverTokenPayload } from '../middleware/driverAuth.js';
 import { prisma, saveOcrResults } from '../services/documentService.js';
 import { processDocumentOcr } from '../services/ocrService.js';
+import type { DocumentType } from '../types/index.js';
 
 const router = Router();
+
+type DriverUploadDocType = 'LR' | 'TOLL' | 'WEIGHMENT_SLIP' | 'WEIGHMENT_PARTY' | 'WEIGHMENT_SITE' | 'PARTY_ACK';
+
+function mapDriverDocTypeToDocumentType(docType: DriverUploadDocType): DocumentType {
+  if (docType === 'LR') return 'LR';
+  if (docType === 'TOLL') return 'TOLL';
+  if (docType === 'WEIGHMENT_PARTY') return 'WEIGHMENT_PARTY';
+  if (docType === 'WEIGHMENT_SITE') return 'WEIGHMENT_SITE';
+  if (docType === 'WEIGHMENT_SLIP') return 'WEIGHMENT';
+  return 'RECEIVING'; // PARTY_ACK
+}
 
 // Rate limiter for login: max 10 attempts per 15 minutes per IP
 const loginLimiter = rateLimit({
@@ -150,16 +162,17 @@ router.post(
       }
 
       const { docType } = req.body as { docType?: string };
-      const validDocTypes = ['LR', 'TOLL', 'WEIGHMENT_SLIP', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE', 'PARTY_ACK'] as const;
+      const validDocTypes: DriverUploadDocType[] = ['LR', 'TOLL', 'WEIGHMENT_SLIP', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE', 'PARTY_ACK'];
       if (!docType || !validDocTypes.includes(docType as (typeof validDocTypes)[number])) {
         res.status(400).json({ error: `docType must be one of: ${validDocTypes.join(', ')}` });
         return;
       }
+      const selectedDocType = docType as DriverUploadDocType;
 
       // Create initial DB record
       const driverDoc = await prisma.driverUploadDocument.create({
         data: {
-          docType: docType as 'LR' | 'TOLL' | 'WEIGHMENT_SLIP' | 'WEIGHMENT_PARTY' | 'WEIGHMENT_SITE' | 'PARTY_ACK',
+          docType: selectedDocType,
           storageKey: req.file.path,
           originalFilename: req.file.originalname,
           mimeType: req.file.mimetype,
@@ -189,12 +202,14 @@ router.post(
         vehicleNumber = ocrResult.fields.vehicleNo ?? null;
         documentDate = ocrResult.fields.date ?? null;
 
+        const linkedDocumentType = mapDriverDocTypeToDocumentType(selectedDocType);
+
         // Create a Document record in the main system so the upload is visible
         // to admins in the Documents view and participates in auto-linking to
         // Lr records and DocumentGroups (via saveOcrResults).
         const adminDoc = await prisma.document.create({
           data: {
-            type:             ocrResult.documentType,
+            type:             linkedDocumentType,
             status:           'PENDING_OCR',
             originalFilename: req.file.originalname,
             rawFilePath:      resolvedFilePath,
@@ -202,9 +217,9 @@ router.post(
           },
         });
 
-        // saveOcrResults updates the Document type/status, stores ExtractedData,
+        // saveOcrResults updates the Document status, stores ExtractedData,
         // and calls autoLinkDocument + autoLinkDocumentToGroup.
-        await saveOcrResults(adminDoc.id, ocrResult.fields, ocrResult.documentType, ocrResult.rawResponse);
+        await saveOcrResults(adminDoc.id, ocrResult.fields, linkedDocumentType, ocrResult.rawResponse);
 
         // Fetch the groupId that autoLinkDocumentToGroup set on the Document.
         const updatedAdminDoc = await prisma.document.findUnique({
