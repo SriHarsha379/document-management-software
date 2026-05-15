@@ -13,13 +13,17 @@ const router = Router();
 
 type DriverUploadDocType = 'LR' | 'TOLL' | 'WEIGHMENT_SLIP' | 'WEIGHMENT_PARTY' | 'WEIGHMENT_SITE' | 'PARTY_ACK';
 
+const DRIVER_TO_DOCUMENT_TYPE_MAP: Record<DriverUploadDocType, DocumentType> = {
+  LR: 'LR',
+  TOLL: 'TOLL',
+  WEIGHMENT_SLIP: 'WEIGHMENT',
+  WEIGHMENT_PARTY: 'WEIGHMENT_PARTY',
+  WEIGHMENT_SITE: 'WEIGHMENT_SITE',
+  PARTY_ACK: 'RECEIVING', // Party acknowledgement is represented as RECEIVING in main DocumentType.
+};
+
 function mapDriverDocTypeToDocumentType(docType: DriverUploadDocType): DocumentType {
-  if (docType === 'LR') return 'LR';
-  if (docType === 'TOLL') return 'TOLL';
-  if (docType === 'WEIGHMENT_PARTY') return 'WEIGHMENT_PARTY';
-  if (docType === 'WEIGHMENT_SITE') return 'WEIGHMENT_SITE';
-  if (docType === 'WEIGHMENT_SLIP') return 'WEIGHMENT';
-  return 'RECEIVING'; // PARTY_ACK
+  return DRIVER_TO_DOCUMENT_TYPE_MAP[docType];
 }
 
 // Rate limiter for login: max 10 attempts per 15 minutes per IP
