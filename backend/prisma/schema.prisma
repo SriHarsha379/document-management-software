@@ -302,8 +302,30 @@ model ExtractedData {
   @@index([invoiceNo])
   @@index([date])
   @@index([transporter])
+  @@index([reviewedAt])
 
   @@map("extracted_data")
+}
+
+model ExtractionProfile {
+  id              String       @id @default(uuid())
+  profileKey      String       @unique
+  documentType    DocumentType
+  principalCompany String?
+  branchName      String?
+  transporterName String?
+  profileData     String
+  samplesCount    Int          @default(1)
+  successfulSaves Int          @default(0)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  lastUsedAt      DateTime     @default(now())
+
+  @@index([documentType])
+  @@index([principalCompany])
+  @@index([branchName])
+  @@index([transporterName])
+  @@map("extraction_profiles")
 }
 
 // Document bundle for a specific recipient type
