@@ -221,7 +221,7 @@ router.post(
           },
         });
 
-        // saveOcrResults updates the Document status, stores ExtractedData,
+        // saveOcrResults updates the Document type/status, stores ExtractedData,
         // and calls autoLinkDocument + autoLinkDocumentToGroup.
         await saveOcrResults(adminDoc.id, ocrResult.fields, linkedDocumentType, ocrResult.rawResponse);
 
