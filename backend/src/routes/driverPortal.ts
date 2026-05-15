@@ -19,11 +19,15 @@ const DRIVER_TO_DOCUMENT_TYPE_MAP: Record<DriverUploadDocType, DocumentType> = {
   WEIGHMENT_SLIP: 'WEIGHMENT',
   WEIGHMENT_PARTY: 'WEIGHMENT_PARTY',
   WEIGHMENT_SITE: 'WEIGHMENT_SITE',
-  PARTY_ACK: 'RECEIVING', // Party acknowledgement is represented as RECEIVING in main DocumentType.
+  PARTY_ACK: 'RECEIVING', // DocumentType has no PARTY_ACK enum; RECEIVING is the closest business-equivalent type.
 };
 
 function mapDriverDocTypeToDocumentType(docType: DriverUploadDocType): DocumentType {
-  return DRIVER_TO_DOCUMENT_TYPE_MAP[docType];
+  const mapped = DRIVER_TO_DOCUMENT_TYPE_MAP[docType];
+  if (!mapped) {
+    throw new Error(`Unsupported driver doc type: ${docType}`);
+  }
+  return mapped;
 }
 
 // Rate limiter for login: max 10 attempts per 15 minutes per IP
