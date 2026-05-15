@@ -42,6 +42,9 @@ export function OCRReview({ document, onSaved, onCancel }: Props) {
     partyNames: ed?.partyNames ?? [],
     tollAmount: ed?.tollAmount ?? '',
     weightInfo: ed?.weightInfo ?? '',
+    driverName: (ed as { driverName?: string | null })?.driverName ?? '',
+    driverCellNo: (ed as { driverCellNo?: string | null })?.driverCellNo ?? '',
+    source: (ed as { source?: string | null })?.source ?? '',
   });
 
   const [partyNamesText, setPartyNamesText] = useState((ed?.partyNames ?? []).join('\n'));
@@ -117,6 +120,15 @@ export function OCRReview({ document, onSaved, onCancel }: Props) {
             <Field label="Date (YYYY-MM-DD) ✱" value={form.date ?? ''} onChange={(v) => handleChange('date', v)} placeholder="YYYY-MM-DD" highlight={!form.date} />
             <Field label="Quantity" value={form.quantity ?? ''} onChange={(v) => handleChange('quantity', v)} placeholder="e.g. 10 MT" />
             <Field label="Toll Amount" value={form.tollAmount ?? ''} onChange={(v) => handleChange('tollAmount', v)} />
+            {form.documentType === 'LR' && (
+              <>
+                <Field label="Driver Name" value={form.driverName ?? ''} onChange={(v) => handleChange('driverName', v)} placeholder="e.g. MADHU" />
+                <Field label="Driver Cell No." value={form.driverCellNo ?? ''} onChange={(v) => handleChange('driverCellNo', v)} placeholder="e.g. 6281121317" />
+              </>
+            )}
+            {form.documentType === 'INVOICE' && (
+              <Field label="Source" value={form.source ?? ''} onChange={(v) => handleChange('source', v)} placeholder="e.g. DRONAGIRI" />
+            )}
           </div>
 
           <div style={fieldGroup}>

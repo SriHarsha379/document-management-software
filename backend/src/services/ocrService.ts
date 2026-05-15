@@ -53,12 +53,20 @@ function parseExtractedFields(parsed: Record<string, unknown>, documentType: Doc
     tptCode: typeof parsed.tptCode === 'string' ? parsed.tptCode : undefined,
     quantityInMt: typeof parsed.quantityInMt === 'number' ? parsed.quantityInMt : undefined,
     quantityInBags: typeof parsed.quantityInBags === 'number' ? parsed.quantityInBags : undefined,
+    driverName: typeof parsed.driverName === 'string' ? parsed.driverName : undefined,
+    driverCellNo: typeof parsed.driverCellNo === 'string' ? parsed.driverCellNo : undefined,
+    source: typeof parsed.source === 'string' ? parsed.source : undefined,
     documentType,
     confidence: typeof parsed.confidence === 'number' ? parsed.confidence : defaultConfidence,
   };
   const normalized = normalizeExtractedFields(fields);
   if (WEIGHMENT_TYPES.includes(documentType)) {
     return restrictToWeighmentFields(normalized);
+  }
+  // principalCompany is only meaningful on invoices; strip it from LR documents
+  // to prevent the transporter header from being misidentified as the principal company.
+  if (documentType === 'LR') {
+    normalized.principalCompany = undefined;
   }
   return normalized;
 }
@@ -97,7 +105,6 @@ STEP 2 — Extract fields according to the identified document type using the ru
 - date: LR date or document date in YYYY-MM-DD (convert DD/MM/YYYY or DD-MM-YYYY)
 - billToParty: The "BILL TO PARTY" company name
 - shipToParty: The "SHIP TO PARTY" company name (delivery address party)
-- principalCompany: The sender/issuer company name from the top-left "From" header block (e.g. "SP ASSOCIATES"). This is the company that issued the LR.
 - branchName: The locality/area from the sender's header address block, normalized to UPPERCASE (e.g. "DRONAGIRI"). Look for the locality token before the city/district in the "From" address. Also check "From Destination" label.
 - productName: Product or commodity being transported — look for "PRODUCT", "Goods Description", "Item"
 - quantity: Quantity with unit — look for "QUANTITY IN MT", "Qty", e.g. "35.38 MT" or "500 Bags"
@@ -105,6 +112,8 @@ STEP 2 — Extract fields according to the identified document type using the ru
 - quantityInBags: Numeric quantity in bags — extract only the number, e.g. 500 (float). Return null if not in bags.
 - orderType: Order type — look for "ORDER TYPE", "Order Type", e.g. "BULK ORDER", "BAG ORDER"
 - tptCode: Transport/TPT code — look for "T.P.T Code", "TPT Code", "TPT"
+- driverName: Driver's name — look for "Driver Name", "Driver Name :", "Drfver Name" (OCR variant)
+- driverCellNo: Driver's mobile/cell number — look for "Driver Cell No", "Driver Cell No.", "Driver Mobile", "Cell No"
 - partyNames: Array [consignor/sender name, consignee/receiver name] — look for "From", "Consignor", "Sender" for index 0; "To", "Consignee", "Receiver" for index 1
 - transporterName: The transport company name (usually printed as the issuing company on the document header)
 - deliveryDestination: "To Destination" city or location
@@ -121,8 +130,9 @@ Extract ONLY the two fields below. Set every other field to null.
 - lrNo: LR number referenced in the invoice — look for "LR No.", "LR No"
 - billToParty: "BILL TO" party name
 - shipToParty: "SHIP TO" party name
-- principalCompany: The sender/issuer company name from the top-left header block (e.g. "SP ASSOCIATES")
-- branchName: The locality/area from the sender's header address block, normalized to UPPERCASE (e.g. "DRONAGIRI")
+- principalCompany: The sender/issuer company name from the top header block (e.g. "MY HOME INDUSTRIES PRIVATE LIMITED"). This is the company that issued the invoice.
+- branchName: The branch name — look for an explicit "Branch:" label in the company header area, normalized to UPPERCASE. If no "Branch:" label exists, extract the locality from the company address block.
+- source: The source location — look for an explicit "Source:" label in the company header area below the address, normalized to UPPERCASE. Return null if not present.
 - productName: Item/product name from line items
 - quantity: Quantity from line items with unit
 - quantityInMt: Numeric quantity in metric tonnes from line items (float), e.g. 35.38
@@ -160,6 +170,9 @@ Always respond with a valid JSON object with EXACTLY these fields:
   "transporterName": "<name of the transport company/transporter or null>",
   "orderType": "<order type e.g. 'BULK ORDER', 'BAG ORDER' or null>",
   "tptCode": "<T.P.T code / TPT code or null>",
+  "driverName": "<driver's name from 'Driver Name' label or null>",
+  "driverCellNo": "<driver's cell/mobile number from 'Driver Cell No' label or null>",
+  "source": "<source location from 'Source:' label in invoice header or null>",
   "rawText": "<full text extracted from document>"
 }
 

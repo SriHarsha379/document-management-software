@@ -89,6 +89,9 @@ export interface ExtractedData {
   tptCode?: string | null;
   quantityInMt?: number | null;
   quantityInBags?: number | null;
+  driverName?: string | null;
+  driverCellNo?: string | null;
+  source?: string | null;
 }
 
 export interface DocumentGroup {
@@ -122,6 +125,9 @@ export interface ReviewPayload {
   partyNames?: string[];
   tollAmount?: string;
   weightInfo?: string;
+  driverName?: string;
+  driverCellNo?: string;
+  source?: string;
   documentType?: DocumentType;
 }
 

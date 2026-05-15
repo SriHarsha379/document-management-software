@@ -29,6 +29,9 @@ export interface ExtractedFields {
   tptCode?: string;
   quantityInMt?: number;
   quantityInBags?: number;
+  driverName?: string;
+  driverCellNo?: string;
+  source?: string;
   documentType?: DocumentType;
   confidence?: number;
   fieldConfidence?: Record<string, number>;
@@ -97,6 +100,9 @@ export interface ReviewPayload {
   tptCode?: string;
   quantityInMt?: number;
   quantityInBags?: number;
+  driverName?: string;
+  driverCellNo?: string;
+  source?: string;
   documentType?: DocumentType;
 }
 

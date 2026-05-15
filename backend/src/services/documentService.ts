@@ -32,6 +32,9 @@ function mapExtractedRecordToLearnedFields(
     tptCode: string | null;
     quantityInMt: number | null;
     quantityInBags: number | null;
+    driverName: string | null;
+    driverCellNo: string | null;
+    source: string | null;
   },
   documentType: DocumentType,
 ) {
@@ -68,6 +71,9 @@ function mapExtractedRecordToLearnedFields(
     tptCode: extracted.tptCode ?? undefined,
     quantityInMt: extracted.quantityInMt ?? undefined,
     quantityInBags: extracted.quantityInBags ?? undefined,
+    driverName: extracted.driverName ?? undefined,
+    driverCellNo: extracted.driverCellNo ?? undefined,
+    source: extracted.source ?? undefined,
     documentType,
   };
 }
@@ -428,6 +434,9 @@ export async function saveOcrResults(
     tptCode?: string;
     quantityInMt?: number;
     quantityInBags?: number;
+    driverName?: string;
+    driverCellNo?: string;
+    source?: string;
   },
   documentType: DocumentType,
   rawOcrResponse: string
@@ -462,6 +471,9 @@ export async function saveOcrResults(
         tptCode: fields.tptCode ?? null,
         quantityInMt: fields.quantityInMt ?? null,
         quantityInBags: fields.quantityInBags ?? null,
+        driverName: fields.driverName ?? null,
+        driverCellNo: fields.driverCellNo ?? null,
+        source: fields.source ?? null,
       },
       update: {
         lrNo: fields.lrNo ?? null,
@@ -489,6 +501,9 @@ export async function saveOcrResults(
         tptCode: fields.tptCode ?? null,
         quantityInMt: fields.quantityInMt ?? null,
         quantityInBags: fields.quantityInBags ?? null,
+        driverName: fields.driverName ?? null,
+        driverCellNo: fields.driverCellNo ?? null,
+        source: fields.source ?? null,
       },
     });
 
@@ -620,6 +635,9 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
         tptCode: payload.tptCode ?? existing.tptCode,
         quantityInMt: payload.quantityInMt ?? existing.quantityInMt,
         quantityInBags: payload.quantityInBags ?? existing.quantityInBags,
+        driverName: payload.driverName ?? existing.driverName,
+        driverCellNo: payload.driverCellNo ?? existing.driverCellNo,
+        source: payload.source ?? existing.source,
         userReviewed: true,
         reviewedAt: new Date(),
         userEdits: Object.keys(userEdits).length > 0 ? JSON.stringify(userEdits) : existing.userEdits,
