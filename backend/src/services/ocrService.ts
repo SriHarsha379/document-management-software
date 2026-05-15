@@ -12,6 +12,18 @@ import {
   VEHICLE_NO_PATTERN,
 } from './ocrLearningService.js';
 
+const WEIGHMENT_TYPES: DocumentType[] = ['WEIGHMENT', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE'];
+
+/** For weighment slips only vehicleNo and date should be retained; strip everything else. */
+function restrictToWeighmentFields(fields: ExtractedFields): ExtractedFields {
+  return {
+    vehicleNo: fields.vehicleNo,
+    date: fields.date,
+    documentType: fields.documentType,
+    confidence: fields.confidence,
+  };
+}
+
 function parseExtractedFields(parsed: Record<string, unknown>, documentType: DocumentType, defaultConfidence = 0.5): ExtractedFields {
   const partyNames = Array.isArray(parsed.partyNames)
     ? parsed.partyNames.filter((p): p is string => typeof p === 'string')
@@ -44,7 +56,11 @@ function parseExtractedFields(parsed: Record<string, unknown>, documentType: Doc
     documentType,
     confidence: typeof parsed.confidence === 'number' ? parsed.confidence : defaultConfidence,
   };
-  return normalizeExtractedFields(fields);
+  const normalized = normalizeExtractedFields(fields);
+  if (WEIGHMENT_TYPES.includes(documentType)) {
+    return restrictToWeighmentFields(normalized);
+  }
+  return normalized;
 }
 
 const DOCUMENT_TYPE_KEYWORDS: Record<DocumentType, string[]> = {
@@ -94,9 +110,9 @@ STEP 2 — Extract fields according to the identified document type using the ru
 - deliveryDestination: "To Destination" city or location
 
 === FOR WEIGHMENT (Weighbridge Slip) ===
-- vehicleNo: Vehicle registration number — look for "VEHICLE NO", "Vehicle No.", "Veh. No."
+Extract ONLY the two fields below. Set every other field to null.
+- vehicleNo: Vehicle registration number — look for "VEHICLE NO", "Vehicle No.", "Veh. No.", "Truck No."
 - date: Date from the slip in YYYY-MM-DD. The date may appear as "DT:DD-MM-YYYY TM:HH:MM" (e.g. "DT:16-09-2025 TM:12:05") or "DD/MM/YYYY" — extract only the date part and convert to YYYY-MM-DD.
-- weightInfo: Combine all three weights as "Gross: XXXXX kg, Tare: XXXXX kg, Net: XXXXX kg" using the values in KGS from the slip.
 
 === FOR INVOICE (Tax Invoice / GST Invoice) ===
 - invoiceNo: Invoice number — look for "Invoice No", "Invoice No."
