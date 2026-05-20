@@ -373,11 +373,15 @@ export function DocumentBundler({ onBundleSaved }: Props) {
             </thead>
             <tbody>
               {groups.map((g, rowIdx) => {
-                const docTypeSet = new Set((g.documents ?? []).map((d) => d.type));
-                const invoiceNo =
-                  (g.documents ?? []).find((d) => d.type === 'INVOICE' && d.extractedData?.invoiceNo?.trim())?.extractedData?.invoiceNo
-                  ?? (g.documents ?? []).find((d) => d.extractedData?.invoiceNo?.trim())?.extractedData?.invoiceNo
-                  ?? '—';
+                const docs = g.documents ?? [];
+                const docTypeSet = new Set(docs.map((d) => d.type));
+                let invoiceNo = '—';
+                for (const doc of docs) {
+                  const currentInvoiceNo = doc.extractedData?.invoiceNo?.trim();
+                  if (!currentInvoiceNo) continue;
+                  invoiceNo = currentInvoiceNo;
+                  if (doc.type === 'INVOICE') break;
+                }
                 const rowBg = rowIdx % 2 === 0 ? '#fff' : '#f8f9ff';
                 return (
                   <tr key={g.id} style={{ background: rowBg }}>
