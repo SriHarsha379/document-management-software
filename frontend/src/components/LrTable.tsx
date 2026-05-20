@@ -20,18 +20,18 @@ function formatDate(value: string | null | undefined): string {
 
 export const LR_COLUMNS: Col[] = [
   { label: 'S.No',            width: 60,  render: (lr) => lr.serialNo ?? '—' },
-  { label: 'Principal Co.',   width: 130, render: (lr) => lr.principalCompany ?? '—' },
-  { label: 'Branch',          width: 110, render: (lr) => lr.branch?.name ?? '—' },
+  { label: 'Principal Co.',   width: 160, render: (lr) => lr.principalCompany ?? '—' },
+  { label: 'Branch',          width: 130, render: (lr) => lr.branch?.name ?? '—' },
   { label: 'Source',          width: 90,  render: (lr) => lr.source },
   { label: 'LR Date',         width: 100, render: (lr) => formatDate(lr.lrDate ?? lr.date) },
-  { label: 'LR No',           width: 100, render: (lr) => lr.lrNo },
+  { label: 'LR No',           width: 160, render: (lr) => lr.lrNo },
   { label: 'Loading Slip No', width: 120, render: (lr) => lr.loadingSlipNo ?? '—' },
   { label: 'Inv. Date',       width: 100, render: (lr) => lr.companyInvoiceDate ?? '—' },
   { label: 'Inv. No',         width: 110, render: (lr) => lr.companyInvoiceNo ?? '—' },
   { label: 'E-Way Bill No',   width: 120, render: (lr) => lr.companyEwayBillNo ?? '—' },
-  { label: 'Bill To Party',   width: 130, render: (lr) => lr.billToParty ?? '—' },
-  { label: 'Ship To Party',   width: 130, render: (lr) => lr.shipToParty ?? '—' },
-  { label: 'Delivery Dest.',  width: 130, render: (lr) => lr.deliveryDestination ?? '—' },
+  { label: 'Bill To Party',   width: 160, render: (lr) => lr.billToParty ?? '—' },
+  { label: 'Ship To Party',   width: 160, render: (lr) => lr.shipToParty ?? '—' },
+  { label: 'Delivery Dest.',  width: 160, render: (lr) => lr.deliveryDestination ?? '—' },
   { label: 'TPT',             width: 90,  render: (lr) => lr.tpt ?? '—' },
   { label: 'Order Type',      width: 100, render: (lr) => lr.orderType ?? '—' },
   { label: 'Product',         width: 120, render: (lr) => lr.productName ?? '—' },
@@ -138,6 +138,7 @@ const headRow: React.CSSProperties = {
 const dataRow: React.CSSProperties = {
   borderLeft: '1px solid #e0e0f0', borderRight: '1px solid #e0e0f0',
   borderBottom: '1px solid #f0f0f8', background: '#fff', transition: 'background 0.1s',
+  alignItems: 'start',  // ← add this
 };
 const th: React.CSSProperties = {
   padding: '9px 10px', fontSize: 11, fontWeight: 700, color: '#555',
@@ -146,7 +147,7 @@ const th: React.CSSProperties = {
 };
 const cell: React.CSSProperties = {
   padding: '8px 10px', fontSize: 12, color: '#333',
-  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+  whiteSpace: 'normal', wordBreak: 'break-word', alignSelf: 'center',
 };
 const expandBtn: React.CSSProperties = {
   background: '#4361ee', color: '#fff', border: 'none',
