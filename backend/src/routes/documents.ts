@@ -332,6 +332,9 @@ type PrismaDocumentWithRelations = Awaited<ReturnType<typeof prisma.document.fin
     tptCode: string | null;
     quantityInMt: number | null;
     quantityInBags: number | null;
+    driverName: string | null;
+    driverCellNo: string | null;
+    source: string | null;
     createdAt: Date;
     updatedAt: Date;
     documentId: string;
@@ -377,6 +380,9 @@ function formatDocument(doc: PrismaDocumentWithRelations | null) {
       tptCode: ed.tptCode,
       quantityInMt: ed.quantityInMt,
       quantityInBags: ed.quantityInBags,
+      driverName: ed.driverName,
+      driverCellNo: ed.driverCellNo,
+      source: ed.source,
     };
   }
 

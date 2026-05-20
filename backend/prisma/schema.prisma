@@ -282,6 +282,9 @@ model ExtractedData {
   tptCode             String?
   quantityInMt        Float?
   quantityInBags      Float?
+  driverName          String?
+  driverCellNo        String?
+  source              String?
 
   // OCR metadata
   rawOcrResponse  String  // Full JSON response from OpenAI stored as string
