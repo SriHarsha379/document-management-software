@@ -195,7 +195,16 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 router.get('/groups', async (_req: Request, res: Response): Promise<void> => {
   try {
     const groups = await prisma.documentGroup.findMany({
-      include: { documents: { select: { id: true, type: true, status: true } } },
+      include: {
+        documents: {
+          select: {
+            id: true,
+            type: true,
+            status: true,
+            extractedData: { select: { invoiceNo: true } },
+          },
+        },
+      },
       orderBy: { createdAt: 'desc' },
     });
 

@@ -359,7 +359,7 @@ export function DocumentBundler({ onBundleSaved }: Props) {
           <table style={styles.table}>
             <thead>
               <tr>
-                <th style={{ ...styles.th, ...styles.thFixed, minWidth: 110 }}>Vehicle No.</th>
+                <th style={{ ...styles.th, ...styles.thFixed, minWidth: 140 }}>Invoice No.</th>
                 <th style={{ ...styles.th, ...styles.thFixed, minWidth: 90 }}>Date</th>
                 {TABLE_COLUMNS.map((col) => (
                   <th key={col.key} style={{ ...styles.th, minWidth: 120 }}>
@@ -373,13 +373,21 @@ export function DocumentBundler({ onBundleSaved }: Props) {
             </thead>
             <tbody>
               {groups.map((g, rowIdx) => {
-                const docTypeSet = new Set((g.documents ?? []).map((d) => d.type));
+                const docs = g.documents ?? [];
+                const docTypeSet = new Set(docs.map((d) => d.type));
+                let invoiceNo = '—';
+                for (const doc of docs) {
+                  const currentInvoiceNo = doc.extractedData?.invoiceNo?.trim();
+                  if (!currentInvoiceNo) continue;
+                  invoiceNo = currentInvoiceNo;
+                  if (doc.type === 'INVOICE') break;
+                }
                 const rowBg = rowIdx % 2 === 0 ? '#fff' : '#f8f9ff';
                 return (
                   <tr key={g.id} style={{ background: rowBg }}>
-                    {/* Vehicle No */}
+                    {/* Invoice No */}
                     <td style={{ ...styles.td, fontWeight: 700, color: '#1a1a2e' }}>
-                      🚛 {g.vehicleNo}
+                      🧾 {invoiceNo}
                     </td>
                     {/* Date */}
                     <td style={{ ...styles.td, color: '#555', fontSize: 12 }}>
