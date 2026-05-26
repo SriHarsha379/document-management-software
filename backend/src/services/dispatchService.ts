@@ -218,10 +218,15 @@ export async function dispatchBundle(req: DispatchRequest): Promise<DispatchResu
       });
     }
 
-    // 5a. Mark as SENT
+    // 5a. Mark dispatch log as SENT and bundle status as SENT
     await prisma.dispatchLog.update({
       where: { id: log.id },
       data: { status: 'SENT', message: body },
+    });
+
+    await prisma.documentBundle.update({
+      where: { id: bundle.id },
+      data: { status: 'SENT' },
     });
 
     return { success: true, logId: log.id, message: body };
