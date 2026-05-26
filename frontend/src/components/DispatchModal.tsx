@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { Bundle, DispatchChannel, DispatchResult, RecipientType } from '../types';
 import { dispatchApi, masterApi } from '../services/api';
 import type { PartyDropdownItem, TransporterDropdownItem } from '../services/api';
@@ -19,6 +19,7 @@ export function DispatchModal({ bundle, onClose, onSent }: Props) {
   const [ccRecipient, setCcRecipient] = useState('');
   const [step, setStep] = useState<Step>('compose');
   const [result, setResult] = useState<DispatchResult | null>(null);
+  const sendingRef = useRef(false);
 
   // Saved contacts for WhatsApp auto-fill
   const [contacts, setContacts] = useState<ContactItem[]>([]);
@@ -57,14 +58,18 @@ export function DispatchModal({ bundle, onClose, onSent }: Props) {
     `Dear ${bundle.recipientType},\n\nPlease find attached ${docCount} document(s) for Vehicle ${vehicleNo} dated ${date}.\n\nThis is an automated dispatch from the Logistics Document Management System.\n\nRegards,\nLogistics DMS`;
 
   const handleSend = async () => {
-    if (!recipient.trim()) return;
+    if (!recipient.trim() || sendingRef.current) return;
+    sendingRef.current = true;
     setStep('sending');
     try {
       const res = await dispatchApi.send({ bundleId: bundle.id, channel, recipient: recipient.trim(), ccRecipient: ccRecipient.trim() || undefined });
       setResult(res); onSent?.(res);
     } catch (err) {
       setResult({ success: false, logId: '', error: err instanceof Error ? err.message : 'Dispatch failed' });
-    } finally { setStep('done'); }
+    } finally {
+      sendingRef.current = false;
+      setStep('done');
+    }
   };
 
   const info = CHANNEL_INFO[channel];
