@@ -138,6 +138,9 @@ export async function createTransporter(companyId: string, data: TransporterCrea
     if (isUniqueConstraintError(err)) {
       throw new ValidationError(`A transporter with code "${code}" already exists in this company`);
     }
+    if (isForeignKeyConstraintError(err)) {
+      throw new ValidationError('Company not found');
+    }
     throw err;
   }
 }
@@ -231,15 +234,22 @@ function validateOfficer(data: OfficerCreateInput): void {
 
 export async function createOfficer(companyId: string, data: OfficerCreateInput) {
   validateOfficer(data);
-  return db.officer.create({
-    data: {
-      companyId,
-      name:  str(data.name),
-      phone: optStr(data.phone),
-      email: optStr(data.email),
-      role:  optStr(data.role),
-    },
-  });
+  try {
+    return await db.officer.create({
+      data: {
+        companyId,
+        name:  str(data.name),
+        phone: optStr(data.phone),
+        email: optStr(data.email),
+        role:  optStr(data.role),
+      },
+    });
+  } catch (err: unknown) {
+    if (isForeignKeyConstraintError(err)) {
+      throw new ValidationError('Company not found');
+    }
+    throw err;
+  }
 }
 
 export async function listOfficers(
@@ -345,6 +355,9 @@ export async function createParty(companyId: string, data: PartyCreateInput) {
     if (isUniqueConstraintError(err)) {
       throw new ValidationError(`A party with code "${code}" already exists in this company`);
     }
+    if (isForeignKeyConstraintError(err)) {
+      throw new ValidationError('Company not found');
+    }
     throw err;
   }
 }
@@ -447,6 +460,9 @@ export async function createProduct(companyId: string, data: ProductCreateInput)
   } catch (err: unknown) {
     if (isUniqueConstraintError(err)) {
       throw new ValidationError(`A product with this name and brand already exists in this company`);
+    }
+    if (isForeignKeyConstraintError(err)) {
+      throw new ValidationError('Company not found');
     }
     throw err;
   }
@@ -573,6 +589,9 @@ export async function createWorkingCentre(companyId: string, data: WorkingCentre
     if (isUniqueConstraintError(err)) {
       throw new ValidationError(`A working centre with code "${code}" already exists in this company`);
     }
+    if (isForeignKeyConstraintError(err)) {
+      throw new ValidationError('Company not found');
+    }
     throw err;
   }
 }
@@ -689,5 +708,15 @@ function isUniqueConstraintError(err: unknown): boolean {
     err !== null &&
     'code' in err &&
     (err as { code: string }).code === 'P2002'
+  );
+}
+
+/** Detect Prisma foreign key constraint violation (P2003). */
+function isForeignKeyConstraintError(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err as { code: string }).code === 'P2003'
   );
 }
