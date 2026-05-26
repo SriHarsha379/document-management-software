@@ -195,6 +195,12 @@ describe('createTransporter', () => {
     await expect(createTransporter('co1', { code: 'T01', name: 'X' }))
       .rejects.toThrow(ValidationError);
   });
+
+  it('throws ValidationError on foreign key constraint (P2003)', async () => {
+    m.transporter.create.mockRejectedValue({ code: 'P2003' });
+    await expect(createTransporter('co1', { code: 'T01', name: 'X' }))
+      .rejects.toThrow(ValidationError);
+  });
 });
 
 describe('listTransporters', () => {
@@ -299,6 +305,11 @@ describe('createOfficer', () => {
   it('throws ValidationError for invalid email', async () => {
     await expect(createOfficer('co1', { name: 'Bob', email: 'bad' })).rejects.toThrow(ValidationError);
   });
+
+  it('throws ValidationError on foreign key constraint (P2003)', async () => {
+    m.officer.create.mockRejectedValue({ code: 'P2003' });
+    await expect(createOfficer('co1', { name: 'Alice' })).rejects.toThrow(ValidationError);
+  });
 });
 
 describe('officerDropdown', () => {
@@ -343,6 +354,11 @@ describe('createParty', () => {
     m.party.create.mockRejectedValue({ code: 'P2002' });
     await expect(createParty('co1', { code: 'X01', name: 'X' })).rejects.toThrow(ValidationError);
   });
+
+  it('throws ValidationError on foreign key constraint (P2003)', async () => {
+    m.party.create.mockRejectedValue({ code: 'P2003' });
+    await expect(createParty('co1', { code: 'X01', name: 'X' })).rejects.toThrow(ValidationError);
+  });
 });
 
 describe('partyDropdown', () => {
@@ -372,6 +388,11 @@ describe('createProduct', () => {
 
   it('re-throws ValidationError on unique constraint (P2002)', async () => {
     m.product.create.mockRejectedValue({ code: 'P2002' });
+    await expect(createProduct('co1', { name: 'X' })).rejects.toThrow(ValidationError);
+  });
+
+  it('throws ValidationError on foreign key constraint (P2003)', async () => {
+    m.product.create.mockRejectedValue({ code: 'P2003' });
     await expect(createProduct('co1', { name: 'X' })).rejects.toThrow(ValidationError);
   });
 });
@@ -431,6 +452,11 @@ describe('createWorkingCentre', () => {
     expect(m.workingCentre.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ branchId: 'br1' }) }),
     );
+  });
+
+  it('throws ValidationError on foreign key constraint (P2003)', async () => {
+    m.workingCentre.create.mockRejectedValue({ code: 'P2003' });
+    await expect(createWorkingCentre('co1', { code: 'WC01', name: 'X' })).rejects.toThrow(ValidationError);
   });
 });
 
