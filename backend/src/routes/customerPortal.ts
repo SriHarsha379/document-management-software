@@ -166,18 +166,11 @@ router.get('/shipments', apiLimiter, requireCustomerAuth, async (req: Request, r
         },
       },
       include: {
-        group: { select: { vehicleNo: true, date: true } },
-        items: {
-          include: {
-            document: {
-              select: {
-                id: true,
-                type: true,
-                originalFilename: true,
-                uploadedAt: true,
-                mimeType: true,
-              },
-            },
+        group: {
+          select: {
+            vehicleNo: true,
+            date: true,
+            _count: { select: { documents: true } },
           },
         },
         dispatchLogs: {
@@ -196,7 +189,7 @@ router.get('/shipments', apiLimiter, requireCustomerAuth, async (req: Request, r
         status: b.status,
         vehicleNo: b.group.vehicleNo,
         date: b.group.date,
-        documentCount: b.items.length,
+        documentCount: b.group._count.documents,
         lastDispatch: b.dispatchLogs[0] ?? null,
         createdAt: b.createdAt,
         updatedAt: b.updatedAt,
@@ -240,10 +233,11 @@ router.get('/shipments/:bundleId', apiLimiter, requireCustomerAuth, async (req: 
         },
       },
       include: {
-        group: { select: { vehicleNo: true, date: true } },
-        items: {
-          include: {
-            document: {
+        group: {
+          select: {
+            vehicleNo: true,
+            date: true,
+            documents: {
               select: {
                 id: true,
                 type: true,
@@ -283,13 +277,13 @@ router.get('/shipments/:bundleId', apiLimiter, requireCustomerAuth, async (req: 
         notes: bundle.notes,
         vehicleNo: bundle.group.vehicleNo,
         date: bundle.group.date,
-        documents: bundle.items.map((item) => ({
-          id: item.document.id,
-          type: item.document.type,
-          originalFilename: item.document.originalFilename,
-          uploadedAt: item.document.uploadedAt,
-          mimeType: item.document.mimeType,
-          extractedData: item.document.extractedData,
+        documents: bundle.group.documents.map((doc) => ({
+          id: doc.id,
+          type: doc.type,
+          originalFilename: doc.originalFilename,
+          uploadedAt: doc.uploadedAt,
+          mimeType: doc.mimeType,
+          extractedData: doc.extractedData,
         })),
         dispatchLogs: bundle.dispatchLogs,
         createdAt: bundle.createdAt,
@@ -329,30 +323,32 @@ router.get(
       const recipientIdentifiers: string[] = [access.loginEmail];
       if (access.party.phone) recipientIdentifiers.push(access.party.phone.trim());
 
-      // Verify the document belongs to a bundle dispatched to this customer
-      const bundleItem = await prisma.bundleItem.findFirst({
+      // Verify the document belongs to a group whose PARTY bundle was dispatched to this customer
+      const document = await prisma.document.findFirst({
         where: {
-          documentId,
-          bundle: {
-            recipientType: 'PARTY',
-            status: { not: 'DRAFT' },
-            dispatchLogs: {
-              some: { recipient: { in: recipientIdentifiers } },
+          id: documentId,
+          group: {
+            bundles: {
+              some: {
+                recipientType: 'PARTY',
+                status: { not: 'DRAFT' },
+                dispatchLogs: {
+                  some: { recipient: { in: recipientIdentifiers } },
+                },
+              },
             },
           },
         },
-        include: {
-          document: { select: { rawFilePath: true, originalFilename: true, mimeType: true } },
-        },
+        select: { rawFilePath: true, originalFilename: true, mimeType: true },
       });
 
-      if (!bundleItem) {
+      if (!document) {
         res.status(404).json({ error: 'Document not found or access denied' });
         return;
       }
 
       const uploadDir = path.resolve(process.env.UPLOAD_DIR ?? './uploads');
-      const resolvedFilePath = path.resolve(bundleItem.document.rawFilePath);
+      const resolvedFilePath = path.resolve(document.rawFilePath);
 
       // Security: prevent path traversal
       if (!resolvedFilePath.startsWith(uploadDir + path.sep)) {
@@ -365,8 +361,8 @@ router.get(
         return;
       }
 
-      res.setHeader('Content-Disposition', `attachment; filename="${bundleItem.document.originalFilename}"`);
-      res.setHeader('Content-Type', bundleItem.document.mimeType);
+      res.setHeader('Content-Disposition', `attachment; filename="${document.originalFilename}"`);
+      res.setHeader('Content-Type', document.mimeType);
       fs.createReadStream(resolvedFilePath).pipe(res);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Download failed';

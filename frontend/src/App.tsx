@@ -4,7 +4,6 @@ import { OCRReview } from './components/OCRReview';
 import { DocumentList } from './components/DocumentList';
 import { DocumentBundler } from './components/DocumentBundler';
 import { SmartSearch } from './components/SmartSearch';
-import { DispatchModal } from './components/DispatchModal';
 import { DispatchHistory } from './components/DispatchHistory';
 import { AdminDriverAccess } from './components/AdminDriverAccess';
 import { AdminCustomerPortalAccess } from './components/AdminCustomerPortalAccess';
@@ -15,7 +14,7 @@ import { LrDashboard } from './components/LrDashboard';
 import { AdminLogin } from './components/AdminLogin';
 import { authService } from './services/authService';
 import { UserProvider, useCurrentUser, PERM } from './contexts/UserContext';
-import type { Document, Bundle } from './types';
+import type { Document } from './types';
 
 type View = 'dashboard' | 'list' | 'upload' | 'review' | 'bundle' | 'search' | 'dispatch' | 'drivers' | 'customers' | 'master';
 
@@ -56,7 +55,6 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [dispatchBundle, setDispatchBundle] = useState<Bundle | null>(null);
 
   const canUpload       = hasPermission(PERM.DOCUMENT_UPLOAD);
   const canBundle       = hasPermission(PERM.COMMUNICATION_SEND);
@@ -91,7 +89,6 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   const handleDocumentReady = (doc: Document) => { setSelectedDoc(doc); setView('review'); };
   const handleSaved = (_doc: Document) => { setRefreshKey((k) => k + 1); setView('list'); setSelectedDoc(null); };
   const handleSelectFromList = (doc: Document) => { setSelectedDoc(doc); setView('review'); };
-  const handleBundleSaved = (bundle: Bundle) => { setDispatchBundle(bundle); };
 
   const allNavItems: (NavItem & { permitted: boolean })[] = [
     { view: 'dashboard',  icon: '📊', label: 'Dashboard',   permitted: true },
@@ -206,7 +203,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
                 onCancel={() => { setRefreshKey((k) => k + 1); setView('list'); setSelectedDoc(null); }}
               />
             )}
-            {view === 'bundle' && canBundle && <DocumentBundler onBundleSaved={handleBundleSaved} />}
+            {view === 'bundle' && canBundle && <DocumentBundler />}
             {view === 'search' && <SmartSearch />}
             {view === 'dispatch' && canDispatch && <DispatchHistory />}
             {view === 'drivers' && canManageUsers && <AdminDriverAccess />}
@@ -215,14 +212,6 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
           </div>
         </main>
       </div>
-
-      {dispatchBundle && (
-        <DispatchModal
-          bundle={dispatchBundle}
-          onClose={() => setDispatchBundle(null)}
-          onSent={() => { /* log recorded on backend */ }}
-        />
-      )}
     </div>
   );
 }

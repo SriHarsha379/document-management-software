@@ -362,6 +362,7 @@ function ShipmentDetailScreen({
 function getDocIcon(type: string): string {
   const icons: Record<string, string> = {
     LR: '📋', INVOICE: '🧾', TOLL: '🛣️', WEIGHMENT: '⚖️',
+    WEIGHMENT_PARTY: '⚖️', WEIGHMENT_SITE: '⚖️',
     EWAYBILL: '📝', RECEIVING: '📥', UNKNOWN: '📄',
   };
   return icons[type] ?? '📄';
