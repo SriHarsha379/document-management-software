@@ -241,7 +241,7 @@ router.patch(
       }
 
       const updateData: LrUpdateInput = {
-        branchId:           branchId,
+        branchId,
         lrNo:               body.lrNo?.trim(),
         source:             body.source?.trim(),
         status:             body.status,
