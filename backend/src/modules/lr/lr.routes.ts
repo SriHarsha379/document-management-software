@@ -31,6 +31,32 @@ const writeLimiter = rateLimit({
 router.use(readLimiter);
 router.use(requireAuth);
 
+// ── GET /api/lrs/branches ─────────────────────────────────────────────────────
+// Returns the branches accessible to the calling user as {id, name}[].
+// Super-admins get all company branches; regular users get only their allowed ones.
+
+router.get(
+  '/branches',
+  readLimiter,
+  requirePermission('lr.read'),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const user = req.user!;
+      const where = user.isSuperAdmin
+        ? { companyId: user.companyId }
+        : { id: { in: user.branchIds }, companyId: user.companyId };
+      const branches = await db.branch.findMany({
+        where,
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+      });
+      res.json(branches);
+    } catch (err) {
+      handleRouteError(err, res, '[lr] GET /lrs/branches');
+    }
+  }
+);
+
 // ── GET /api/lrs/summary ──────────────────────────────────────────────────────
 // Dashboard stats: LR count vs Invoice count for pie chart.
 
