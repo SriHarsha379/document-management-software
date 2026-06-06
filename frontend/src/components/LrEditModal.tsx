@@ -95,7 +95,9 @@ export function LrEditModal({ lr, onSaved, onCancel }: Props) {
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
-    lrApi.branches().then(setBranches).catch(() => setBranches([]));
+    lrApi.branches()
+      .then(setBranches)
+      .catch(() => setError('Unable to load branches. Please close and reopen the form.'));
   }, []);
 
   const set = (field: keyof FormData, value: string) =>
@@ -105,23 +107,21 @@ export function LrEditModal({ lr, onSaved, onCancel }: Props) {
     try {
       setSaving(true);
       setError(null);
-      const normalizedBranchId = form.branchId.trim();
-      if (!normalizedBranchId) {
+      if (!form.branchId) {
         setError('Branch is required');
         return;
       }
-      const normalizedSource = form.source.trim().toUpperCase();
-      if (!normalizedSource) {
+      if (!form.source) {
         setError('Source is required');
         return;
       }
       const currentBranchId = toStr(lr.branchId).trim();
       const branchIdForUpdate =
-        normalizedBranchId !== currentBranchId ? normalizedBranchId : undefined;
+        form.branchId !== currentBranchId ? form.branchId : undefined;
       const updated = await lrApi.update(lr.id, {
         branchId:           branchIdForUpdate,
         lrNo:               form.lrNo.trim() || undefined,
-        source:             normalizedSource,
+        source:             form.source,
         lrDate:             form.lrDate.trim() || undefined,
         loadingSlipNo:      form.loadingSlipNo.trim() || undefined,
         principalCompany:   form.principalCompany.trim() || undefined,
