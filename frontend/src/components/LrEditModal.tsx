@@ -153,7 +153,7 @@ export function LrEditModal({ lr, onSaved, onCancel }: Props) {
               <Field label="LR Date"       value={form.lrDate}  onChange={(v) => set('lrDate', v)}  placeholder="YYYY-MM-DD" />
             </Row>
             <Row>
-              <Field label="Branch"            value={form.branch}           onChange={() => {}} readOnly />
+              <Field label="Branch"            value={form.branch}           readOnly />
               <Field label="Source"            value={form.source}           onChange={(v) => set('source', v)} />
             </Row>
             <Row>
@@ -274,7 +274,7 @@ function Field({
 }: {
   label: string;
   value: string;
-  onChange: (v: string) => void;
+  onChange?: (v: string) => void;
   placeholder?: string;
   type?: string;
   readOnly?: boolean;
@@ -286,7 +286,7 @@ function Field({
         style={m.input}
         type={type ?? 'text'}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={onChange ? (e) => onChange(e.target.value) : undefined}
         placeholder={placeholder ?? ''}
         readOnly={readOnly}
       />
