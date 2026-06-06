@@ -9,6 +9,8 @@ interface Props {
 }
 
 type FormData = {
+  branch: string;
+  source: string;
   lrNo: string;
   lrDate: string;
   loadingSlipNo: string;
@@ -38,10 +40,6 @@ type FormData = {
   tptCode: string;
   transporterName: string;
   driverName: string;
-  driverBillNo: string;
-  billDate: string;
-  billNo: string;
-  billAmount: string;
 };
 
 function toStr(v: string | number | null | undefined): string {
@@ -57,6 +55,8 @@ function toNum(v: string): number | undefined {
 
 export function LrEditModal({ lr, onSaved, onCancel }: Props) {
   const [form, setForm] = useState<FormData>({
+    branch:             toStr(lr.branch?.name ?? lr.branchId),
+    source:             toStr(lr.source),
     lrNo:               toStr(lr.lrNo),
     lrDate:             toStr(lr.lrDate),
     loadingSlipNo:      toStr(lr.loadingSlipNo),
@@ -86,10 +86,6 @@ export function LrEditModal({ lr, onSaved, onCancel }: Props) {
     tptCode:            toStr(lr.tptCode),
     transporterName:    toStr(lr.transporterName),
     driverName:         toStr(lr.driverName),
-    driverBillNo:       toStr(lr.driverBillNo),
-    billDate:           toStr(lr.billDate),
-    billNo:             toStr(lr.billNo),
-    billAmount:         toStr(lr.billAmount),
   });
 
   const [saving, setSaving] = useState(false);
@@ -104,6 +100,7 @@ export function LrEditModal({ lr, onSaved, onCancel }: Props) {
       setError(null);
       const updated = await lrApi.update(lr.id, {
         lrNo:               form.lrNo.trim() || undefined,
+        source:             form.source.trim() || undefined,
         lrDate:             form.lrDate.trim() || undefined,
         loadingSlipNo:      form.loadingSlipNo.trim() || undefined,
         principalCompany:   form.principalCompany.trim() || undefined,
@@ -132,10 +129,6 @@ export function LrEditModal({ lr, onSaved, onCancel }: Props) {
         tptCode:            form.tptCode.trim() || undefined,
         transporterName:    form.transporterName.trim() || undefined,
         driverName:         form.driverName.trim() || undefined,
-        driverBillNo:       form.driverBillNo.trim() || undefined,
-        billDate:           form.billDate.trim() || undefined,
-        billNo:             form.billNo.trim() || undefined,
-        billAmount:         toNum(form.billAmount),
       });
       onSaved(updated);
     } catch (err) {
@@ -158,6 +151,10 @@ export function LrEditModal({ lr, onSaved, onCancel }: Props) {
             <Row>
               <Field label="LR No ✱"      value={form.lrNo}    onChange={(v) => set('lrNo', v)} />
               <Field label="LR Date"       value={form.lrDate}  onChange={(v) => set('lrDate', v)}  placeholder="YYYY-MM-DD" />
+            </Row>
+            <Row>
+              <Field label="Branch"            value={form.branch}           onChange={() => {}} readOnly />
+              <Field label="Source"            value={form.source}           onChange={(v) => set('source', v)} />
             </Row>
             <Row>
               <Field label="Principal Company" value={form.principalCompany} onChange={(v) => set('principalCompany', v)} />
@@ -235,17 +232,9 @@ export function LrEditModal({ lr, onSaved, onCancel }: Props) {
             </Row>
           </Section>
 
-          <Section title="Driver &amp; Bill">
+          <Section title="Driver">
             <Row>
-              <Field label="Driver Name"    value={form.driverName}   onChange={(v) => set('driverName', v)} />
-              <Field label="Driver Bill No" value={form.driverBillNo} onChange={(v) => set('driverBillNo', v)} />
-            </Row>
-            <Row>
-              <Field label="Bill Date"   value={form.billDate}   onChange={(v) => set('billDate', v)}   placeholder="YYYY-MM-DD" />
-              <Field label="Bill No"     value={form.billNo}     onChange={(v) => set('billNo', v)} />
-            </Row>
-            <Row>
-              <Field label="Bill Amount" value={form.billAmount} onChange={(v) => set('billAmount', v)} type="number" />
+              <Field label="Driver Name" value={form.driverName} onChange={(v) => set('driverName', v)} />
             </Row>
           </Section>
         </div>
@@ -281,13 +270,14 @@ function Row({ children }: { children: React.ReactNode }) {
 }
 
 function Field({
-  label, value, onChange, placeholder, type,
+  label, value, onChange, placeholder, type, readOnly,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   type?: string;
+  readOnly?: boolean;
 }) {
   return (
     <div style={m.fieldGroup}>
@@ -298,6 +288,7 @@ function Field({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder ?? ''}
+        readOnly={readOnly}
       />
     </div>
   );

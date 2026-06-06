@@ -210,8 +210,14 @@ router.patch(
         return;
       }
 
+      if (body.source && !(ALLOWED_SOURCES as readonly string[]).includes(body.source)) {
+        res.status(400).json({ error: `source must be one of: ${ALLOWED_SOURCES.join(', ')}` });
+        return;
+      }
+
       const updateData: LrUpdateInput = {
         lrNo:               body.lrNo?.trim(),
+        source:             body.source?.trim(),
         status:             body.status,
         consignor:          body.consignor?.trim(),
         consignee:          body.consignee?.trim(),

@@ -41,10 +41,6 @@ export const LR_COLUMNS: Col[] = [
   { label: 'TPT Code',        width: 90,  render: (lr) => lr.tptCode ?? '—' },
   { label: 'Transporter',     width: 130, render: (lr) => lr.transporterName ?? '—' },
   { label: 'Driver',          width: 110, render: (lr) => lr.driverName ?? '—' },
-  { label: 'Driver Bill No',  width: 110, render: (lr) => lr.driverBillNo ?? '—' },
-  { label: 'Bill Date',       width: 100, render: (lr) => lr.billDate ?? '—' },
-  { label: 'Bill No',         width: 100, render: (lr) => lr.billNo ?? '—' },
-  { label: 'Bill Amount ₹',  width: 110, render: (lr) => lr.billAmount ?? '—' },
 ];
 
 const VISIBLE_COUNT = 15;
