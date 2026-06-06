@@ -74,9 +74,12 @@ function computeSourceConfidence(
   if ((ALLOWED_SOURCES as readonly string[]).includes(norm)) {
     return { value: norm, confidence: 1.0 };
   }
-  // Partial / fuzzy match
-  const partial = ALLOWED_SOURCES.find((s) => norm.includes(s) || s.includes(norm));
-  if (partial) return { value: partial, confidence: 0.7 };
+  // Partial match: the OCR value must contain the allowed source string (not the reverse),
+  // and must be at least 3 characters to avoid trivially short false-positive matches.
+  if (norm.length >= 3) {
+    const partial = ALLOWED_SOURCES.find((s) => norm.includes(s));
+    if (partial) return { value: partial, confidence: 0.7 };
+  }
   return { value: '', confidence: 0 };
 }
 
@@ -92,10 +95,15 @@ function computeBranchConfidence(
   const norm = raw.trim().toLowerCase();
   const exact = branches.find((b) => b.name.toLowerCase() === norm);
   if (exact) return { id: exact.id, confidence: 1.0 };
-  const contains = branches.find(
-    (b) => b.name.toLowerCase().includes(norm) || norm.includes(b.name.toLowerCase()),
-  );
-  if (contains) return { id: contains.id, confidence: 0.7 };
+  // Substring match: require the shorter string to be at least 4 characters so that
+  // very short OCR tokens do not accidentally match unrelated branch names.
+  if (norm.length >= 4) {
+    const contains = branches.find((b) => {
+      const bNorm = b.name.toLowerCase();
+      return bNorm.includes(norm) || norm.includes(bNorm);
+    });
+    if (contains) return { id: contains.id, confidence: 0.7 };
+  }
   return { id: '', confidence: 0 };
 }
 
@@ -183,8 +191,8 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
     if (ed.orderType)         extracted.orderType           = ed.orderType;
     if (ed.tptCode)           extracted.tptCode             = ed.tptCode;
     if (ed.driverName)        extracted.driverName          = ed.driverName;
-    if (ed.quantityInMt != null)   extracted.quantityInMt   = String(ed.quantityInMt);
-    if (ed.quantityInBags != null) extracted.quantityInBags = String(ed.quantityInBags);
+    if (ed.quantityInMt != null && isFinite(ed.quantityInMt))   extracted.quantityInMt   = String(ed.quantityInMt);
+    if (ed.quantityInBags != null && isFinite(ed.quantityInBags)) extracted.quantityInBags = String(ed.quantityInBags);
     if (ed.partyNames?.[0])   extracted.billToParty         = ed.partyNames[0];
     if (ed.partyNames?.[1])   extracted.shipToParty         = ed.partyNames[1];
 
@@ -213,8 +221,10 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
       return next;
     });
 
-    // ── Track fields that are missing or low-confidence ───────────────────
-    const overallLow = (ed.confidence ?? 1) < 0.6;
+    // ── Track fields that are missing after OCR extraction ───────────────────
+    // A field is marked low-confidence only when no value could be extracted,
+    // regardless of overall document confidence. This avoids falsely highlighting
+    // fields that were successfully extracted but belong to a lower-quality scan.
     const ocrCandidates: (keyof FormData)[] = [
       'lrNo', 'lrDate', 'companyInvoiceNo', 'vehicleNo',
       'principalCompany', 'orderType', 'tptCode', 'driverName',
@@ -223,8 +233,11 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
     ];
     const lowFields = new Set<keyof FormData>();
     for (const field of ocrCandidates) {
-      if (!extracted[field] || overallLow) lowFields.add(field);
+      if (!extracted[field]) lowFields.add(field);
     }
+    // Also highlight Source/Branch if their confidence fell below the threshold.
+    if (srcResult.confidence < OCR_CONFIDENCE_THRESHOLD) lowFields.add('source');
+    if (branchResult.confidence < OCR_CONFIDENCE_THRESHOLD) lowFields.add('branchId');
     setLowConfidenceFields(lowFields);
     setOcrApplied(true);
   }, [ocrDocument, branches, ocrApplied]);
@@ -327,7 +340,7 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
                   onChange={(v) => set('branchId', v)}
                   options={branches.map((b) => ({ value: b.id, label: b.name }))}
                   placeholder="— select branch —"
-                  highlight={ocrDocument != null && !form.branchId}
+                  highlight={lowConfidenceFields.has('branchId')}
                 />
               )}
 
@@ -346,7 +359,7 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
                   onChange={(v) => set('source', v)}
                   options={ALLOWED_SOURCES.map((s) => ({ value: s, label: s }))}
                   placeholder="— select source —"
-                  highlight={ocrDocument != null && !form.source}
+                  highlight={lowConfidenceFields.has('source')}
                 />
               )}
             </Row>
