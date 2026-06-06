@@ -95,15 +95,13 @@ function computeBranchConfidence(
   const norm = raw.trim().toLowerCase();
   const exact = branches.find((b) => b.name.toLowerCase() === norm);
   if (exact) return { id: exact.id, confidence: 1.0 };
-  // Substring match: require the shorter string to be at least 4 characters so that
-  // very short OCR tokens do not accidentally match unrelated branch names.
-  if (norm.length >= 4) {
-    const contains = branches.find((b) => {
-      const bNorm = b.name.toLowerCase();
-      return bNorm.includes(norm) || norm.includes(bNorm);
-    });
-    if (contains) return { id: contains.id, confidence: 0.7 };
-  }
+  // One-way substring match: the OCR text must contain the full branch name,
+  // and the branch name must be at least 4 characters to avoid false positives.
+  const contains = branches.find((b) => {
+    const bNorm = b.name.toLowerCase();
+    return bNorm.length >= 4 && norm.includes(bNorm);
+  });
+  if (contains) return { id: contains.id, confidence: 0.7 };
   return { id: '', confidence: 0 };
 }
 
@@ -196,10 +194,11 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
     if (ed.partyNames?.[0])   extracted.billToParty         = ed.partyNames[0];
     if (ed.partyNames?.[1])   extracted.shipToParty         = ed.partyNames[1];
 
-    // Toll amount: strip non-numeric prefix (e.g. "₹ 200" → "200")
+    // Toll amount: accept common currency formats (e.g. "₹200", "₹ 200.50").
+    // Extract the first valid decimal number from the string.
     if (ed.tollAmount) {
-      const parsed = parseFloat(ed.tollAmount.replace(/[^0-9.]/g, ''));
-      if (!isNaN(parsed)) extracted.tollCharges = String(parsed);
+      const match = ed.tollAmount.match(/(\d+(?:\.\d+)?)/);
+      if (match) extracted.tollCharges = match[1];
     }
 
     // Auto-fill high-confidence Source / Branch
@@ -222,20 +221,12 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
     });
 
     // ── Track fields that are missing after OCR extraction ───────────────────
-    // A field is marked low-confidence only when no value could be extracted,
-    // regardless of overall document confidence. This avoids falsely highlighting
-    // fields that were successfully extracted but belong to a lower-quality scan.
-    const ocrCandidates: (keyof FormData)[] = [
-      'lrNo', 'lrDate', 'companyInvoiceNo', 'vehicleNo',
-      'principalCompany', 'orderType', 'tptCode', 'driverName',
-      'quantityInMt', 'quantityInBags', 'billToParty', 'shipToParty',
-      'tollCharges',
-    ];
-    const lowFields = new Set<keyof FormData>();
-    for (const field of ocrCandidates) {
-      if (!extracted[field]) lowFields.add(field);
-    }
-    // Also highlight Source/Branch if their confidence fell below the threshold.
+    // Derive the candidate set directly from what was attempted, so adding a new
+    // mapped field automatically registers it for highlighting without a separate list.
+    const lowFields = new Set<keyof FormData>(
+      (Object.keys(extracted) as (keyof FormData)[]).filter((f) => !extracted[f]),
+    );
+    // Also highlight Source/Branch when their confidence fell below the threshold.
     if (srcResult.confidence < OCR_CONFIDENCE_THRESHOLD) lowFields.add('source');
     if (branchResult.confidence < OCR_CONFIDENCE_THRESHOLD) lowFields.add('branchId');
     setLowConfidenceFields(lowFields);
@@ -544,15 +535,22 @@ function AutoDetectedField({
     <div style={m.fieldGroup}>
       <label style={m.label}>{label}</label>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <div style={m.autoDetectedValue}>{value || '—'}</div>
-        <span style={m.autoDetectedBadge}>
+        <div
+          style={m.autoDetectedValue}
+          role="status"
+          aria-label={`${label}: auto-detected value ${value || 'unknown'} with ${Math.round(confidence * 100)}% confidence`}
+        >
+          {value || '—'}
+        </div>
+        <span style={m.autoDetectedBadge} aria-hidden="true">
           🤖 {Math.round(confidence * 100)}%
         </span>
         <button
           style={m.editAutoBtn}
           onClick={onEdit}
           type="button"
-          title="Switch to manual selection"
+          title={`Switch ${label} to manual selection`}
+          aria-label={`Edit ${label} manually`}
         >
           ✎
         </button>
