@@ -114,18 +114,13 @@ export function LrEditModal({ lr, onSaved, onCancel }: Props) {
         setError(`Source must be one of: ${Array.from(ALLOWED_SOURCES).join(', ')}`);
         return;
       }
-      const currentSource = toStr(lr.source).trim().toUpperCase();
       const currentBranchId = toStr(lr.branchId).trim();
       const branchIdForUpdate =
         normalizedBranchId !== currentBranchId ? normalizedBranchId : undefined;
-      const sourceForUpdate =
-        normalizedSource !== currentSource
-          ? normalizedSource
-          : undefined;
       const updated = await lrApi.update(lr.id, {
         branchId:           branchIdForUpdate,
         lrNo:               form.lrNo.trim() || undefined,
-        source:             sourceForUpdate,
+        source:             normalizedSource,
         lrDate:             form.lrDate.trim() || undefined,
         loadingSlipNo:      form.loadingSlipNo.trim() || undefined,
         principalCompany:   form.principalCompany.trim() || undefined,
