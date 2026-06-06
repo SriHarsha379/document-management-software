@@ -53,6 +53,8 @@ function toNum(v: string): number | undefined {
   return isNaN(n) ? undefined : n;
 }
 
+const ALLOWED_SOURCES = new Set(['INTERNAL', 'PORTAL', 'API', 'EMAIL_IMPORT']);
+
 export function LrEditModal({ lr, onSaved, onCancel }: Props) {
   const [form, setForm] = useState<FormData>({
     branch:             toStr(lr.branch?.name ?? lr.branchId),
@@ -98,11 +100,15 @@ export function LrEditModal({ lr, onSaved, onCancel }: Props) {
     try {
       setSaving(true);
       setError(null);
-      const normalizedSource = form.source.trim();
-      const currentSource = toStr(lr.source).trim();
+      const normalizedSource = form.source.trim().toUpperCase();
+      const currentSource = toStr(lr.source).trim().toUpperCase();
+      const sourceForUpdate =
+        normalizedSource && normalizedSource !== currentSource && ALLOWED_SOURCES.has(normalizedSource)
+          ? normalizedSource
+          : undefined;
       const updated = await lrApi.update(lr.id, {
         lrNo:               form.lrNo.trim() || undefined,
-        source:             normalizedSource && normalizedSource !== currentSource ? normalizedSource : undefined,
+        source:             sourceForUpdate,
         lrDate:             form.lrDate.trim() || undefined,
         loadingSlipNo:      form.loadingSlipNo.trim() || undefined,
         principalCompany:   form.principalCompany.trim() || undefined,
