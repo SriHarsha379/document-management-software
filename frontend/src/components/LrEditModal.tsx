@@ -9,7 +9,7 @@ interface Props {
 }
 
 type FormData = {
-  branch: string;
+  branchId: string;
   source: string;
   lrNo: string;
   lrDate: string;
@@ -57,7 +57,7 @@ const ALLOWED_SOURCES = new Set(['INTERNAL', 'PORTAL', 'API', 'EMAIL_IMPORT']);
 
 export function LrEditModal({ lr, onSaved, onCancel }: Props) {
   const [form, setForm] = useState<FormData>({
-    branch:             toStr(lr.branch?.name ?? lr.branchId),
+    branchId:           toStr(lr.branchId),
     source:             toStr(lr.source),
     lrNo:               toStr(lr.lrNo),
     lrDate:             toStr(lr.lrDate),
@@ -100,15 +100,27 @@ export function LrEditModal({ lr, onSaved, onCancel }: Props) {
     try {
       setSaving(true);
       setError(null);
+      const normalizedBranchId = form.branchId.trim();
+      if (!normalizedBranchId) {
+        setError('Branch ID is required');
+        return;
+      }
       const normalizedSource = form.source.trim().toUpperCase();
-      const currentSource = toStr(lr.source).trim().toUpperCase();
-      const sourceForUpdate =
-        normalizedSource && normalizedSource !== currentSource && ALLOWED_SOURCES.has(normalizedSource)
-          ? normalizedSource
-          : undefined;
+      if (!normalizedSource) {
+        setError('Source is required');
+        return;
+      }
+      if (!ALLOWED_SOURCES.has(normalizedSource)) {
+        setError(`Source must be one of: ${Array.from(ALLOWED_SOURCES).join(', ')}`);
+        return;
+      }
+      const currentBranchId = toStr(lr.branchId).trim();
+      const branchIdForUpdate =
+        normalizedBranchId !== currentBranchId ? normalizedBranchId : undefined;
       const updated = await lrApi.update(lr.id, {
+        branchId:           branchIdForUpdate,
         lrNo:               form.lrNo.trim() || undefined,
-        source:             sourceForUpdate,
+        source:             normalizedSource,
         lrDate:             form.lrDate.trim() || undefined,
         loadingSlipNo:      form.loadingSlipNo.trim() || undefined,
         principalCompany:   form.principalCompany.trim() || undefined,
@@ -161,7 +173,7 @@ export function LrEditModal({ lr, onSaved, onCancel }: Props) {
               <Field label="LR Date"       value={form.lrDate}  onChange={(v) => set('lrDate', v)}  placeholder="YYYY-MM-DD" />
             </Row>
             <Row>
-              <Field label="Branch"            value={form.branch}           readOnly />
+              <Field label="Branch ID"         value={form.branchId}         onChange={(v) => set('branchId', v)} />
               <Field label="Source"            value={form.source}           onChange={(v) => set('source', v)} />
             </Row>
             <Row>

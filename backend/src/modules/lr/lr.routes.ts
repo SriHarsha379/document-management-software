@@ -5,6 +5,7 @@ import { requirePermission, buildScopeWhere } from '../rbac/rbac.middleware.js';
 import { ALLOWED_SOURCES, ALLOWED_LR_STATUSES } from '../rbac/permissions.js';
 import { lrRepo, type LrCreateInput, type LrUpdateInput } from './lr.repo.js';
 import { syncLrRecordsFromDocuments } from '../../services/documentService.js';
+import { db } from '../../lib/db.js';
 
 const router = Router();
 
@@ -204,6 +205,30 @@ router.patch(
       }
 
       const body = req.body as Partial<LrUpdateInput>;
+      const branchId =
+        typeof body.branchId === 'string' ? body.branchId.trim() : undefined;
+
+      if (body.branchId !== undefined && !branchId) {
+        res.status(400).json({ error: 'branchId cannot be empty' });
+        return;
+      }
+
+      if (branchId) {
+        if (!user.isSuperAdmin && !user.branchIds.includes(branchId)) {
+          res.status(403).json({ error: 'Forbidden: branch not in scope' });
+          return;
+        }
+
+        const branch = await db.branch.findUnique({
+          where: { id: branchId },
+          select: { id: true, companyId: true },
+        });
+
+        if (!branch || branch.companyId !== lr.companyId) {
+          res.status(400).json({ error: 'Invalid branchId for this LR' });
+          return;
+        }
+      }
 
       if (body.status && !(ALLOWED_LR_STATUSES as readonly string[]).includes(body.status)) {
         res.status(400).json({ error: `status must be one of: ${ALLOWED_LR_STATUSES.join(', ')}` });
@@ -216,6 +241,7 @@ router.patch(
       }
 
       const updateData: LrUpdateInput = {
+        branchId,
         lrNo:               body.lrNo?.trim(),
         source:             body.source?.trim(),
         status:             body.status,

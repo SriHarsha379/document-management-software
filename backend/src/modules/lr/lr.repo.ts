@@ -55,7 +55,7 @@ export type LrCreateInput = {
   billAmount?: number;
 };
 
-export type LrUpdateInput = Partial<Omit<LrCreateInput, 'companyId' | 'branchId' | 'createdBy'> & { status: string }>;
+export type LrUpdateInput = Partial<Omit<LrCreateInput, 'companyId' | 'createdBy'> & { status: string }>;
 
 export const lrRepo = {
   // ── findMany ─────────────────────────────────────────────────────────────────
