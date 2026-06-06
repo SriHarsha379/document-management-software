@@ -7,6 +7,13 @@ const prisma = new PrismaClient();
 
 export { prisma };
 
+const LOCATION_SUBSTRING_MIN_LENGTH = 4;
+const LOCATION_EXACT_MATCH_SCORE = 1;
+const LOCATION_CONTAINS_TARGET_SCORE = 0.85;
+const LOCATION_CONTAINED_BY_TARGET_SCORE = 0.8;
+const LOCATION_WORDS_MATCH_SCORE = 0.75;
+const LOCATION_MATCH_CONFIDENCE_THRESHOLD = 0.8;
+
 function mapExtractedRecordToLearnedFields(
   extracted: {
     lrNo: string | null;
@@ -366,16 +373,16 @@ function splitLocationCandidates(...values: Array<string | null | undefined>): s
 
 function getLocationMatchScore(candidate: string, target: string): number {
   if (!candidate || !target) return 0;
-  if (candidate === target) return 1;
-  if (target.length >= 4 && candidate.includes(target)) return 0.85;
-  if (candidate.length >= 4 && target.includes(candidate)) return 0.8;
+  if (candidate === target) return LOCATION_EXACT_MATCH_SCORE;
+  if (target.length >= LOCATION_SUBSTRING_MIN_LENGTH && candidate.includes(target)) return LOCATION_CONTAINS_TARGET_SCORE;
+  if (candidate.length >= LOCATION_SUBSTRING_MIN_LENGTH && target.includes(candidate)) return LOCATION_CONTAINED_BY_TARGET_SCORE;
 
   const targetWords = target.split(' ').filter(Boolean);
   if (
     targetWords.length > 1 &&
     targetWords.every((word) => candidate.includes(word))
   ) {
-    return 0.75;
+    return LOCATION_WORDS_MATCH_SCORE;
   }
   return 0;
 }
@@ -388,18 +395,20 @@ function resolveBranchId(
   const candidates = splitLocationCandidates(primaryBranchCandidate, secondaryBranchCandidate);
   if (candidates.length === 0) return null;
 
-  let best: { branchId: string; score: number } | null = null;
+  let bestBranchMatch: { branchId: string; score: number } | null = null;
   for (const branch of branches) {
     const branchNorm = normalizeLocationToken(branch.name);
     for (const candidate of candidates) {
       const score = getLocationMatchScore(candidate, branchNorm);
-      if (!best || score > best.score) {
-        best = { branchId: branch.id, score };
+      if (!bestBranchMatch || score > bestBranchMatch.score) {
+        bestBranchMatch = { branchId: branch.id, score };
       }
     }
   }
 
-  return best && best.score >= 0.8 ? best.branchId : null;
+  return bestBranchMatch && bestBranchMatch.score >= LOCATION_MATCH_CONFIDENCE_THRESHOLD
+    ? bestBranchMatch.branchId
+    : null;
 }
 
 async function resolveSourceValue(
@@ -431,18 +440,20 @@ async function resolveSourceValue(
   );
   if (options.length === 0) return null;
 
-  let best: { value: string; score: number } | null = null;
+  let bestSourceMatch: { value: string; score: number } | null = null;
   for (const option of options) {
     const optionNorm = normalizeLocationToken(option);
     for (const candidate of candidates) {
       const score = getLocationMatchScore(candidate, optionNorm);
-      if (!best || score > best.score) {
-        best = { value: option, score };
+      if (!bestSourceMatch || score > bestSourceMatch.score) {
+        bestSourceMatch = { value: option, score };
       }
     }
   }
 
-  return best && best.score >= 0.8 ? best.value : null;
+  return bestSourceMatch && bestSourceMatch.score >= LOCATION_MATCH_CONFIDENCE_THRESHOLD
+    ? bestSourceMatch.value
+    : null;
 }
 
 /**
