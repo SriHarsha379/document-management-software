@@ -98,9 +98,11 @@ export function LrEditModal({ lr, onSaved, onCancel }: Props) {
     try {
       setSaving(true);
       setError(null);
+      const normalizedSource = form.source.trim();
+      const currentSource = toStr(lr.source).trim();
       const updated = await lrApi.update(lr.id, {
         lrNo:               form.lrNo.trim() || undefined,
-        source:             form.source.trim() || undefined,
+        source:             normalizedSource && normalizedSource !== currentSource ? normalizedSource : undefined,
         lrDate:             form.lrDate.trim() || undefined,
         loadingSlipNo:      form.loadingSlipNo.trim() || undefined,
         principalCompany:   form.principalCompany.trim() || undefined,
