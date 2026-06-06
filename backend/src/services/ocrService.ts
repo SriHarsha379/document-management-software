@@ -106,6 +106,7 @@ STEP 2 — Extract fields according to the identified document type using the ru
 - billToParty: The "BILL TO PARTY" company name
 - shipToParty: The "SHIP TO PARTY" company name (delivery address party)
 - branchName: The locality/area from the sender's header address block, normalized to UPPERCASE (e.g. "DRONAGIRI"). Look for the locality token before the city/district in the "From" address. Also check "From Destination" label.
+- source: The source city/location from the sender's header address block, normalized to UPPERCASE (e.g. "NAVI MUMBAI"). Prefer the city token immediately following locality in the same address line.
 - productName: Product or commodity being transported — look for "PRODUCT", "Goods Description", "Item"
 - quantity: Quantity with unit — look for "QUANTITY IN MT", "Qty", e.g. "35.38 MT" or "500 Bags"
 - quantityInMt: Numeric quantity in metric tonnes — extract only the number from quantity, e.g. 35.38 (float). Return null if unit is not MT/MTS/tonnes.
@@ -131,8 +132,8 @@ Extract ONLY the two fields below. Set every other field to null.
 - billToParty: "BILL TO" party name
 - shipToParty: "SHIP TO" party name
 - principalCompany: The sender/issuer company name from the top header block (e.g. "MY HOME INDUSTRIES PRIVATE LIMITED"). This is the company that issued the invoice.
-- branchName: The branch name — look for an explicit "Branch:" label in the company header area, normalized to UPPERCASE. If no "Branch:" label exists, extract the locality from the company address block.
-- source: The source location — look for an explicit "Source:" label in the company header area below the address, normalized to UPPERCASE. Return null if not present.
+- branchName: The branch name — look for an explicit "Branch:" label in the company header area, normalized to UPPERCASE. If no "Branch:" label exists, extract the locality from the company address block (e.g. "DRONAGIRI").
+- source: The source location — look for an explicit "Source:" label in the company header area. If no label exists, extract the city/location token from the same company address block (e.g. "NAVI MUMBAI"), normalized to UPPERCASE.
 - productName: Item/product name from line items
 - quantity: Quantity from line items with unit
 - quantityInMt: Numeric quantity in metric tonnes from line items (float), e.g. 35.38

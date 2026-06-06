@@ -7,6 +7,13 @@ const prisma = new PrismaClient();
 
 export { prisma };
 
+const LOCATION_SUBSTRING_MIN_LENGTH = 4;
+const LOCATION_EXACT_MATCH_SCORE = 1;
+const LOCATION_CONTAINS_TARGET_SCORE = 0.85;
+const LOCATION_CONTAINED_BY_TARGET_SCORE = 0.8;
+const LOCATION_WORDS_MATCH_SCORE = 0.75;
+const LOCATION_MATCH_CONFIDENCE_THRESHOLD = 0.8;
+
 function mapExtractedRecordToLearnedFields(
   extracted: {
     lrNo: string | null;
@@ -198,7 +205,8 @@ async function autoLinkDocumentToGroup(
 /**
  * Auto-create an LR record from an uploaded LR-type document.
  *
- * Uses the first available company + branch as defaults (single-tenant).
+ * Resolves branch and source from OCR-extracted locality/city text by matching
+ * against existing branch/source values in the system.
  * Idempotent — skips silently when an LR with the same lrNo already exists
  * for that company, so calling this multiple times is safe.
  *
@@ -226,15 +234,17 @@ async function autoCreateLrRecord(
     tptCode?: string | null;
     quantityInMt?: number | null;
     quantityInBags?: number | null;
+    branchName?: string | null;
+    source?: string | null;
   },
 ): Promise<boolean> {
   if (documentType !== 'LR' || !fields.lrNo?.trim()) return false;
 
   const lrNo = fields.lrNo.trim().toUpperCase();
 
-  // Look up the first company and its first branch (single-tenant default)
+  // Look up the first company and its branch list (single-tenant default)
   const company = await prisma.company.findFirst({
-    include: { branches: { take: 1, orderBy: { createdAt: 'asc' } } },
+    include: { branches: { orderBy: { createdAt: 'asc' }, select: { id: true, name: true } } },
   });
   if (!company || company.branches.length === 0) {
     console.warn(
@@ -246,7 +256,29 @@ async function autoCreateLrRecord(
   }
 
   const companyId = company.id;
-  const branchId = company.branches[0].id;
+  const branchId = resolveBranchId(
+    company.branches,
+    fields.branchName,
+    fields.source
+  );
+  if (!branchId) {
+    console.warn(
+      `[autoCreateLrRecord] Could not confidently map branch from OCR for lrNo="${lrNo}" ` +
+      `(branchName="${fields.branchName ?? ''}", source="${fields.source ?? ''}"). ` +
+      'Skipping auto-create; requires manual review.'
+    );
+    return false;
+  }
+
+  const source = await resolveSourceValue(companyId, fields.source, fields.branchName);
+  if (!source) {
+    console.warn(
+      `[autoCreateLrRecord] Could not confidently map source from OCR for lrNo="${lrNo}" ` +
+      `(source="${fields.source ?? ''}", branchName="${fields.branchName ?? ''}"). ` +
+      'Skipping auto-create; requires manual review.'
+    );
+    return false;
+  }
 
   // Idempotent: skip if an LR with the same lrNo already exists for this company
   const existing = await prisma.lr.findFirst({ where: { lrNo, companyId } });
@@ -287,7 +319,7 @@ async function autoCreateLrRecord(
       serialNo,
       companyId,
       branchId,
-      source: 'INTERNAL',
+      source,
       lrDate,
       date: lrDate,
       vehicleNo,
@@ -312,6 +344,116 @@ async function autoCreateLrRecord(
   });
 
   return true;
+}
+
+function normalizeLocationToken(value: string): string {
+  return value
+    .toUpperCase()
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/[^A-Z0-9 ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function splitLocationCandidates(...values: Array<string | null | undefined>): string[] {
+  const out: string[] = [];
+  const push = (value: string) => {
+    const normalized = normalizeLocationToken(value);
+    if (normalized && !out.includes(normalized)) out.push(normalized);
+  };
+
+  for (const value of values) {
+    if (!value?.trim()) continue;
+    push(value);
+    for (const segment of value.split(/[,\n;/|]+/g)) push(segment);
+  }
+
+  return out;
+}
+
+function getLocationMatchScore(candidate: string, target: string): number {
+  if (!candidate || !target) return 0;
+  if (candidate === target) return LOCATION_EXACT_MATCH_SCORE;
+  if (target.length >= LOCATION_SUBSTRING_MIN_LENGTH && candidate.includes(target)) return LOCATION_CONTAINS_TARGET_SCORE;
+  if (candidate.length >= LOCATION_SUBSTRING_MIN_LENGTH && target.includes(candidate)) return LOCATION_CONTAINED_BY_TARGET_SCORE;
+
+  const targetWords = target.split(' ').filter(Boolean);
+  if (
+    targetWords.length > 1 &&
+    targetWords.every((word) => candidate.includes(word))
+  ) {
+    return LOCATION_WORDS_MATCH_SCORE;
+  }
+  return 0;
+}
+
+function resolveBranchId(
+  branches: Array<{ id: string; name: string }>,
+  primaryBranchCandidate?: string | null,
+  secondaryBranchCandidate?: string | null
+): string | null {
+  const candidates = splitLocationCandidates(primaryBranchCandidate, secondaryBranchCandidate);
+  if (candidates.length === 0) return null;
+
+  let bestBranchMatch: { branchId: string; score: number } | null = null;
+  for (const branch of branches) {
+    const branchNorm = normalizeLocationToken(branch.name);
+    for (const candidate of candidates) {
+      const score = getLocationMatchScore(candidate, branchNorm);
+      if (!bestBranchMatch || score > bestBranchMatch.score) {
+        bestBranchMatch = { branchId: branch.id, score };
+      }
+    }
+  }
+
+  return bestBranchMatch && bestBranchMatch.score >= LOCATION_MATCH_CONFIDENCE_THRESHOLD
+    ? bestBranchMatch.branchId
+    : null;
+}
+
+async function resolveSourceValue(
+  companyId: string,
+  primarySourceCandidate?: string | null,
+  secondarySourceCandidate?: string | null
+): Promise<string | null> {
+  const candidates = splitLocationCandidates(primarySourceCandidate, secondarySourceCandidate);
+  if (candidates.length === 0) return null;
+
+  const [userSources, existingLrSources] = await Promise.all([
+    prisma.userSourceAccess.findMany({
+      where: { user: { companyId } },
+      select: { source: true },
+      distinct: ['source'],
+    }),
+    prisma.lr.findMany({
+      where: { companyId },
+      select: { source: true },
+      distinct: ['source'],
+    }),
+  ]);
+
+  const options = Array.from(
+    new Set([
+      ...userSources.map((row) => row.source),
+      ...existingLrSources.map((row) => row.source),
+    ].filter((value): value is string => Boolean(value?.trim())))
+  );
+  if (options.length === 0) return null;
+
+  let bestSourceMatch: { value: string; score: number } | null = null;
+  for (const option of options) {
+    const optionNorm = normalizeLocationToken(option);
+    for (const candidate of candidates) {
+      const score = getLocationMatchScore(candidate, optionNorm);
+      if (!bestSourceMatch || score > bestSourceMatch.score) {
+        bestSourceMatch = { value: option, score };
+      }
+    }
+  }
+
+  return bestSourceMatch && bestSourceMatch.score >= LOCATION_MATCH_CONFIDENCE_THRESHOLD
+    ? bestSourceMatch.value
+    : null;
 }
 
 /**
@@ -357,6 +499,8 @@ export async function syncLrRecordsFromDocuments(): Promise<{
       tptCode: doc.extractedData.tptCode,
       quantityInMt: doc.extractedData.quantityInMt,
       quantityInBags: doc.extractedData.quantityInBags,
+      branchName: doc.extractedData.branchName,
+      source: doc.extractedData.source,
     });
     if (wasCreated) created++;
   }
@@ -557,6 +701,8 @@ export async function saveOcrResults(
       tptCode: fields.tptCode,
       quantityInMt: fields.quantityInMt,
       quantityInBags: fields.quantityInBags,
+      branchName: fields.branchName,
+      source: fields.source,
     });
     const linkResult = await autoLinkDocument(documentId);
     // When an invoice arrives after the LR (e.g. from a remote office), back-fill
@@ -686,6 +832,8 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
         deliveryDestination: updatedExtracted.deliveryDestination,
         productName: updatedExtracted.productName,
         transporterName: updatedExtracted.transporterName,
+        branchName: updatedExtracted.branchName,
+        source: updatedExtracted.source,
       });
     }
     const reviewLinkResult = await autoLinkDocument(documentId);
