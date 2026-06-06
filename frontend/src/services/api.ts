@@ -186,6 +186,11 @@ export const lrApi = {
     const res = await api.post<{ processed: number; created: number; linked: number }>('/lrs/sync-from-documents');
     return res.data;
   },
+
+  branches: async (): Promise<{ id: string; name: string }[]> => {
+    const res = await api.get<{ id: string; name: string }[]>('/lrs/branches');
+    return res.data;
+  },
 };
 
 export const searchApi = {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Lr } from '../types';
 import { lrApi } from '../services/api';
 
@@ -53,7 +53,7 @@ function toNum(v: string): number | undefined {
   return isNaN(n) ? undefined : n;
 }
 
-const ALLOWED_SOURCES = new Set(['INTERNAL', 'PORTAL', 'API', 'EMAIL_IMPORT']);
+const ALLOWED_SOURCES = ['INTERNAL', 'PORTAL', 'API', 'EMAIL_IMPORT'] as const;
 
 export function LrEditModal({ lr, onSaved, onCancel }: Props) {
   const [form, setForm] = useState<FormData>({
@@ -92,6 +92,11 @@ export function LrEditModal({ lr, onSaved, onCancel }: Props) {
 
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState<string | null>(null);
+  const [branches, setBranches] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    lrApi.branches().then(setBranches).catch(() => setBranches([]));
+  }, []);
 
   const set = (field: keyof FormData, value: string) =>
     setForm((prev: FormData) => ({ ...prev, [field]: value }));
@@ -102,16 +107,12 @@ export function LrEditModal({ lr, onSaved, onCancel }: Props) {
       setError(null);
       const normalizedBranchId = form.branchId.trim();
       if (!normalizedBranchId) {
-        setError('Branch ID is required');
+        setError('Branch is required');
         return;
       }
       const normalizedSource = form.source.trim().toUpperCase();
       if (!normalizedSource) {
         setError('Source is required');
-        return;
-      }
-      if (!ALLOWED_SOURCES.has(normalizedSource)) {
-        setError(`Source must be one of: ${Array.from(ALLOWED_SOURCES).join(', ')}`);
         return;
       }
       const currentBranchId = toStr(lr.branchId).trim();
@@ -173,8 +174,20 @@ export function LrEditModal({ lr, onSaved, onCancel }: Props) {
               <Field label="LR Date"       value={form.lrDate}  onChange={(v) => set('lrDate', v)}  placeholder="YYYY-MM-DD" />
             </Row>
             <Row>
-              <Field label="Branch ID"         value={form.branchId}         onChange={(v) => set('branchId', v)} />
-              <Field label="Source"            value={form.source}           onChange={(v) => set('source', v)} />
+              <SelectField
+                label="Branch"
+                value={form.branchId}
+                onChange={(v) => set('branchId', v)}
+                options={branches.map((b) => ({ value: b.id, label: b.name }))}
+                placeholder="— select branch —"
+              />
+              <SelectField
+                label="Source"
+                value={form.source}
+                onChange={(v) => set('source', v)}
+                options={ALLOWED_SOURCES.map((s) => ({ value: s, label: s }))}
+                placeholder="— select source —"
+              />
             </Row>
             <Row>
               <Field label="Principal Company" value={form.principalCompany} onChange={(v) => set('principalCompany', v)} />
@@ -314,6 +327,28 @@ function Field({
   );
 }
 
+function SelectField({
+  label, value, onChange, options, placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+  placeholder?: string;
+}) {
+  return (
+    <div style={m.fieldGroup}>
+      <label style={m.label}>{label}</label>
+      <select style={m.select} value={value} onChange={(e) => onChange(e.target.value)}>
+        {placeholder && <option value="">{placeholder}</option>}
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 // ── Styles ─────────────────────────────────────────────────────────────────────
 
 const m: Record<string, React.CSSProperties> = {
@@ -352,6 +387,10 @@ const m: Record<string, React.CSSProperties> = {
   input: {
     width: '100%', padding: '7px 10px', border: '1.5px solid #d0d0e0',
     borderRadius: 6, fontSize: 13, boxSizing: 'border-box',
+  },
+  select: {
+    width: '100%', padding: '7px 10px', border: '1.5px solid #d0d0e0',
+    borderRadius: 6, fontSize: 13, boxSizing: 'border-box', background: '#fff',
   },
   error: { color: '#e53e3e', fontSize: 13, margin: '0 20px 8px' },
   footer: {
