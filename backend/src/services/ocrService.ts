@@ -1,6 +1,8 @@
 import OpenAI from 'openai';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
+import { execSync } from 'child_process';
 import type { DocumentType, ExtractedFields, OcrResult } from '../types/index.js';
 import {
   computeFieldConfidence,
@@ -214,6 +216,47 @@ function detectDocumentTypeFromText(text: string): DocumentType {
   return sorted[0][0];
 }
 
+/**
+ * Converts a PDF file to a PNG image using pdftoppm (poppler-utils).
+ * Returns the path to the generated PNG and the temp directory to clean up.
+ *
+ * Install poppler:
+ *   macOS:  brew install poppler
+ *   Ubuntu: apt install poppler-utils
+ */
+function convertPdfToImage(pdfPath: string): { imagePath: string; tempDir: string } {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ocr-pdf-'));
+  const outPrefix = path.join(tempDir, 'page');
+
+  try {
+    // -r 200  → 200 DPI (good balance of quality vs size for OCR)
+    // -png    → output as PNG
+    // -f 1 -l 1 → only convert the first page
+    execSync(`pdftoppm -r 200 -png -f 1 -l 1 "${pdfPath}" "${outPrefix}"`, {
+      stdio: 'pipe',
+    });
+  } catch (err) {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `PDF conversion failed. Make sure poppler is installed.\n` +
+      `  macOS:  brew install poppler\n` +
+      `  Ubuntu: apt install poppler-utils\n\nOriginal error: ${msg}`
+    );
+  }
+
+  const pages = fs.readdirSync(tempDir)
+    .filter((f) => f.endsWith('.png'))
+    .sort();
+
+  if (pages.length === 0) {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    throw new Error('PDF to image conversion produced no output pages.');
+  }
+
+  return { imagePath: path.join(tempDir, pages[0]!), tempDir };
+}
+
 export async function processDocumentOcr(filePath: string, mimeType: string): Promise<OcrResult> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -222,108 +265,129 @@ export async function processDocumentOcr(filePath: string, mimeType: string): Pr
 
   const client = new OpenAI({ apiKey });
 
-  const fileBuffer = fs.readFileSync(filePath);
-  const base64Image = fileBuffer.toString('base64');
+  // ── PDF → PNG conversion ──────────────────────────────────────────────────
+  // GPT-4o vision only accepts image types (jpeg/png/gif/webp).
+  // PDFs must be rasterised to an image before being sent to the API.
+  let actualFilePath = filePath;
+  let tempDir: string | null = null;
 
-  const ext = path.extname(filePath).toLowerCase();
-  let imageMediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' = 'image/jpeg';
-  if (ext === '.png') imageMediaType = 'image/png';
-  else if (ext === '.gif') imageMediaType = 'image/gif';
-  else if (ext === '.webp') imageMediaType = 'image/webp';
+  if (mimeType === 'application/pdf') {
+    const converted = convertPdfToImage(filePath);
+    actualFilePath = converted.imagePath;
+    tempDir = converted.tempDir;
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 
-  const runOcrPass = async (extraGuidance?: string): Promise<{ parsed: Record<string, unknown>; rawResponse: string; rawContent: string }> => {
-    const response = await client.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'system',
-          content: OCR_SYSTEM_PROMPT,
-        },
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image_url',
-              image_url: {
-                url: `data:${imageMediaType};base64,${base64Image}`,
-                detail: 'high',
+  try {
+    const fileBuffer = fs.readFileSync(actualFilePath);
+    const base64Image = fileBuffer.toString('base64');
+
+    const ext = path.extname(actualFilePath).toLowerCase();
+    let imageMediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' = 'image/jpeg';
+    if (ext === '.png') imageMediaType = 'image/png';
+    else if (ext === '.gif') imageMediaType = 'image/gif';
+    else if (ext === '.webp') imageMediaType = 'image/webp';
+
+    const runOcrPass = async (extraGuidance?: string): Promise<{ parsed: Record<string, unknown>; rawResponse: string; rawContent: string }> => {
+      const response = await client.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'system',
+            content: OCR_SYSTEM_PROMPT,
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${imageMediaType};base64,${base64Image}`,
+                  detail: 'high',
+                },
               },
-            },
-            {
-              type: 'text',
-              text: extraGuidance
-                ? `Extract all structured fields from this logistics document. Return only the JSON object.\n\nAdditional context from previously corrected similar documents:\n${extraGuidance}`
-                : 'Extract all structured fields from this logistics document. Return only the JSON object.',
-            },
-          ],
-        },
-      ],
-      max_tokens: 1500,
-      temperature: 0,
-    });
+              {
+                type: 'text',
+                text: extraGuidance
+                  ? `Extract all structured fields from this logistics document. Return only the JSON object.\n\nAdditional context from previously corrected similar documents:\n${extraGuidance}`
+                  : 'Extract all structured fields from this logistics document. Return only the JSON object.',
+              },
+            ],
+          },
+        ],
+        max_tokens: 1500,
+        temperature: 0,
+      });
 
-    const rawContent = response.choices[0]?.message?.content ?? '';
-    const rawResponse = JSON.stringify(response);
+      const rawContent = response.choices[0]?.message?.content ?? '';
+      const rawResponse = JSON.stringify(response);
 
-    let parsed: Record<string, unknown> = {};
-    try {
-      const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+      let parsed: Record<string, unknown> = {};
+      try {
+        const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+        }
+      } catch {
+        parsed = { rawText: rawContent };
       }
-    } catch {
-      parsed = { rawText: rawContent };
+      return { parsed, rawResponse, rawContent };
+    };
+
+    const firstPass = await runOcrPass();
+    let parsed = firstPass.parsed;
+    let rawResponse = firstPass.rawResponse;
+    const rawContent = firstPass.rawContent;
+
+    const rawText = typeof parsed.rawText === 'string' ? parsed.rawText : rawContent;
+    let documentType = (parsed.documentType as DocumentType) ?? 'UNKNOWN';
+
+    const validTypes: DocumentType[] = ['LR', 'INVOICE', 'TOLL', 'WEIGHMENT', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE', 'EWAYBILL', 'RECEIVING', 'UNKNOWN'];
+    if (!validTypes.includes(documentType)) {
+      documentType = detectDocumentTypeFromText(rawText);
     }
-    return { parsed, rawResponse, rawContent };
-  };
 
-  const firstPass = await runOcrPass();
-  let parsed = firstPass.parsed;
-  let rawResponse = firstPass.rawResponse;
-  const rawContent = firstPass.rawContent;
+    let fields = parseExtractedFields(parsed, documentType, 0.5);
+    if (fields.vehicleNo && !VEHICLE_NO_PATTERN.test(fields.vehicleNo)) {
+      fields.vehicleNo = undefined;
+    }
+    let issues = getValidationIssues(fields, documentType);
 
-  const rawText = typeof parsed.rawText === 'string' ? parsed.rawText : rawContent;
-  let documentType = (parsed.documentType as DocumentType) ?? 'UNKNOWN';
+    if (shouldRetryOcr(issues, fields.confidence ?? 0.5)) {
+      const hints = await getContextualOcrHints(documentType, fields);
+      if (hints.length > 0) {
+        const secondPass = await runOcrPass(hints.map((h) => `- ${h}`).join('\n'));
+        const retryParsed = secondPass.parsed;
+        let retryDocumentType = (retryParsed.documentType as DocumentType) ?? documentType;
+        if (!validTypes.includes(retryDocumentType)) retryDocumentType = documentType;
 
-  const validTypes: DocumentType[] = ['LR', 'INVOICE', 'TOLL', 'WEIGHMENT', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE', 'EWAYBILL', 'RECEIVING', 'UNKNOWN'];
-  if (!validTypes.includes(documentType)) {
-    documentType = detectDocumentTypeFromText(rawText);
-  }
-
-  let fields = parseExtractedFields(parsed, documentType, 0.5);
-  if (fields.vehicleNo && !VEHICLE_NO_PATTERN.test(fields.vehicleNo)) {
-    fields.vehicleNo = undefined;
-  }
-  let issues = getValidationIssues(fields, documentType);
-
-  if (shouldRetryOcr(issues, fields.confidence ?? 0.5)) {
-    const hints = await getContextualOcrHints(documentType, fields);
-    if (hints.length > 0) {
-      const secondPass = await runOcrPass(hints.map((h) => `- ${h}`).join('\n'));
-      const retryParsed = secondPass.parsed;
-      let retryDocumentType = (retryParsed.documentType as DocumentType) ?? documentType;
-      if (!validTypes.includes(retryDocumentType)) retryDocumentType = documentType;
-
-      const retryFields = parseExtractedFields(retryParsed, retryDocumentType, fields.confidence ?? 0.5);
-      const retryIssues = getValidationIssues(retryFields, retryDocumentType);
-      const retryScore = (retryFields.confidence ?? 0) - retryIssues.length * ISSUE_PENALTY_WEIGHT;
-      const currentScore = (fields.confidence ?? 0) - issues.length * ISSUE_PENALTY_WEIGHT;
-      if (retryScore >= currentScore) {
-        fields = retryFields;
-        documentType = retryDocumentType;
-        rawResponse = secondPass.rawResponse;
-        issues = retryIssues;
+        const retryFields = parseExtractedFields(retryParsed, retryDocumentType, fields.confidence ?? 0.5);
+        const retryIssues = getValidationIssues(retryFields, retryDocumentType);
+        const retryScore = (retryFields.confidence ?? 0) - retryIssues.length * ISSUE_PENALTY_WEIGHT;
+        const currentScore = (fields.confidence ?? 0) - issues.length * ISSUE_PENALTY_WEIGHT;
+        if (retryScore >= currentScore) {
+          fields = retryFields;
+          documentType = retryDocumentType;
+          rawResponse = secondPass.rawResponse;
+          issues = retryIssues;
+        }
       }
     }
+
+    fields.validationIssues = issues;
+    fields.fieldConfidence = computeFieldConfidence(fields, fields.confidence ?? 0.5, issues);
+
+    return {
+      fields,
+      rawResponse,
+      documentType,
+      confidence: fields.confidence ?? 0.5,
+    };
+
+  } finally {
+    // Always clean up the temp directory created for PDF conversion
+    if (tempDir) {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   }
-
-  fields.validationIssues = issues;
-  fields.fieldConfidence = computeFieldConfidence(fields, fields.confidence ?? 0.5, issues);
-
-  return {
-    fields,
-    rawResponse,
-    documentType,
-    confidence: fields.confidence ?? 0.5,
-  };
 }
