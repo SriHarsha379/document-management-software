@@ -4,20 +4,32 @@ import { upload } from '../middleware/upload.js';
 import { processDocumentOcr } from '../services/ocrService.js';
 import { getOcrMetrics, prisma, saveOcrResults, saveReviewedData } from '../services/documentService.js';
 import type { DocumentType, ReviewPayload } from '../types/index.js';
+import { getPdfPageCount, splitPdfToPageImages, MAX_PDF_PAGES } from '../services/pdfSplitService.js';
 
 const VALID_DOCUMENT_TYPES: DocumentType[] = [
   'LR', 'INVOICE', 'TOLL', 'WEIGHMENT', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE',
   'EWAYBILL', 'RECEIVING', 'UNKNOWN',
 ];
 
+const UPLOAD_DIR = process.env.UPLOAD_DIR ?? './uploads';
+
 const router = Router();
 
 // ──────────────────────────────────────────────────────────────────────────────
 // POST /api/documents/upload
-// Upload a document file. Creates a Document record.
+// Upload a document file. Creates one or more Document records.
+//
+// For single images or single-page PDFs: behaves as before and returns:
+//   { message, document, documents: [document], pageCount: 1, isPdfMultiPage: false }
+//
+// For multi-page PDFs: splits each page into a JPEG, creates one Document per
+// page plus a source Document for the original PDF, and returns:
+//   { message, document, documents: [...pageDocuments], pageCount: N,
+//     isPdfMultiPage: true, sourceDocumentId }
+//
 // Optional form-data fields:
-//   type    – DocumentType (defaults to UNKNOWN; if set, status = PENDING_REVIEW)
-//   groupId – link to an existing DocumentGroup immediately
+//   type    – DocumentType applied to all created document(s)
+//   groupId – link all created document(s) to an existing DocumentGroup
 // ──────────────────────────────────────────────────────────────────────────────
 router.post('/upload', upload.single('file'), async (req: Request, res: Response): Promise<void> => {
   try {
@@ -43,11 +55,89 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
       }
     }
 
+    const isPdf = req.file.mimetype === 'application/pdf';
+
+    // ── Multi-page PDF path ───────────────────────────────────────────────────
+    if (isPdf) {
+      let pageCount = 1;
+      try {
+        pageCount = await getPdfPageCount(req.file.path);
+      } catch (countErr) {
+        const msg = countErr instanceof Error ? countErr.message : String(countErr);
+        res.status(400).json({ error: `Cannot process PDF: ${msg}` });
+        return;
+      }
+
+      if (pageCount > MAX_PDF_PAGES) {
+        res.status(400).json({
+          error: `PDF has ${pageCount} pages which exceeds the limit of ${MAX_PDF_PAGES}. ` +
+            'Split the PDF before uploading or contact your administrator.',
+        });
+        return;
+      }
+
+      if (pageCount > 1) {
+        // ── Create source Document for the original PDF ───────────────────
+        const sourceDoc = await prisma.document.create({
+          data: {
+            type: 'UNKNOWN',
+            // SAVED means it won't appear in the "needs OCR" queue – it is a
+            // container record for traceability only.
+            status: 'SAVED',
+            originalFilename: req.file.originalname,
+            rawFilePath: req.file.path,
+            mimeType: req.file.mimetype,
+            ...(groupId ? { groupId } : {}),
+          },
+        });
+
+        // ── Split pages and create one Document per page ──────────────────
+        let pageFiles;
+        try {
+          pageFiles = await splitPdfToPageImages(req.file.path, UPLOAD_DIR);
+        } catch (splitErr) {
+          // Clean up source document on split failure
+          await prisma.document.delete({ where: { id: sourceDoc.id } });
+          const msg = splitErr instanceof Error ? splitErr.message : String(splitErr);
+          res.status(500).json({ error: `PDF page extraction failed: ${msg}` });
+          return;
+        }
+
+        const pageDocuments = await Promise.all(
+          pageFiles.map((pf) =>
+            prisma.document.create({
+              data: {
+                type: docType,
+                status: docType !== 'UNKNOWN' ? 'PENDING_REVIEW' : 'PENDING_OCR',
+                originalFilename: req.file!.originalname,
+                rawFilePath: pf.filePath,
+                mimeType: pf.mimeType,
+                sourceDocumentId: sourceDoc.id,
+                pageNumber: pf.pageNumber,
+                ...(groupId ? { groupId } : {}),
+              },
+            }),
+          ),
+        );
+
+        const formatted = pageDocuments.map((d) => formatUploadedDocument(d));
+
+        res.status(201).json({
+          message: `PDF split into ${pageCount} pages. Each page has been queued for OCR.`,
+          document: formatted[0],
+          documents: formatted,
+          pageCount,
+          isPdfMultiPage: true,
+          sourceDocumentId: sourceDoc.id,
+        });
+        return;
+      }
+    }
+
+    // ── Single-file path (image or single-page PDF) ───────────────────────────
     const document = await prisma.document.create({
       data: {
         type: docType,
-        // When type is explicitly provided the document is usable without OCR;
-        // mark it PENDING_REVIEW so it appears in the group immediately.
         status: docType !== 'UNKNOWN' ? 'PENDING_REVIEW' : 'PENDING_OCR',
         originalFilename: req.file.originalname,
         rawFilePath: req.file.path,
@@ -56,16 +146,14 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
       },
     });
 
+    const formatted = formatUploadedDocument(document);
+
     res.status(201).json({
       message: 'File uploaded successfully',
-      document: {
-        id: document.id,
-        type: document.type,
-        status: document.status,
-        originalFilename: document.originalFilename,
-        uploadedAt: document.uploadedAt,
-        groupId: document.groupId,
-      },
+      document: formatted,
+      documents: [formatted],
+      pageCount: 1,
+      isPdfMultiPage: false,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Upload failed';
@@ -351,6 +439,31 @@ type PrismaDocumentWithRelations = Awaited<ReturnType<typeof prisma.document.fin
   group?: unknown;
 };
 
+/** Lightweight shape returned directly by the upload endpoint (no OCR data yet). */
+function formatUploadedDocument(doc: {
+  id: string;
+  type: string;
+  status: string;
+  originalFilename: string;
+  mimeType: string;
+  uploadedAt: Date;
+  groupId: string | null;
+  sourceDocumentId?: string | null;
+  pageNumber?: number | null;
+}) {
+  return {
+    id: doc.id,
+    type: doc.type,
+    status: doc.status,
+    originalFilename: doc.originalFilename,
+    mimeType: doc.mimeType,
+    uploadedAt: doc.uploadedAt,
+    groupId: doc.groupId,
+    sourceDocumentId: doc.sourceDocumentId ?? null,
+    pageNumber: doc.pageNumber ?? null,
+  };
+}
+
 function formatDocument(doc: PrismaDocumentWithRelations | null) {
   if (!doc) return null;
 
@@ -364,6 +477,8 @@ function formatDocument(doc: PrismaDocumentWithRelations | null) {
     updatedAt: doc.updatedAt,
     groupId: doc.groupId,
     filePath: path.basename(doc.rawFilePath),
+    sourceDocumentId: (doc as Record<string, unknown>).sourceDocumentId ?? null,
+    pageNumber: (doc as Record<string, unknown>).pageNumber ?? null,
   };
 
   if (doc.extractedData) {

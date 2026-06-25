@@ -237,6 +237,11 @@ model Document {
   groupId       String?
   group         DocumentGroup? @relation(fields: [groupId], references: [id])
 
+  // For documents extracted from a multi-page PDF, these fields link the page
+  // Document back to the original source PDF Document.
+  sourceDocumentId String?
+  pageNumber       Int?     // 1-based page index; null for non-page documents
+
   extractedData ExtractedData?
 
   bundleItems   BundleItem[]
@@ -246,6 +251,7 @@ model Document {
   @@index([type])
   @@index([status])
   @@index([uploadedAt])
+  @@index([sourceDocumentId])
 
   @@map("documents")
 }

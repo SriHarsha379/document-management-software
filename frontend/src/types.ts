@@ -112,6 +112,10 @@ export interface Document {
   uploadedAt: string;
   updatedAt: string;
   groupId: string | null;
+  /** Present when this document was extracted from a multi-page PDF. */
+  sourceDocumentId?: string | null;
+  /** 1-based page index within the source PDF; null for non-page documents. */
+  pageNumber?: number | null;
   extractedData?: ExtractedData;
   group?: DocumentGroup;
 }

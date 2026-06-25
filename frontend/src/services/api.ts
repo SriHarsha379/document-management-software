@@ -55,16 +55,28 @@ export interface ListDocumentsParams {
   limit?: number;
 }
 
+/** Response shape returned by POST /api/documents/upload. */
+export interface UploadResponse {
+  /** The primary document (first page doc for multi-page PDFs, the only doc otherwise). */
+  document: Document;
+  /** All created documents – one per page for multi-page PDFs, one element otherwise. */
+  documents: Document[];
+  pageCount: number;
+  isPdfMultiPage: boolean;
+  /** ID of the source Document that holds the original PDF file (multi-page only). */
+  sourceDocumentId?: string | null;
+}
+
 export const documentsApi = {
-  upload: async (file: File, opts?: { type?: DocumentType; groupId?: string }): Promise<Document> => {
+  upload: async (file: File, opts?: { type?: DocumentType; groupId?: string }): Promise<UploadResponse> => {
     const formData = new FormData();
     formData.append('file', file);
     if (opts?.type) formData.append('type', opts.type);
     if (opts?.groupId) formData.append('groupId', opts.groupId);
-    const res = await api.post<{ document: Document }>('/documents/upload', formData, {
+    const res = await api.post<UploadResponse>('/documents/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
-    return res.data.document;
+    return res.data;
   },
 
   runOcr: async (documentId: string): Promise<Document> => {
