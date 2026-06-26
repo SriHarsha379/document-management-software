@@ -49,7 +49,7 @@ export function DocumentUpload({ onDocumentReady }: Props) {
       setError(null); setUploading(true); setProgress('uploading');
       const uploaded = await documentsApi.upload(file);
       setUploading(false); setProcessingOcr(true); setProgress('ocr');
-      const processed = await documentsApi.runOcr(uploaded.id);
+      const processed = await documentsApi.runOcr(uploaded.document.id);  // ✅
       setProcessingOcr(false); setProgress('idle');
       onDocumentReady(processed);
     } catch (err) {
