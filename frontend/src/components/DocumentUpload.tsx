@@ -26,8 +26,8 @@ export function DocumentUpload({ onDocumentReady }: Props) {
     }
     setError(null);
     setFiles((prev) => {
-      const existing = new Set(prev.map((f) => f.name + f.size));
-      const deduped = arr.filter((f) => !existing.has(f.name + f.size));
+      const existing = new Set(prev.map((f) => `${f.name}|${f.size}`));
+      const deduped = arr.filter((f) => !existing.has(`${f.name}|${f.size}`));
       return [...prev, ...deduped];
     });
   };
@@ -57,9 +57,16 @@ export function DocumentUpload({ onDocumentReady }: Props) {
       const allDocs: Document[] = [];
       for (let fi = 0; fi < files.length; fi++) {
         setFileProgress({ current: fi + 1, total: files.length });
-        const uploaded = await documentsApi.upload(files[fi]!);
-        const docsFromFile = uploaded.documents.length > 0 ? uploaded.documents : [uploaded.document];
-        allDocs.push(...docsFromFile);
+        const currentFile = files[fi]!;
+        try {
+          const uploaded = await documentsApi.upload(currentFile);
+          const docsFromFile = uploaded.documents.length > 0 ? uploaded.documents : [uploaded.document];
+          allDocs.push(...docsFromFile);
+        } catch (uploadErr) {
+          throw new Error(
+            `Upload failed for "${currentFile.name}" (file ${fi + 1} of ${files.length}): ${uploadErr instanceof Error ? uploadErr.message : String(uploadErr)}`
+          );
+        }
       }
       setFileProgress(null);
       setUploading(false); setProcessingOcr(true); setProgress('ocr');
