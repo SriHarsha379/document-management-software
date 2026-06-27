@@ -205,8 +205,13 @@ async function autoLinkDocumentToGroup(
 /**
  * Auto-create an LR record from an uploaded LR-type document.
  *
- * Resolves branch and source from OCR-extracted locality/city text by matching
- * against existing branch/source values in the system.
+ * Branch resolution: reuses an existing branch if a name match is found;
+ * otherwise auto-creates a new Branch record for the company using the OCR
+ * branchName value. LR creation is never skipped due to a missing branch.
+ *
+ * Source: used directly from OCR output — no validation against
+ * user_source_access or existing LR records, and no INTERNAL fallback.
+ *
  * Idempotent — skips silently when an LR with the same lrNo already exists
  * for that company, so calling this multiple times is safe.
  *
@@ -242,43 +247,68 @@ async function autoCreateLrRecord(
 
   const lrNo = fields.lrNo.trim().toUpperCase();
 
-  // Look up the first company and its branch list (single-tenant default)
-  const company = await prisma.company.findFirst({
-    include: { branches: { orderBy: { createdAt: 'asc' }, select: { id: true, name: true } } },
-  });
-  if (!company || company.branches.length === 0) {
+  // Look up the company (single-tenant default)
+  const company = await prisma.company.findFirst();
+  if (!company) {
     console.warn(
-      '[autoCreateLrRecord] No company or branch found in the database. ' +
+      '[autoCreateLrRecord] No company found in the database. ' +
       `LR record for lrNo="${lrNo}" was NOT created. ` +
-      'Please ensure at least one Company and Branch are set up in the admin panel.',
+      'Please ensure at least one Company is set up in the admin panel.',
     );
     return false;
   }
 
   const companyId = company.id;
-  const branchId = resolveBranchId(
-    company.branches,
-    fields.branchName,
-    fields.source
-  );
-  if (!branchId) {
-    console.warn(
-      `[autoCreateLrRecord] Could not confidently map branch from OCR for lrNo="${lrNo}" ` +
-      `(branchName="${fields.branchName ?? ''}", source="${fields.source ?? ''}"). ` +
-      'Skipping auto-create; requires manual review.'
-    );
-    return false;
+
+  // ── Branch: reuse existing match or auto-create ───────────────────────────
+  let branchId: string;
+  if (fields.branchName?.trim()) {
+    const branchNameRaw = fields.branchName.trim();
+
+    // Try to find an existing branch with a case-insensitive name match
+    const existingBranch = await prisma.branch.findFirst({
+      where: {
+        companyId,
+        name: { equals: branchNameRaw},
+      },
+      select: { id: true },
+    });
+
+    if (existingBranch) {
+      branchId = existingBranch.id;
+    } else {
+      // Auto-create a new branch using the OCR branchName value
+      console.info(
+        `[autoCreateLrRecord] Branch "${branchNameRaw}" not found for companyId="${companyId}". ` +
+        'Auto-creating new branch record.',
+      );
+      const newBranch = await prisma.branch.create({
+        data: { name: branchNameRaw, companyId },
+        select: { id: true },
+      });
+      branchId = newBranch.id;
+    }
+  } else {
+    // No branchName extracted — fall back to the first branch for this company
+    const fallbackBranch = await prisma.branch.findFirst({
+      where: { companyId },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (!fallbackBranch) {
+      console.warn(
+        '[autoCreateLrRecord] No branch found and no branchName extracted. ' +
+        `LR record for lrNo="${lrNo}" was NOT created. ` +
+        'Please ensure at least one Branch is set up in the admin panel.',
+      );
+      return false;
+    }
+    branchId = fallbackBranch.id;
   }
 
-  const source = await resolveSourceValue(companyId, fields.source, fields.branchName);
-  if (!source) {
-    console.warn(
-      `[autoCreateLrRecord] Could not confidently map source from OCR for lrNo="${lrNo}" ` +
-      `(source="${fields.source ?? ''}", branchName="${fields.branchName ?? ''}"). ` +
-      'Skipping auto-create; requires manual review.'
-    );
-    return false;
-  }
+  // ── Source: use OCR value directly, no validation or fallback ────────────
+
+  const source = fields.source?.trim() || undefined;
 
   // Idempotent: skip if an LR with the same lrNo already exists for this company
   const existing = await prisma.lr.findFirst({ where: { lrNo, companyId } });
@@ -385,75 +415,6 @@ function getLocationMatchScore(candidate: string, target: string): number {
     return LOCATION_WORDS_MATCH_SCORE;
   }
   return 0;
-}
-
-function resolveBranchId(
-  branches: Array<{ id: string; name: string }>,
-  primaryBranchCandidate?: string | null,
-  secondaryBranchCandidate?: string | null
-): string | null {
-  const candidates = splitLocationCandidates(primaryBranchCandidate, secondaryBranchCandidate);
-  if (candidates.length === 0) return null;
-
-  let bestBranchMatch: { branchId: string; score: number } | null = null;
-  for (const branch of branches) {
-    const branchNorm = normalizeLocationToken(branch.name);
-    for (const candidate of candidates) {
-      const score = getLocationMatchScore(candidate, branchNorm);
-      if (!bestBranchMatch || score > bestBranchMatch.score) {
-        bestBranchMatch = { branchId: branch.id, score };
-      }
-    }
-  }
-
-  return bestBranchMatch && bestBranchMatch.score >= LOCATION_MATCH_CONFIDENCE_THRESHOLD
-    ? bestBranchMatch.branchId
-    : null;
-}
-
-async function resolveSourceValue(
-  companyId: string,
-  primarySourceCandidate?: string | null,
-  secondarySourceCandidate?: string | null
-): Promise<string | null> {
-  const candidates = splitLocationCandidates(primarySourceCandidate, secondarySourceCandidate);
-  if (candidates.length === 0) return null;
-
-  const [userSources, existingLrSources] = await Promise.all([
-    prisma.userSourceAccess.findMany({
-      where: { user: { companyId } },
-      select: { source: true },
-      distinct: ['source'],
-    }),
-    prisma.lr.findMany({
-      where: { companyId },
-      select: { source: true },
-      distinct: ['source'],
-    }),
-  ]);
-
-  const options = Array.from(
-    new Set([
-      ...userSources.map((row) => row.source),
-      ...existingLrSources.map((row) => row.source),
-    ].filter((value): value is string => Boolean(value?.trim())))
-  );
-  if (options.length === 0) return null;
-
-  let bestSourceMatch: { value: string; score: number } | null = null;
-  for (const option of options) {
-    const optionNorm = normalizeLocationToken(option);
-    for (const candidate of candidates) {
-      const score = getLocationMatchScore(candidate, optionNorm);
-      if (!bestSourceMatch || score > bestSourceMatch.score) {
-        bestSourceMatch = { value: option, score };
-      }
-    }
-  }
-
-  return bestSourceMatch && bestSourceMatch.score >= LOCATION_MATCH_CONFIDENCE_THRESHOLD
-    ? bestSourceMatch.value
-    : null;
 }
 
 /**
@@ -858,3 +819,4 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
 export async function getOcrMetrics() {
   return getOcrQualityMetrics();
 }
+

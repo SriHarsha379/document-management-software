@@ -18,6 +18,7 @@ import masterRoutes from './routes/master.js';
 import communicationRoutes from './modules/communication/communicationRoutes.js';
 
 const app = express();
+app.set('trust proxy', 1);
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(cors({

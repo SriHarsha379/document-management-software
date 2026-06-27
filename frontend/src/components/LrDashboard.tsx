@@ -114,6 +114,7 @@ export function LrDashboard() {
 
   const LIMIT = 20;
 
+  // Fetches fresh data from the DB and updates all state.
   const fetchData = useCallback(async () => {
     try {
       setLoading(true); setError(null);
@@ -135,7 +136,29 @@ export function LrDashboard() {
     } finally { setLoading(false); }
   }, [page]);
 
-  useEffect(() => { void fetchData(); }, [fetchData]);
+  // On mount (and page change): sync first so any pending OCR LRs are created,
+  // then fetch so the table always reflects the true DB state immediately.
+  useEffect(() => {
+    const syncThenFetch = async () => {
+      if (canCreate) {
+        try {
+          setSyncing(true);
+          const result = await lrApi.syncFromDocuments();
+          // Only surface the banner when something was actually created/linked.
+          if (result.created > 0 || result.linked > 0) {
+            setSyncResult({ created: result.created, linked: result.linked });
+          }
+        } catch {
+          // Silent — don't block the dashboard if sync fails on load.
+        } finally {
+          setSyncing(false);
+        }
+      }
+      await fetchData();
+    };
+    void syncThenFetch();
+  }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ↑ intentionally omit fetchData/canCreate from deps to avoid double-fire on first render.
 
   useEffect(() => {
     if (syncResult === null) return;
@@ -149,12 +172,13 @@ export function LrDashboard() {
     return () => clearTimeout(t);
   }, [syncError]);
 
+  // Manual sync button — same logic but shows feedback regardless of created count.
   const handleSync = async () => {
     try {
       setSyncing(true); setSyncResult(null); setSyncError(null);
       const result = await lrApi.syncFromDocuments();
       setSyncResult({ created: result.created, linked: result.linked });
-      void fetchData();
+      await fetchData();
     } catch { setSyncError('Sync failed. Check that a Company and Branch are configured in the admin panel.'); }
     finally { setSyncing(false); }
   };
@@ -187,7 +211,7 @@ export function LrDashboard() {
         </div>
         {syncResult !== null && (
           <div style={syncInfo}>
-            {syncResult.created === 0
+            {syncResult.created === 0 && syncResult.linked === 0
               ? '✅ All LR records are already up to date.'
               : `✅ Created ${syncResult.created} new LR record${syncResult.created !== 1 ? 's' : ''} and linked ${syncResult.linked} document${syncResult.linked !== 1 ? 's' : ''}.`}
           </div>
@@ -209,13 +233,13 @@ export function LrDashboard() {
 
         {error && <div style={errorBox}>⚠️ {error}</div>}
 
-        {loading && lrs.length === 0 && (
+        {(loading || syncing) && lrs.length === 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '8px 0' }}>
             {[1,2,3,4].map((i) => <Skeleton key={i} height={36} />)}
           </div>
         )}
 
-        {!loading && lrs.length === 0 && !error && (
+        {!loading && !syncing && lrs.length === 0 && !error && (
           <div style={emptyState}>
             <div style={{ fontSize: 40, marginBottom: 8 }}>📭</div>
             <p style={{ margin: 0, color: '#6b7280' }}>No LR records found.</p>
