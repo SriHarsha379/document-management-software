@@ -21,6 +21,12 @@ export interface DispatchResult {
   logId: string;
   message?: string;
   error?: string;
+  smtp?: {
+    messageId: string;
+    accepted: string[];
+    rejected: string[];
+    response?: string;
+  };
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -61,18 +67,26 @@ function resolveFilePath(rawFilePath: string): string {
 
 // ── Email dispatch ─────────────────────────────────────────────────────────────
 
+function firstNonBlank(...values: Array<string | undefined | null>): string | undefined {
+  return values.find((value) => typeof value === 'string' && value.trim().length > 0)?.trim();
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
 async function sendEmail(opts: {
   recipient: string;
   ccRecipient?: string;
   subject: string;
   body: string;
   attachments: Array<{ filename: string; path: string }>;
-}): Promise<void> {
+}): Promise<NonNullable<DispatchResult['smtp']>> {
   const host = process.env.SMTP_HOST;
   const port = parseInt(process.env.SMTP_PORT ?? '587', 10);
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
-  const from = process.env.SMTP_FROM ?? user ?? 'noreply@logistics-dms.local';
+  const from = firstNonBlank(process.env.SMTP_FROM, user) ?? 'noreply@logistics-dms.local';
 
   if (!host || !user || !pass) {
     throw new Error(
@@ -91,7 +105,7 @@ async function sendEmail(opts: {
     try { return fs.existsSync(a.path); } catch { return false; }
   });
 
-  await transporter.sendMail({
+  const info = await transporter.sendMail({
     from,
     to: opts.recipient,
     cc: opts.ccRecipient,
@@ -99,6 +113,29 @@ async function sendEmail(opts: {
     text: opts.body,
     attachments: validAttachments.map((a) => ({ filename: a.filename, path: a.path })),
   });
+
+  const smtp = {
+    messageId: typeof info.messageId === 'string' ? info.messageId : '',
+    accepted: asStringArray((info as { accepted?: unknown }).accepted),
+    rejected: asStringArray((info as { rejected?: unknown }).rejected),
+    response: typeof (info as { response?: unknown }).response === 'string'
+      ? (info as { response: string }).response
+      : undefined,
+  };
+
+  if (smtp.rejected.includes(opts.recipient) || smtp.accepted.length === 0) {
+    throw new Error(
+      `SMTP did not accept the primary recipient. accepted=${smtp.accepted.join(',') || '-'} ` +
+      `rejected=${smtp.rejected.join(',') || '-'} response=${smtp.response ?? '-'}`
+    );
+  }
+
+  console.log(
+    `[dispatch-email] accepted=${smtp.accepted.join(',') || '-'} rejected=${smtp.rejected.join(',') || '-'} ` +
+    `messageId=${smtp.messageId || '-'} response=${smtp.response ?? '-'}`
+  );
+
+  return smtp;
 }
 
 // ── WhatsApp dispatch (Twilio) ─────────────────────────────────────────────────
@@ -190,13 +227,15 @@ export async function dispatchBundle(req: DispatchRequest): Promise<DispatchResu
 
   // 4. Attempt to send
   try {
+    let smtp: DispatchResult['smtp'];
+
     if (req.channel === 'EMAIL') {
       const attachments = bundle.items.map((item) => ({
         filename: item.document.originalFilename,
         path: resolveFilePath(item.document.rawFilePath),
       }));
 
-      await sendEmail({
+      smtp = await sendEmail({
         recipient: req.recipient,
         ccRecipient: req.ccRecipient,
         subject: `Documents for Vehicle ${bundle.group.vehicleNo} – ${bundle.group.date}`,
@@ -229,7 +268,7 @@ export async function dispatchBundle(req: DispatchRequest): Promise<DispatchResu
       data: { status: 'SENT' },
     });
 
-    return { success: true, logId: log.id, message: body };
+    return { success: true, logId: log.id, message: body, ...(smtp ? { smtp } : {}) };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
 

@@ -13,6 +13,7 @@ export function DocumentUpload({ onDocumentReady }: Props) {
   const [uploading, setUploading] = useState(false);
   const [processingOcr, setProcessingOcr] = useState(false);
   const [progress, setProgress] = useState<'idle' | 'uploading' | 'ocr'>('idle');
+  const [ocrProgress, setOcrProgress] = useState<{ current: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -49,17 +50,33 @@ export function DocumentUpload({ onDocumentReady }: Props) {
       setError(null); setUploading(true); setProgress('uploading');
       const uploaded = await documentsApi.upload(file);
       setUploading(false); setProcessingOcr(true); setProgress('ocr');
-      const processed = await documentsApi.runOcr(uploaded.document.id);  // ✅
+
+      const docsToProcess = uploaded.documents.length > 0 ? uploaded.documents : [uploaded.document];
+      const processedDocs: Document[] = [];
+
+      for (let i = 0; i < docsToProcess.length; i++) {
+        setOcrProgress({ current: i + 1, total: docsToProcess.length });
+        const processed = await documentsApi.runOcr(docsToProcess[i]!.id);
+        processedDocs.push(processed);
+      }
+
       setProcessingOcr(false); setProgress('idle');
-      onDocumentReady(processed);
+      setOcrProgress(null);
+
+      const reviewDoc =
+        processedDocs.find((doc) => doc.status === 'PENDING_REVIEW') ??
+        processedDocs.find((doc) => doc.type !== 'UNKNOWN') ??
+        processedDocs[0];
+
+      if (reviewDoc) onDocumentReady(reviewDoc);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload or OCR failed');
-      setUploading(false); setProcessingOcr(false); setProgress('idle');
+      setUploading(false); setProcessingOcr(false); setProgress('idle'); setOcrProgress(null);
     }
   };
 
   const reset = () => {
-    setFile(null); setPreview(null); setError(null); setProgress('idle');
+    setFile(null); setPreview(null); setError(null); setProgress('idle'); setOcrProgress(null);
     if (inputRef.current) inputRef.current.value = '';
   };
 
@@ -125,7 +142,7 @@ export function DocumentUpload({ onDocumentReady }: Props) {
         {/* Progress steps */}
         {busy && (
           <div style={{ marginTop: 16 }}>
-            <ProgressSteps step={progress} />
+            <ProgressSteps step={progress} ocrProgress={ocrProgress} />
           </div>
         )}
 
@@ -162,10 +179,19 @@ export function DocumentUpload({ onDocumentReady }: Props) {
   );
 }
 
-function ProgressSteps({ step }: { step: 'idle' | 'uploading' | 'ocr' }) {
+function ProgressSteps({ step, ocrProgress }: {
+  step: 'idle' | 'uploading' | 'ocr';
+  ocrProgress: { current: number; total: number } | null;
+}) {
   const steps = [
     { id: 'uploading', label: 'Uploading file', icon: '⬆️' },
-    { id: 'ocr',       label: 'Running AI OCR', icon: '🤖' },
+    {
+      id: 'ocr',
+      label: ocrProgress && ocrProgress.total > 1
+        ? `Running AI OCR (${ocrProgress.current}/${ocrProgress.total})`
+        : 'Running AI OCR',
+      icon: '🤖',
+    },
   ];
   return (
     <div style={{ display: 'flex', gap: 12 }}>

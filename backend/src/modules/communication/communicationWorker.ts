@@ -40,6 +40,14 @@ function isRetryableTwilio(err: unknown): boolean {
   return code !== undefined && RETRYABLE_TWILIO_CODES.has(code);
 }
 
+function firstNonBlank(...values: Array<string | undefined | null>): string | undefined {
+  return values.find((value) => typeof value === 'string' && value.trim().length > 0)?.trim();
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
 // ── Resolve company-level sending credentials ──────────────────────────────────
 
 async function getCompanySettings(companyId: string) {
@@ -85,7 +93,26 @@ async function sendEmail(opts: {
     attachments: validAttachments.map((a) => ({ filename: a.filename, path: a.path })),
   });
 
-  return (info.messageId as string) ?? '';
+  const accepted = asStringArray((info as { accepted?: unknown }).accepted);
+  const rejected = asStringArray((info as { rejected?: unknown }).rejected);
+  const response = typeof (info as { response?: unknown }).response === 'string'
+    ? (info as { response: string }).response
+    : undefined;
+
+  if (rejected.includes(opts.to) || accepted.length === 0) {
+    throw new Error(
+      `SMTP did not accept the primary recipient. accepted=${accepted.join(',') || '-'} ` +
+      `rejected=${rejected.join(',') || '-'} response=${response ?? '-'}`
+    );
+  }
+
+  const messageId = typeof info.messageId === 'string' ? info.messageId : '';
+  console.log(
+    `[comm-email] accepted=${accepted.join(',') || '-'} rejected=${rejected.join(',') || '-'} ` +
+    `messageId=${messageId || '-'} response=${response ?? '-'}`
+  );
+
+  return messageId;
 }
 
 // ── WhatsApp sender ────────────────────────────────────────────────────────────
@@ -180,7 +207,7 @@ async function handleJob(payload: JobPayload): Promise<void> {
     const template = await resolveTemplate(companyId, ch, undefined);
 
     // Sending identity
-    const smtpFrom     = settings?.smtpFrom      ?? process.env.SMTP_FROM      ?? 'noreply@logistics-dms.local';
+    const smtpFrom     = firstNonBlank(settings?.smtpFrom, process.env.SMTP_FROM, process.env.SMTP_USER) ?? 'noreply@logistics-dms.local';
     const waFrom       = settings?.whatsappFrom   ?? process.env.TWILIO_WHATSAPP_FROM ?? 'whatsapp:+14155238886';
     const defaultCCEmail = settings?.defaultCCEmail;
     const defaultCCPhone = settings?.defaultCCPhone;
