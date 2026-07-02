@@ -260,6 +260,72 @@ function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
   );
 }
 
+// ── ImagePreviewModal ──────────────────────────────────────────────────────────
+
+interface ImagePreviewModalProps {
+  docs: import('../types').Document[];
+  header: string;
+  onClose: () => void;
+}
+
+function ImagePreviewModal({ docs, header, onClose }: ImagePreviewModalProps) {
+  const [current, setCurrent] = useState(0);
+  const doc = docs[Math.min(current, docs.length - 1)];
+
+  if (!doc) return null;
+
+  const url = `/uploads/${doc.filePath}`;
+  const isPdf = doc.mimeType === 'application/pdf';
+
+  return (
+    <div style={iv.backdrop} onClick={onClose}>
+      <div style={iv.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={iv.header}>
+          <span style={iv.title}>🔍 {header}</span>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={iv.openBtn}
+              title="Open in new tab"
+            >
+              ↗ Open
+            </a>
+            <button style={iv.closeBtn} onClick={onClose}>✕</button>
+          </div>
+        </div>
+        <div style={iv.body}>
+          {isPdf ? (
+            <iframe src={url} style={iv.iframe} title={doc.originalFilename} />
+          ) : (
+            <img src={url} alt={doc.originalFilename} style={iv.img} />
+          )}
+        </div>
+        {docs.length > 1 && (
+          <div style={iv.nav}>
+            <button
+              style={iv.navBtn}
+              disabled={current === 0}
+              onClick={() => setCurrent((c) => c - 1)}
+            >
+              ‹ Prev
+            </button>
+            <span style={iv.navLabel}>{current + 1} / {docs.length}</span>
+            <button
+              style={iv.navBtn}
+              disabled={current === docs.length - 1}
+              onClick={() => setCurrent((c) => c + 1)}
+            >
+              Next ›
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── DocumentBundler ────────────────────────────────────────────────────────────
 
 export function DocumentBundler({ onBundleSaved }: Props) {
@@ -271,6 +337,9 @@ export function DocumentBundler({ onBundleSaved }: Props) {
 
   // The group for which the QuickSendModal is open (null = closed)
   const [sendGroup, setSendGroup] = useState<DocumentGroup | null>(null);
+
+  // The slot being previewed in the ImagePreviewModal (null = closed)
+  const [viewSlot, setViewSlot] = useState<{ docs: import('../types').Document[]; header: string } | null>(null);
 
   const refreshGroups = useCallback(() => {
     documentsApi.listGroups()
@@ -298,6 +367,16 @@ export function DocumentBundler({ onBundleSaved }: Props) {
       setUploadingSlot(null);
     }
   }, [refreshGroups]);
+
+  const handleViewDocs = useCallback((group: DocumentGroup, col: TableColumn) => {
+    const docsInSlot = (group.documents ?? []).filter((doc) => (
+      col.key === 'WEIGHMENT_PARTY'
+        ? doc.type === 'WEIGHMENT_PARTY' || doc.type === 'WEIGHMENT'
+        : doc.type === col.checkType
+    ));
+    if (docsInSlot.length === 0) return;
+    setViewSlot({ docs: docsInSlot, header: col.header });
+  }, []);
 
   const handleDeleteDocs = useCallback(async (group: DocumentGroup, col: TableColumn) => {
     const docsInSlot = (group.documents ?? []).filter((doc) => (
@@ -420,7 +499,16 @@ export function DocumentBundler({ onBundleSaved }: Props) {
                             </span>
                               <button
                                 type="button"
-                                style={styles.deleteCellBtn}
+                                style={styles.cellBtn}
+                                onClick={() => handleViewDocs(g, col)}
+                                title={`View ${col.header}`}
+                                aria-label={`View ${col.header}`}
+                              >
+                                👁️
+                              </button>
+                              <button
+                                type="button"
+                                style={styles.cellBtn}
                                 onClick={() => handleDeleteDocs(g, col)}
                                 title={`Delete uploaded ${col.header}`}
                                 aria-label={`Delete uploaded ${col.header}`}
@@ -474,6 +562,15 @@ export function DocumentBundler({ onBundleSaved }: Props) {
             onBundleSaved?.(bundle);
             setSendGroup(null);
           }}
+        />
+      )}
+
+      {/* Image preview modal */}
+      {viewSlot && (
+        <ImagePreviewModal
+          docs={viewSlot.docs}
+          header={viewSlot.header}
+          onClose={() => setViewSlot(null)}
         />
       )}
     </div>
@@ -551,7 +648,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: 8,
   },
-  deleteCellBtn: {
+  cellBtn: {
     border: 'none',
     background: 'transparent',
     cursor: 'pointer',
@@ -621,4 +718,55 @@ const qs: Record<string, React.CSSProperties> = {
     boxShadow: '0 2px 8px rgba(67,97,238,0.3)',
   },
   sendBtnDisabled: { background: '#9ca3af', cursor: 'not-allowed', boxShadow: 'none' },
+};
+
+// ImagePreviewModal styles
+const iv: Record<string, React.CSSProperties> = {
+  backdrop: {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    zIndex: 1100, padding: 16,
+  },
+  modal: {
+    background: '#fff', borderRadius: 14, boxShadow: '0 8px 48px rgba(0,0,0,0.35)',
+    width: '100%', maxWidth: 860, maxHeight: '92vh',
+    display: 'flex', flexDirection: 'column', overflow: 'hidden',
+  },
+  header: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    padding: '14px 18px', borderBottom: '1px solid #e0e0f0', flexShrink: 0,
+  },
+  title: { fontSize: 15, fontWeight: 700, color: '#1a1a2e', margin: 0 },
+  openBtn: {
+    padding: '5px 12px', background: '#4361ee', color: '#fff',
+    borderRadius: 6, fontSize: 12, fontWeight: 700, textDecoration: 'none',
+    display: 'inline-flex', alignItems: 'center',
+  },
+  closeBtn: {
+    background: 'none', border: 'none', cursor: 'pointer',
+    fontSize: 20, color: '#9ca3af', lineHeight: 1, padding: 0,
+  },
+  body: {
+    flex: 1, overflow: 'auto', display: 'flex',
+    alignItems: 'center', justifyContent: 'center',
+    padding: 16, background: '#f0f0f5', minHeight: 0,
+  },
+  img: {
+    maxWidth: '100%', maxHeight: '70vh',
+    objectFit: 'contain', borderRadius: 6,
+    boxShadow: '0 2px 12px rgba(0,0,0,0.15)',
+  },
+  iframe: {
+    width: '100%', height: '70vh',
+    border: 'none', borderRadius: 6,
+  },
+  nav: {
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    gap: 12, padding: '10px 18px', borderTop: '1px solid #e0e0f0', flexShrink: 0,
+  },
+  navBtn: {
+    padding: '5px 14px', border: '1.5px solid #d0d0e0', borderRadius: 6,
+    background: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#4361ee',
+  },
+  navLabel: { fontSize: 13, color: '#555' },
 };
