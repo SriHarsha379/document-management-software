@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type {
-  DocumentGroup, DocumentType, RecipientType, DispatchChannel, Bundle,
+  DocumentGroup, DocumentType, RecipientType, DispatchChannel, Bundle, DispatchResult,
 } from '../types';
 import { documentsApi, bundlesApi, dispatchApi } from '../services/api';
 
@@ -77,7 +77,7 @@ function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
   const [recipient, setRecipient] = useState('');
   const [ccRecipient, setCcRecipient] = useState('');
   const [step, setStep] = useState<'setup' | 'sending' | 'done'>('setup');
-  const [result, setResult] = useState<{ success: boolean; error?: string; logId?: string } | null>(null);
+  const [result, setResult] = useState<DispatchResult | null>(null);
 
   const handleSend = async () => {
     if (!recipientType || !recipient.trim()) return;
@@ -106,10 +106,10 @@ function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
         ccRecipient: ccRecipient.trim() || undefined,
       });
 
-      setResult({ success: res.success, logId: res.logId, error: res.error });
+      setResult(res);
       onSent?.(bundle);
     } catch (err) {
-      setResult({ success: false, error: err instanceof Error ? err.message : 'Send failed' });
+      setResult({ success: false, logId: '', error: err instanceof Error ? err.message : 'Send failed' });
     } finally {
       setStep('done');
     }
@@ -224,12 +224,31 @@ function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
               <>
                 <div style={{ fontSize: 52 }}>✅</div>
                 <p style={{ fontSize: 17, fontWeight: 700, color: '#1a1a2e', margin: '12px 0 6px' }}>
-                  Sent successfully!
+                  {channel === 'EMAIL' ? 'Accepted by mail server' : 'Sent successfully!'}
                 </p>
                 <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>
-                  Documents dispatched to <strong>{recipient}</strong>
-                  {ccRecipient ? ` (CC: ${ccRecipient})` : ''} via {info.label}.
+                  {channel === 'EMAIL' ? (
+                    <>
+                      The email for <strong>{recipient}</strong>
+                      {ccRecipient ? ` (CC: ${ccRecipient})` : ''} was accepted by the configured SMTP server. Final inbox delivery can still depend on spam filters or the recipient mail server.
+                    </>
+                  ) : (
+                    <>
+                      Documents dispatched to <strong>{recipient}</strong>
+                      {ccRecipient ? ` (CC: ${ccRecipient})` : ''} via {info.label}.
+                    </>
+                  )}
                 </p>
+                {result.smtp && (
+                  <div style={{ marginTop: 8, fontSize: 11, color: '#6b7280', lineHeight: 1.5 }}>
+                    {result.smtp.messageId && (
+                      <div>SMTP Message ID: <span style={{ fontFamily: 'monospace' }}>{result.smtp.messageId}</span></div>
+                    )}
+                    {result.smtp.response && (
+                      <div>SMTP Response: <span style={{ fontFamily: 'monospace' }}>{result.smtp.response}</span></div>
+                    )}
+                  </div>
+                )}
                 {result.logId && (
                   <div style={{ marginTop: 8, fontSize: 11, color: '#aaa', fontFamily: 'monospace' }}>
                     Log ID: {result.logId}

@@ -261,6 +261,12 @@ export interface DispatchResult {
   logId: string;
   message?: string;
   error?: string;
+  smtp?: {
+    messageId: string;
+    accepted: string[];
+    rejected: string[];
+    response?: string;
+  };
 }
 
 export interface PaginatedDispatchLogs {
