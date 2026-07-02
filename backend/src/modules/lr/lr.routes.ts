@@ -261,15 +261,10 @@ router.patch(
         return;
       }
 
-      if (body.source && !(ALLOWED_SOURCES as readonly string[]).includes(body.source)) {
-        res.status(400).json({ error: `source must be one of: ${ALLOWED_SOURCES.join(', ')}` });
-        return;
-      }
-
       const updateData: LrUpdateInput = {
         branchId,
         lrNo:               body.lrNo?.trim(),
-        source:             body.source?.trim(),
+        source:             body.source?.trim() || undefined,
         status:             body.status,
         consignor:          body.consignor?.trim(),
         consignee:          body.consignee?.trim(),
