@@ -9,6 +9,11 @@ interface Props {
 }
 
 const DOCUMENT_TYPES: DocumentType[] = ['LR', 'INVOICE', 'TOLL', 'WEIGHMENT', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE', 'EWAYBILL', 'RECEIVING', 'UNKNOWN'];
+const WEIGHMENT_TYPES: DocumentType[] = ['WEIGHMENT', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE'];
+/** Types where we split parties into Bill To / Ship To instead of a free-text list */
+const PARTY_SPLIT_TYPES: DocumentType[] = ['LR', 'INVOICE'];
+/** Types where Weight Info is meaningful */
+const WEIGHT_INFO_TYPES: DocumentType[] = ['TOLL', 'EWAYBILL', 'RECEIVING', 'UNKNOWN'];
 
 const TYPE_LABELS: Record<DocumentType, string> = {
   LR: '📦 Lorry Receipt (LR)',
@@ -42,14 +47,17 @@ export function OCRReview({ document, onSaved, onCancel }: Props) {
     partyNames: ed?.partyNames ?? [],
     tollAmount: ed?.tollAmount ?? '',
     weightInfo: ed?.weightInfo ?? '',
-    driverName: (ed as { driverName?: string | null })?.driverName ?? '',
-    driverCellNo: (ed as { driverCellNo?: string | null })?.driverCellNo ?? '',
-    source: (ed as { source?: string | null })?.source ?? '',
+    billToParty: ed?.billToParty ?? '',
+    shipToParty: ed?.shipToParty ?? '',
+    driverName: ed?.driverName ?? '',
+    driverCellNo: ed?.driverCellNo ?? '',
+    source: ed?.source ?? '',
   });
 
   const [partyNamesText, setPartyNamesText] = useState((ed?.partyNames ?? []).join('\n'));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showTypeOverride, setShowTypeOverride] = useState(false);
 
   const handleChange = (field: keyof ReviewPayload, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -108,9 +116,34 @@ export function OCRReview({ document, onSaved, onCancel }: Props) {
 
           <div style={fieldGroup}>
             <label style={labelStyle}>Document Type</label>
-            <select style={inputStyle} value={form.documentType} onChange={(e) => handleChange('documentType', e.target.value)}>
-              {DOCUMENT_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
-            </select>
+            {showTypeOverride ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <select style={{ ...inputStyle, flex: 1 }} value={form.documentType} onChange={(e) => handleChange('documentType', e.target.value)}>
+                  {DOCUMENT_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setShowTypeOverride(false)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#6b7280', whiteSpace: 'nowrap', padding: '0 4px' }}
+                >
+                  ✕ Cancel
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', padding: '6px 14px', background: '#eef0ff', border: '1.5px solid #c0c8ff', borderRadius: 20, fontSize: 13, fontWeight: 700, color: '#4361ee' }}>
+                  {form.documentType ? TYPE_LABELS[form.documentType] : '❓ Unknown'}
+                  <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 500, color: '#7c8cf8', opacity: 0.85 }}>auto-detected</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowTypeOverride(true)}
+                  style={{ background: 'none', border: '1px solid #d0d0e0', cursor: 'pointer', fontSize: 12, color: '#6b7280', borderRadius: 6, padding: '4px 10px', transition: 'border-color 0.15s' }}
+                >
+                  ✏️ Change
+                </button>
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
@@ -131,21 +164,30 @@ export function OCRReview({ document, onSaved, onCancel }: Props) {
             )}
           </div>
 
+          {form.documentType && WEIGHT_INFO_TYPES.includes(form.documentType) && (
           <div style={fieldGroup}>
             <label style={labelStyle}>Weight Info</label>
             <input style={inputStyle} value={form.weightInfo ?? ''} onChange={(e) => handleChange('weightInfo', e.target.value)} placeholder="Gross: 15000 kg, Tare: 5000 kg, Net: 10000 kg" />
           </div>
+          )}
 
-          <div style={fieldGroup}>
-            <label style={labelStyle}>Party Names (one per line)</label>
-            <textarea
-              style={{ ...inputStyle, resize: 'vertical' as const }}
-              value={partyNamesText}
-              onChange={(e) => handlePartyNamesChange(e.target.value)}
-              rows={3}
-              placeholder={"Consignor name\nConsignee name"}
-            />
-          </div>
+          {form.documentType && PARTY_SPLIT_TYPES.includes(form.documentType) ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+              <Field label="Bill To Party" value={form.billToParty ?? ''} onChange={(v) => handleChange('billToParty', v)} placeholder="e.g. R N P INFRACON PVT LTD" />
+              <Field label="Ship To Party" value={form.shipToParty ?? ''} onChange={(v) => handleChange('shipToParty', v)} placeholder="e.g. SITE / DELIVERY ADDRESS" />
+            </div>
+          ) : !form.documentType || !WEIGHMENT_TYPES.includes(form.documentType) ? (
+            <div style={fieldGroup}>
+              <label style={labelStyle}>Party Names (one per line)</label>
+              <textarea
+                style={{ ...inputStyle, resize: 'vertical' as const }}
+                value={partyNamesText}
+                onChange={(e) => handlePartyNamesChange(e.target.value)}
+                rows={3}
+                placeholder={"Consignor name\nConsignee name"}
+              />
+            </div>
+          ) : null}
 
           {document.groupId && (
             <div style={{ background: '#eef0ff', border: '1px solid #c0c8ff', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#4361ee', marginBottom: 14 }}>

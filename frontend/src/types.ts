@@ -83,6 +83,8 @@ export interface ExtractedData {
   userReviewed: boolean;
   reviewedAt: string | null;
   userEdits: Record<string, unknown> | null;
+  billToParty?: string | null;
+  shipToParty?: string | null;
   principalCompany?: string | null;
   branchName?: string | null;
   orderType?: string | null;
@@ -129,6 +131,8 @@ export interface ReviewPayload {
   partyNames?: string[];
   tollAmount?: string;
   weightInfo?: string;
+  billToParty?: string;
+  shipToParty?: string;
   driverName?: string;
   driverCellNo?: string;
   source?: string;
@@ -261,6 +265,12 @@ export interface DispatchResult {
   logId: string;
   message?: string;
   error?: string;
+  smtp?: {
+    messageId: string;
+    accepted: string[];
+    rejected: string[];
+    response?: string;
+  };
 }
 
 export interface PaginatedDispatchLogs {

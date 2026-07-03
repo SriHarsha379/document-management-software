@@ -12,6 +12,11 @@ const STATUS_LABELS: Record<DispatchStatus, string> = {
   PENDING: 'Pending', SENT: 'Sent', FAILED: 'Failed',
 };
 
+function getStatusLabel(log: DispatchLog): string {
+  if (log.channel === 'EMAIL' && log.status === 'SENT') return 'SMTP Accepted';
+  return STATUS_LABELS[log.status];
+}
+
 export function DispatchHistory() {
   const [logs, setLogs] = useState<DispatchLog[]>([]);
   const [total, setTotal] = useState(0);
@@ -87,7 +92,7 @@ export function DispatchHistory() {
                       </td>
                       <td style={td}>
                         <span style={{ padding: '2px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700, background: STATUS_COLORS[log.status] + '22', color: STATUS_COLORS[log.status] }}>
-                          {log.status === 'SENT' ? '✅ ' : log.status === 'FAILED' ? '❌ ' : ''}{STATUS_LABELS[log.status]}
+                          {log.status === 'SENT' ? '✅ ' : log.status === 'FAILED' ? '❌ ' : ''}{getStatusLabel(log)}
                         </span>
                       </td>
                       <td style={{ ...td, fontSize: 12, color: '#6b7280', whiteSpace: 'nowrap' }}>
@@ -116,6 +121,11 @@ export function DispatchHistory() {
                             {log.status === 'FAILED' && log.errorMsg && (
                               <div style={{ color: '#b91c1c', fontSize: 12, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 6, padding: '6px 10px', marginBottom: 6 }}>
                                 <strong>Error:</strong> {log.errorMsg}
+                              </div>
+                            )}
+                            {log.channel === 'EMAIL' && log.status === 'SENT' && (
+                              <div style={{ color: '#92400e', fontSize: 12, background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 6, padding: '6px 10px', marginBottom: 6 }}>
+                                <strong>Note:</strong> SMTP Accepted means the configured mail server accepted the message. Final inbox delivery can still depend on spam filtering and the recipient mail server.
                               </div>
                             )}
                             <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>Log ID: <span style={{ fontFamily: 'monospace' }}>{log.id}</span></div>

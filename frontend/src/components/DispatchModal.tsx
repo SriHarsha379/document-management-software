@@ -73,6 +73,7 @@ export function DispatchModal({ bundle, onClose, onSent }: Props) {
   };
 
   const info = CHANNEL_INFO[channel];
+  const isEmailAccepted = channel === 'EMAIL' && result?.success;
 
   // Contacts with a saved phone number
   const phoneContacts = contacts.filter((c) => c.phone);
@@ -191,11 +192,28 @@ export function DispatchModal({ bundle, onClose, onSent }: Props) {
             {result.success ? (
               <>
                 <div style={{ fontSize: 52 }}>✅</div>
-                <p style={{ fontSize: 18, fontWeight: 800, color: '#1a1a2e', margin: '12px 0 6px' }}>Sent successfully!</p>
-                <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>
-                  {docCount} document(s) dispatched to <strong>{recipient}</strong>
-                  {ccRecipient ? ` (CC: ${ccRecipient})` : ''} via {info.label}.
+                <p style={{ fontSize: 18, fontWeight: 800, color: '#1a1a2e', margin: '12px 0 6px' }}>
+                  {isEmailAccepted ? 'Accepted by mail server' : 'Sent successfully!'}
                 </p>
+                <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>
+                  {isEmailAccepted ? (
+                    <>
+                      {docCount} document(s) were handed to the configured SMTP server for <strong>{recipient}</strong>
+                      {ccRecipient ? ` (CC: ${ccRecipient})` : ''}. Final inbox delivery can still depend on spam filters or the recipient mail server.
+                    </>
+                  ) : (
+                    <>
+                      {docCount} document(s) dispatched to <strong>{recipient}</strong>
+                      {ccRecipient ? ` (CC: ${ccRecipient})` : ''} via {info.label}.
+                    </>
+                  )}
+                </p>
+                {result.smtp && (
+                  <div style={{ marginTop: 10, fontSize: 11, color: '#6b7280', lineHeight: 1.5 }}>
+                    {result.smtp.messageId && <div>SMTP Message ID: <span style={{ fontFamily: 'monospace' }}>{result.smtp.messageId}</span></div>}
+                    {result.smtp.response && <div>SMTP Response: <span style={{ fontFamily: 'monospace' }}>{result.smtp.response}</span></div>}
+                  </div>
+                )}
                 <div style={{ marginTop: 10, fontSize: 11, color: '#aaa', fontFamily: 'monospace' }}>Log ID: {result.logId}</div>
               </>
             ) : (

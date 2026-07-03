@@ -57,31 +57,8 @@ function toNum(v: string): number | undefined {
   return isNaN(n) ? undefined : n;
 }
 
-const ALLOWED_SOURCES = ['INTERNAL', 'PORTAL', 'API', 'EMAIL_IMPORT'] as const;
-
-/** Minimum confidence score required to auto-fill Source or Branch without user input. */
+/** Minimum confidence score required to auto-fill Branch without user input. */
 const OCR_CONFIDENCE_THRESHOLD = 0.75;
-
-/**
- * Determines whether a raw OCR string matches one of the allowed LR source values.
- * Returns the matched source value and a confidence score (0–1).
- */
-function computeSourceConfidence(
-  raw: string | null | undefined,
-): { value: string; confidence: number } {
-  if (!raw) return { value: '', confidence: 0 };
-  const norm = raw.trim().toUpperCase();
-  if ((ALLOWED_SOURCES as readonly string[]).includes(norm)) {
-    return { value: norm, confidence: 1.0 };
-  }
-  // Partial match: the OCR value must contain the allowed source string (not the reverse),
-  // and must be at least 3 characters to avoid trivially short false-positive matches.
-  if (norm.length >= 3) {
-    const partial = ALLOWED_SOURCES.find((s) => norm.includes(s));
-    if (partial) return { value: partial, confidence: 0.7 };
-  }
-  return { value: '', confidence: 0 };
-}
 
 /**
  * Matches a branch name string extracted by OCR against the loaded branch list.
@@ -147,12 +124,8 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
   // ── OCR auto-population state ─────────────────────────────────────────────
   /** Fields that could not be confidently extracted from OCR and need user review. */
   const [lowConfidenceFields, setLowConfidenceFields] = useState<Set<keyof FormData>>(new Set());
-  /** Confidence score (0–1) for the auto-detected Source value. */
-  const [sourceConfidence, setSourceConfidence] = useState<number>(ocrDocument ? 0 : 1);
   /** Confidence score (0–1) for the auto-detected Branch value. */
   const [branchConfidence, setBranchConfidence] = useState<number>(ocrDocument ? 0 : 1);
-  /** When true the user has chosen to manually pick Source via dropdown. */
-  const [manualSourceEdit, setManualSourceEdit] = useState(false);
   /** When true the user has chosen to manually pick Branch via dropdown. */
   const [manualBranchEdit, setManualBranchEdit] = useState(false);
   /** Becomes true once OCR extraction has been applied (prevents double-application). */
@@ -170,10 +143,6 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
 
     const ed = ocrDocument.extractedData;
 
-    // ── Source confidence ─────────────────────────────────────────────────
-    const srcResult = computeSourceConfidence(ed.source);
-    setSourceConfidence(srcResult.confidence);
-
     // ── Branch confidence ─────────────────────────────────────────────────
     const branchResult = computeBranchConfidence(ed.branchName, branches);
     setBranchConfidence(branchResult.confidence);
@@ -183,6 +152,7 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
 
     if (ed.lrNo)              extracted.lrNo               = ed.lrNo;
     if (ed.date)              extracted.lrDate              = ed.date;
+    if (ed.source)            extracted.source              = ed.source;
     if (ed.invoiceNo)         extracted.companyInvoiceNo    = ed.invoiceNo;
     if (ed.vehicleNo)         extracted.vehicleNo           = ed.vehicleNo;
     if (ed.principalCompany)  extracted.principalCompany    = ed.principalCompany;
@@ -201,10 +171,7 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
       if (match) extracted.tollCharges = match[1];
     }
 
-    // Auto-fill high-confidence Source / Branch
-    if (srcResult.confidence >= OCR_CONFIDENCE_THRESHOLD && srcResult.value) {
-      extracted.source   = srcResult.value;
-    }
+    // Auto-fill high-confidence Branch
     if (branchResult.confidence >= OCR_CONFIDENCE_THRESHOLD && branchResult.id) {
       extracted.branchId = branchResult.id;
     }
@@ -226,8 +193,7 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
     const lowFields = new Set<keyof FormData>(
       (Object.keys(extracted) as (keyof FormData)[]).filter((f) => !extracted[f]),
     );
-    // Also highlight Source/Branch when their confidence fell below the threshold.
-    if (srcResult.confidence < OCR_CONFIDENCE_THRESHOLD) lowFields.add('source');
+    // Also highlight Branch when its confidence fell below the threshold.
     if (branchResult.confidence < OCR_CONFIDENCE_THRESHOLD) lowFields.add('branchId');
     setLowConfidenceFields(lowFields);
     setOcrApplied(true);
@@ -244,17 +210,13 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
         setError('Branch is required');
         return;
       }
-      if (!form.source) {
-        setError('Source is required');
-        return;
-      }
       const currentBranchId = toStr(lr.branchId).trim();
       const branchIdForUpdate =
         form.branchId !== currentBranchId ? form.branchId : undefined;
       const updated = await lrApi.update(lr.id, {
         branchId:           branchIdForUpdate,
         lrNo:               form.lrNo.trim() || undefined,
-        source:             form.source,
+        source:             form.source.trim() || undefined,
         lrDate:             form.lrDate.trim() || undefined,
         loadingSlipNo:      form.loadingSlipNo.trim() || undefined,
         principalCompany:   form.principalCompany.trim() || undefined,
@@ -335,24 +297,13 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
                 />
               )}
 
-              {/* Source — auto-detected when confidence is high; dropdown otherwise */}
-              {ocrDocument && sourceConfidence >= OCR_CONFIDENCE_THRESHOLD && !manualSourceEdit ? (
-                <AutoDetectedField
-                  label="Source"
-                  value={form.source}
-                  confidence={sourceConfidence}
-                  onEdit={() => setManualSourceEdit(true)}
-                />
-              ) : (
-                <SelectField
-                  label="Source"
-                  value={form.source}
-                  onChange={(v) => set('source', v)}
-                  options={ALLOWED_SOURCES.map((s) => ({ value: s, label: s }))}
-                  placeholder="— select source —"
-                  highlight={lowConfidenceFields.has('source')}
-                />
-              )}
+              {/* Source — plain text input */}
+              <Field
+                label="Source"
+                value={form.source}
+                onChange={(v) => set('source', v)}
+                highlight={lowConfidenceFields.has('source')}
+              />
             </Row>
             <Row>
               <Field label="Principal Company" value={form.principalCompany} onChange={(v) => set('principalCompany', v)} highlight={lowConfidenceFields.has('principalCompany')} />
