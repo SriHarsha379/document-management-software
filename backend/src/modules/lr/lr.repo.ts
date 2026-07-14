@@ -57,6 +57,21 @@ export type LrCreateInput = {
 
 export type LrUpdateInput = Partial<Omit<LrCreateInput, 'companyId' | 'createdBy'> & { status: string }>;
 
+// Whitelist of columns users may sort by (prevents injection via dynamic field names).
+const SORTABLE_FIELDS = new Set([
+  'lrDate', 'lrNo', 'date', 'companyInvoiceNo', 'companyEwayBillNo',
+  'loadingSlipNo', 'billNo', 'shipToParty', 'deliveryDestination',
+  'quantityInBags', 'quantityInMt', 'productName', 'vehicleNo',
+  'tptCode', 'driverName', 'serialNo', 'createdAt',
+]);
+
+export type LrFilters = {
+  principalCompany?: string;
+  branchId?: string;
+  lrDate?: string;
+  invoiceDate?: string;
+};
+
 export const lrRepo = {
   // ── findMany ─────────────────────────────────────────────────────────────────
   async findMany(opts: {
@@ -64,12 +79,21 @@ export const lrRepo = {
     limit?: number;
     offset?: number;
     q?: string;
+    filters?: LrFilters;
+    sortBy?: string;
+    sortDir?: 'asc' | 'desc';
   }) {
-    const where: LrWhereInput = buildPrismaWhere(opts.where, opts.q);
+    const where: LrWhereInput = buildPrismaWhere(opts.where, opts.q, opts.filters);
+
+    const safeSort = opts.sortBy && SORTABLE_FIELDS.has(opts.sortBy) ? opts.sortBy : null;
+    const orderBy: Prisma.LrOrderByWithRelationInput[] = safeSort
+      ? [{ [safeSort]: opts.sortDir ?? 'asc' }]
+      : [{ serialNo: 'asc' }, { createdAt: 'desc' }];
+
     const [rows, total] = await Promise.all([
       db.lr.findMany({
         where,
-        orderBy: [{ serialNo: 'asc' }, { createdAt: 'desc' }],
+        orderBy,
         take: opts.limit ?? 50,
         skip: opts.offset ?? 0,
         include: { company: { select: { id: true, name: true } }, branch: { select: { id: true, name: true } } },
@@ -77,6 +101,21 @@ export const lrRepo = {
       db.lr.count({ where }),
     ]);
     return { rows, total };
+  },
+
+  // ── filterValues — distinct dropdown options for the filter panel ─────────────
+  async filterValues(companyId: string): Promise<{ principalCompanies: string[] }> {
+    const rows = await db.lr.findMany({
+      where: { companyId },
+      select: { principalCompany: true },
+      distinct: ['principalCompany'],
+      orderBy: { principalCompany: 'asc' },
+    });
+    return {
+      principalCompanies: rows
+        .map((r) => r.principalCompany)
+        .filter((v): v is string => v !== null && v.trim() !== ''),
+    };
   },
 
   // ── findFirst — used for single-row access (update/delete guards) ─────────────
@@ -135,7 +174,11 @@ export const lrRepo = {
 
 // ── Internal helper: map ScopeWhere → Prisma WhereInput ───────────────────────
 
-function buildPrismaWhere(scope: ScopeWhere & { id?: string }, q?: string): LrWhereInput {
+function buildPrismaWhere(
+  scope: ScopeWhere & { id?: string },
+  q?: string,
+  filters?: LrFilters,
+): LrWhereInput {
   const where: LrWhereInput = {};
 
   if (scope.id) where.id = scope.id;
@@ -153,6 +196,28 @@ function buildPrismaWhere(scope: ScopeWhere & { id?: string }, q?: string): LrWh
       : { in: scope.source.in };
   }
 
+  // ── Additional filters ────────────────────────────────────────────────────────
+  if (filters?.principalCompany) {
+    where.principalCompany = filters.principalCompany;
+  }
+
+  if (filters?.branchId) {
+    // Narrow only if the requested branch is within the user's allowed scope.
+    const inScope = !scope.branchId || scope.branchId.in.includes(filters.branchId);
+    if (inScope) {
+      where.branchId = filters.branchId;
+    }
+  }
+
+  if (filters?.lrDate) {
+    where.lrDate = filters.lrDate;
+  }
+
+  if (filters?.invoiceDate) {
+    where.companyInvoiceDate = filters.invoiceDate;
+  }
+
+  // ── Global search ─────────────────────────────────────────────────────────────
   if (q) {
     const term = q.trim();
     if (term) {
@@ -167,6 +232,7 @@ function buildPrismaWhere(scope: ScopeWhere & { id?: string }, q?: string): LrWh
         { productName:     { contains: term } },
         { loadingSlipNo:   { contains: term } },
         { companyInvoiceNo:{ contains: term } },
+        { companyEwayBillNo:{ contains: term } },
         { deliveryDestination: { contains: term } },
       ];
     }
