@@ -3,7 +3,7 @@ import rateLimit from 'express-rate-limit';
 import { requireAuth } from '../auth/auth.routes.js';
 import { requirePermission, buildScopeWhere } from '../rbac/rbac.middleware.js';
 import { ALLOWED_SOURCES, ALLOWED_LR_STATUSES } from '../rbac/permissions.js';
-import { lrRepo, type LrCreateInput, type LrUpdateInput } from './lr.repo.js';
+import { lrRepo, type LrCreateInput, type LrUpdateInput, type LrFilters } from './lr.repo.js';
 import { syncLrRecordsFromDocuments } from '../../services/documentService.js';
 import { db } from '../../lib/db.js';
 
@@ -75,6 +75,24 @@ router.get(
   }
 );
 
+// ── GET /api/lrs/filter-values ────────────────────────────────────────────────
+// Returns distinct dropdown option values for the dashboard filter panel.
+
+router.get(
+  '/filter-values',
+  readLimiter,
+  requirePermission('lr.read'),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const user = req.user!;
+      const values = await lrRepo.filterValues(user.companyId);
+      res.json(values);
+    } catch (err) {
+      handleRouteError(err, res, '[lr] GET /lrs/filter-values');
+    }
+  }
+);
+
 // ── POST /api/lrs/sync-from-documents ────────────────────────────────────────
 // Scans all saved LR-type documents and auto-creates LR records from their
 // OCR-extracted data, then re-runs auto-linking for any unlinked documents.
@@ -117,7 +135,17 @@ router.get(
       const offset = parsePaginationInt(req.query.offset, 0,  Infinity);
       const q      = typeof req.query.q === 'string' && req.query.q.trim() ? req.query.q.trim() : undefined;
 
-      const { rows, total } = await lrRepo.findMany({ where, limit, offset, q });
+      const filters: LrFilters = {
+        principalCompany: firstQueryString(req.query.principalCompany) || undefined,
+        branchId:         firstQueryString(req.query.branchId) || undefined,
+        lrDate:           firstQueryString(req.query.lrDate) || undefined,
+        invoiceDate:      firstQueryString(req.query.invoiceDate) || undefined,
+      };
+
+      const sortBy  = firstQueryString(req.query.sortBy) || undefined;
+      const sortDir = firstQueryString(req.query.sortDir) === 'desc' ? 'desc' : 'asc';
+
+      const { rows, total } = await lrRepo.findMany({ where, limit, offset, q, filters, sortBy, sortDir });
       res.json({ data: rows, total, limit, offset });
     } catch (err) {
       handleRouteError(err, res, '[lr] GET /lrs');
@@ -369,4 +397,11 @@ function handleRouteError(err: unknown, res: Response, context: string): void {
       ? err.message
       : 'An unexpected error occurred';
   res.status(500).json({ error: message });
+}
+
+// Extract the first string value from an Express query param (may be string | string[] | object).
+function firstQueryString(value: unknown): string | undefined {
+  if (typeof value === 'string') return value || undefined;
+  if (Array.isArray(value) && typeof value[0] === 'string') return value[0] || undefined;
+  return undefined;
 }

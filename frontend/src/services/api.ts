@@ -170,13 +170,28 @@ import type { Lr, PaginatedLrs, LrSummary } from '../types';
 export type LrCreatePayload = Omit<Lr, 'id' | 'serialNo' | 'createdAt' | 'updatedAt' | 'company' | 'branch'>;
 
 export const lrApi = {
-  list: async (params?: { limit?: number; offset?: number; q?: string }): Promise<PaginatedLrs> => {
+  list: async (params?: {
+    limit?: number;
+    offset?: number;
+    q?: string;
+    principalCompany?: string;
+    branchId?: string;
+    lrDate?: string;
+    invoiceDate?: string;
+    sortBy?: string;
+    sortDir?: 'asc' | 'desc';
+  }): Promise<PaginatedLrs> => {
     const res = await api.get<PaginatedLrs>('/lrs', { params });
     return res.data;
   },
 
   summary: async (): Promise<LrSummary> => {
     const res = await api.get<LrSummary>('/lrs/summary');
+    return res.data;
+  },
+
+  filterValues: async (): Promise<{ principalCompanies: string[] }> => {
+    const res = await api.get<{ principalCompanies: string[] }>('/lrs/filter-values');
     return res.data;
   },
 
