@@ -144,9 +144,6 @@ export function LrDashboard() {
 
   return (
     <div style={{ paddingBottom: 32 }}>
-      {/* ── Stat cards ───────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }} />
-
       {/* ── Pie chart card ───────────────────────────────────────── */}
       <div style={card}>
         <div style={tableHeader}>
