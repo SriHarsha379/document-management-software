@@ -222,17 +222,17 @@ function buildPrismaWhere(
     const term = q.trim();
     if (term) {
       where.OR = [
-        { lrNo:            { contains: term } },
-        { vehicleNo:       { contains: term } },
-        { principalCompany:{ contains: term } },
-        { billToParty:     { contains: term } },
-        { shipToParty:     { contains: term } },
-        { transporterName: { contains: term } },
-        { driverName:      { contains: term } },
-        { productName:     { contains: term } },
-        { loadingSlipNo:   { contains: term } },
-        { companyInvoiceNo:{ contains: term } },
-        { companyEwayBillNo:{ contains: term } },
+        { lrNo:               { contains: term } },
+        { vehicleNo:          { contains: term } },
+        { principalCompany:   { contains: term } },
+        { billToParty:        { contains: term } },
+        { shipToParty:        { contains: term } },
+        { transporterName:    { contains: term } },
+        { driverName:         { contains: term } },
+        { productName:        { contains: term } },
+        { loadingSlipNo:      { contains: term } },
+        { companyInvoiceNo:   { contains: term } },
+        { companyEwayBillNo:  { contains: term } },
         { deliveryDestination: { contains: term } },
       ];
     }

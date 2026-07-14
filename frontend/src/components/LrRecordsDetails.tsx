@@ -73,11 +73,13 @@ const COLUMNS: ColDef[] = [
   { key: 'lrNo',                 label: 'LR Number',             sortField: 'lrNo',                 width: 150, render: (lr) => lr.lrNo },
   { key: 'inDate',               label: 'In Date',               sortField: 'date',                 width: 100, render: (lr) => fmtDate(lr.date) },
   { key: 'companyInvoiceNo',     label: 'Invoice Number',        sortField: 'companyInvoiceNo',     width: 150, render: (lr) => lr.companyInvoiceNo ?? '—' },
+  // NOTE: ewayBillDate, shipApproved, and driverMobile are required by the spec but do not
+  // yet exist in the LR data model. They are shown as '—' until the schema is extended.
   { key: 'ewayBillDate',         label: 'E-Way Bill Date',       sortField: null,                   width: 120, render: () => '—' },
   { key: 'companyEwayBillNo',    label: 'E-Way Bill Number',     sortField: 'companyEwayBillNo',    width: 160, render: (lr) => lr.companyEwayBillNo ?? '—' },
   { key: 'loadingSlipNo',        label: 'Loading Slip Number',   sortField: 'loadingSlipNo',        width: 150, render: (lr) => lr.loadingSlipNo ?? '—' },
   { key: 'billNo',               label: 'Bill Number',           sortField: 'billNo',               width: 120, render: (lr) => lr.billNo ?? '—' },
-  { key: 'shipApproved',         label: 'Ship Approved',         sortField: null,                   width: 110, render: () => '—' },
+  { key: 'shipApproved',         label: 'Ship Approved',         sortField: null,                   width: 110, render: () => '—' }, // not yet in schema
   { key: 'destination',          label: 'Destination',           sortField: 'shipToParty',          width: 160, render: (lr) => lr.shipToParty ?? '—' },
   { key: 'deliveredDestination', label: 'Delivered Destination', sortField: 'deliveryDestination',  width: 170, render: (lr) => lr.deliveryDestination ?? '—' },
   { key: 'quantityInBags',       label: 'Order Quantity (Bags)', sortField: 'quantityInBags',       width: 150, render: (lr) => fmtNum(lr.quantityInBags) },
@@ -86,7 +88,7 @@ const COLUMNS: ColDef[] = [
   { key: 'vehicleNo',            label: 'Vehicle Number',        sortField: 'vehicleNo',            width: 130, render: (lr) => lr.vehicleNo ?? '—' },
   { key: 'tptCode',              label: 'Transport Code',        sortField: 'tptCode',              width: 130, render: (lr) => lr.tptCode ?? '—' },
   { key: 'driverName',           label: 'Driver Name',           sortField: 'driverName',           width: 140, render: (lr) => lr.driverName ?? '—' },
-  { key: 'driverMobile',         label: 'Driver Mobile Number',  sortField: null,                   width: 150, render: () => '—' },
+  { key: 'driverMobile',         label: 'Driver Mobile Number',  sortField: null,                   width: 150, render: () => '—' }, // not yet in schema
 ];
 
 // ── SearchableSelect ──────────────────────────────────────────────────────────
@@ -454,7 +456,7 @@ export function LrRecordsDetails({ refreshTrigger = 0 }: { refreshTrigger?: numb
             />
           </div>
 
-          {/* E-Way Bill Date */}
+          {/* E-Way Bill Date — filter placeholder; ewayBillDate field not yet in schema */}
           <div>
             <div style={sFilterLabel}>E-Way Bill Date</div>
             <input
@@ -463,7 +465,7 @@ export function LrRecordsDetails({ refreshTrigger = 0 }: { refreshTrigger?: numb
               onChange={(e) => setPendingFilters((f) => ({ ...f, ewayBillDate: e.target.value }))}
               style={{ ...sDateInput, opacity: 0.5, cursor: 'not-allowed' }}
               disabled
-              title="E-Way Bill Date filter coming soon"
+              title="E-Way Bill Date filtering is not yet available (field not in data model)"
             />
           </div>
         </div>
