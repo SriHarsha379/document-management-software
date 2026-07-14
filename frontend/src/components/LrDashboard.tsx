@@ -18,41 +18,6 @@ function Skeleton({ width, height = 14 }: { width?: string | number; height?: nu
   );
 }
 
-// ── Stat Card ─────────────────────────────────────────────────────────────────
-function StatCard({ icon, label, value, color, loading }: {
-  icon: string; label: string; value: number | null; color: string; loading?: boolean;
-}) {
-  return (
-    <div style={{
-      background: '#fff', borderRadius: 12, padding: '18px 20px',
-      border: '1px solid #e0e0f0',
-      boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-      display: 'flex', alignItems: 'center', gap: 16,
-      transition: 'box-shadow 0.15s',
-    }}
-      onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = '0 4px 16px rgba(0,0,0,0.10)'; }}
-      onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = '0 1px 4px rgba(0,0,0,0.06)'; }}
-    >
-      <div style={{
-        width: 48, height: 48, borderRadius: 12,
-        background: color + '18', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 22, flexShrink: 0,
-      }}>
-        {icon}
-      </div>
-      <div>
-        <div style={{ fontSize: 12, color: '#6b7280', fontWeight: 500, marginBottom: 4 }}>{label}</div>
-        {loading
-          ? <Skeleton width={60} height={20} />
-          : <div style={{ fontSize: 24, fontWeight: 800, color: '#1a1a2e', lineHeight: 1 }}>
-              {value ?? 0}
-            </div>
-        }
-      </div>
-    </div>
-  );
-}
-
 // ── Tiny SVG Pie Chart ────────────────────────────────────────────────────────
 function polarToXY(cx: number, cy: number, r: number, fraction: number) {
   const angle = fraction * 2 * Math.PI - Math.PI / 2;
@@ -188,12 +153,7 @@ export function LrDashboard() {
   return (
     <div style={{ paddingBottom: 32 }}>
       {/* ── Stat cards ───────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 24 }}>
-        <StatCard icon="📦" label="LR Records" value={summary?.lrCount ?? null} color="#4361ee" loading={!summary && loading} />
-        <StatCard icon="🧾" label="Invoices" value={summary?.invoiceCount ?? null} color="#06b6d4" loading={!summary && loading} />
-        <StatCard icon="🚛" label="Driver Uploads" value={driverUploadsTotal} color="#f59e0b" loading={loading} />
-        <StatCard icon="📊" label="Total LR Records" value={total} color="#10b981" loading={loading} />
-      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 24 }} />
 
       {/* ── Pie chart card ───────────────────────────────────────── */}
       <div style={card}>
