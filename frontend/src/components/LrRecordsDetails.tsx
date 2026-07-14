@@ -63,20 +63,20 @@ interface ColDef {
   placeholder?: boolean;
 }
 
-function fmtDate(v: string | null | undefined): string {
+function formatDate(v: string | null | undefined): string {
   if (!v) return '—';
   const m = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
   return m ? `${m[3]}-${m[2]}-${m[1]}` : v;
 }
 
-function fmtNum(v: number | null | undefined): string {
+function formatNumber(v: number | null | undefined): string {
   return v == null ? '—' : String(v);
 }
 
 const COLUMNS: ColDef[] = [
-  { key: 'lrDate',               label: 'LR Date',               sortField: 'lrDate',               width: 100, render: (lr) => fmtDate(lr.lrDate) },
+  { key: 'lrDate',               label: 'LR Date',               sortField: 'lrDate',               width: 100, render: (lr) => formatDate(lr.lrDate) },
   { key: 'lrNo',                 label: 'LR Number',             sortField: 'lrNo',                 width: 150, render: (lr) => lr.lrNo },
-  { key: 'inDate',               label: 'In Date',               sortField: 'date',                 width: 100, render: (lr) => fmtDate(lr.date) },
+  { key: 'inDate',               label: 'In Date',               sortField: 'date',                 width: 100, render: (lr) => formatDate(lr.date) },
   { key: 'companyInvoiceNo',     label: 'Invoice Number',        sortField: 'companyInvoiceNo',     width: 150, render: (lr) => lr.companyInvoiceNo ?? '—' },
   // NOTE: ewayBillDate, shipApproved, and driverMobile are required by the spec but do not
   // yet exist in the LR data model. They are shown as PLACEHOLDER until the schema is extended.
@@ -87,8 +87,8 @@ const COLUMNS: ColDef[] = [
   { key: 'shipApproved',         label: 'Ship Approved',         sortField: null,                   width: 110, placeholder: true, render: () => PLACEHOLDER }, // not yet in schema
   { key: 'destination',          label: 'Destination',           sortField: 'shipToParty',          width: 160, render: (lr) => lr.shipToParty ?? '—' },
   { key: 'deliveredDestination', label: 'Delivered Destination', sortField: 'deliveryDestination',  width: 170, render: (lr) => lr.deliveryDestination ?? '—' },
-  { key: 'quantityInBags',       label: 'Order Quantity (Bags)', sortField: 'quantityInBags',       width: 150, render: (lr) => fmtNum(lr.quantityInBags) },
-  { key: 'quantityInMt',         label: 'Quantity (MT)',         sortField: 'quantityInMt',         width: 120, render: (lr) => fmtNum(lr.quantityInMt) },
+  { key: 'quantityInBags',       label: 'Order Quantity (Bags)', sortField: 'quantityInBags',       width: 150, render: (lr) => formatNumber(lr.quantityInBags) },
+  { key: 'quantityInMt',         label: 'Quantity (MT)',         sortField: 'quantityInMt',         width: 120, render: (lr) => formatNumber(lr.quantityInMt) },
   { key: 'productName',          label: 'Product',               sortField: 'productName',          width: 140, render: (lr) => lr.productName ?? '—' },
   { key: 'vehicleNo',            label: 'Vehicle Number',        sortField: 'vehicleNo',            width: 130, render: (lr) => lr.vehicleNo ?? '—' },
   { key: 'tptCode',              label: 'Transport Code',        sortField: 'tptCode',              width: 130, render: (lr) => lr.tptCode ?? '—' },

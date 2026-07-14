@@ -206,7 +206,7 @@ function buildPrismaWhere(
 
   if (filters?.branchId) {
     // Narrow only if the requested branch is within the user's allowed scope.
-    const inScope = !scope.branchId || scope.branchId.in.includes(filters.branchId);
+    const inScope = !scope.branchId || (Array.isArray(scope.branchId.in) && scope.branchId.in.includes(filters.branchId));
     if (inScope) {
       where.branchId = filters.branchId;
     } else {
