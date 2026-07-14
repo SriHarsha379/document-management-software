@@ -8,6 +8,9 @@ import { LrEditModal } from './LrEditModal';
 
 const PAGE_SIZE = 25;
 
+/** Value displayed in cells and filters for fields not yet in the data model. */
+const PLACEHOLDER = '—';
+
 type SortDir = 'asc' | 'desc';
 
 interface Filters {
@@ -56,6 +59,8 @@ interface ColDef {
   sortField: string | null;
   width: number;
   render: (lr: Lr) => React.ReactNode;
+  /** True for columns whose backing field is not yet in the data model. */
+  placeholder?: boolean;
 }
 
 function fmtDate(v: string | null | undefined): string {
@@ -74,12 +79,12 @@ const COLUMNS: ColDef[] = [
   { key: 'inDate',               label: 'In Date',               sortField: 'date',                 width: 100, render: (lr) => fmtDate(lr.date) },
   { key: 'companyInvoiceNo',     label: 'Invoice Number',        sortField: 'companyInvoiceNo',     width: 150, render: (lr) => lr.companyInvoiceNo ?? '—' },
   // NOTE: ewayBillDate, shipApproved, and driverMobile are required by the spec but do not
-  // yet exist in the LR data model. They are shown as '—' until the schema is extended.
-  { key: 'ewayBillDate',         label: 'E-Way Bill Date',       sortField: null,                   width: 120, render: () => '—' },
+  // yet exist in the LR data model. They are shown as PLACEHOLDER until the schema is extended.
+  { key: 'ewayBillDate',         label: 'E-Way Bill Date',       sortField: null,                   width: 120, placeholder: true, render: () => PLACEHOLDER },
   { key: 'companyEwayBillNo',    label: 'E-Way Bill Number',     sortField: 'companyEwayBillNo',    width: 160, render: (lr) => lr.companyEwayBillNo ?? '—' },
   { key: 'loadingSlipNo',        label: 'Loading Slip Number',   sortField: 'loadingSlipNo',        width: 150, render: (lr) => lr.loadingSlipNo ?? '—' },
   { key: 'billNo',               label: 'Bill Number',           sortField: 'billNo',               width: 120, render: (lr) => lr.billNo ?? '—' },
-  { key: 'shipApproved',         label: 'Ship Approved',         sortField: null,                   width: 110, render: () => '—' }, // not yet in schema
+  { key: 'shipApproved',         label: 'Ship Approved',         sortField: null,                   width: 110, placeholder: true, render: () => PLACEHOLDER }, // not yet in schema
   { key: 'destination',          label: 'Destination',           sortField: 'shipToParty',          width: 160, render: (lr) => lr.shipToParty ?? '—' },
   { key: 'deliveredDestination', label: 'Delivered Destination', sortField: 'deliveryDestination',  width: 170, render: (lr) => lr.deliveryDestination ?? '—' },
   { key: 'quantityInBags',       label: 'Order Quantity (Bags)', sortField: 'quantityInBags',       width: 150, render: (lr) => fmtNum(lr.quantityInBags) },
@@ -88,7 +93,7 @@ const COLUMNS: ColDef[] = [
   { key: 'vehicleNo',            label: 'Vehicle Number',        sortField: 'vehicleNo',            width: 130, render: (lr) => lr.vehicleNo ?? '—' },
   { key: 'tptCode',              label: 'Transport Code',        sortField: 'tptCode',              width: 130, render: (lr) => lr.tptCode ?? '—' },
   { key: 'driverName',           label: 'Driver Name',           sortField: 'driverName',           width: 140, render: (lr) => lr.driverName ?? '—' },
-  { key: 'driverMobile',         label: 'Driver Mobile Number',  sortField: null,                   width: 150, render: () => '—' }, // not yet in schema
+  { key: 'driverMobile',         label: 'Driver Mobile Number',  sortField: null,                   width: 150, placeholder: true, render: () => PLACEHOLDER }, // not yet in schema
 ];
 
 // ── SearchableSelect ──────────────────────────────────────────────────────────
@@ -573,7 +578,7 @@ export function LrRecordsDetails({ refreshTrigger = 0 }: { refreshTrigger?: numb
               >
                 {COLUMNS.map((col) => {
                   const rendered = col.render(lr);
-                  const tipVal = typeof rendered === 'string' && rendered !== '—' ? rendered : undefined;
+                  const tipVal = typeof rendered === 'string' && rendered !== PLACEHOLDER ? rendered : undefined;
                   return (
                     <td key={col.key} style={sTdBase} title={tipVal}>
                       <span style={{

@@ -57,7 +57,10 @@ export type LrCreateInput = {
 
 export type LrUpdateInput = Partial<Omit<LrCreateInput, 'companyId' | 'createdBy'> & { status: string }>;
 
-// Whitelist of columns users may sort by (prevents injection via dynamic field names).
+// Whitelist of columns users may sort by.
+// SECURITY: This set prevents arbitrary field injection into orderBy clauses.
+// Keep in sync with the sortField values in LrRecordsDetails COLUMNS and any
+// new sortable fields added to the Lr schema.
 const SORTABLE_FIELDS = new Set([
   'lrDate', 'lrNo', 'date', 'companyInvoiceNo', 'companyEwayBillNo',
   'loadingSlipNo', 'billNo', 'shipToParty', 'deliveryDestination',
@@ -206,6 +209,10 @@ function buildPrismaWhere(
     const inScope = !scope.branchId || scope.branchId.in.includes(filters.branchId);
     if (inScope) {
       where.branchId = filters.branchId;
+    } else {
+      // The requested branch is outside the caller's scope; log a warning and
+      // leave the existing scope restriction in place so no cross-branch data leaks.
+      console.warn(`[lr.repo] branchId filter "${filters.branchId}" is outside caller scope — filter ignored`);
     }
   }
 
