@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import type { Lr, LrSummary } from '../types';
-import { lrApi, adminDriverAccessApi } from '../services/api';
-import type { DriverUploadDoc } from '../services/api';
+import { lrApi } from '../services/api';
 import { useCurrentUser, PERM } from '../contexts/UserContext';
 import { LrTable } from './LrTable';
 
@@ -71,8 +70,6 @@ export function LrDashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<LrSummary | null>(null);
-  const [driverUploads, setDriverUploads] = useState<DriverUploadDoc[]>([]);
-  const [driverUploadsTotal, setDriverUploadsTotal] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<{ created: number; linked: number } | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -84,18 +81,13 @@ export function LrDashboard() {
     try {
       setLoading(true); setError(null);
       const offset = (page - 1) * LIMIT;
-      const [lrResult, summaryResult, driverResult] = await Promise.allSettled([
+      const [lrResult, summaryResult] = await Promise.allSettled([
         lrApi.list({ limit: LIMIT, offset }),
         lrApi.summary(),
-        adminDriverAccessApi.listAllUploads({ limit: 10 }),
       ]);
       if (lrResult.status === 'fulfilled') { setLrs(lrResult.value.data); setTotal(lrResult.value.total); }
       else setError('Failed to load LR records');
       if (summaryResult.status === 'fulfilled') setSummary(summaryResult.value);
-      if (driverResult.status === 'fulfilled') {
-        setDriverUploads(driverResult.value.uploads);
-        setDriverUploadsTotal(driverResult.value.total);
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard');
     } finally { setLoading(false); }
@@ -203,11 +195,6 @@ export function LrDashboard() {
           <div style={emptyState}>
             <div style={{ fontSize: 40, marginBottom: 8 }}>📭</div>
             <p style={{ margin: 0, color: '#6b7280' }}>No LR records found.</p>
-            {driverUploadsTotal > 0 && canCreate && (
-              <p style={{ margin: '10px 0 0', fontSize: 13, color: '#92400e', background: '#fef3c7', borderRadius: 8, padding: '8px 14px', display: 'inline-block' }}>
-                ⚠️ {driverUploadsTotal} driver upload{driverUploadsTotal !== 1 ? 's' : ''} detected. Click <strong>Sync from Uploads</strong> above to create LR records from uploaded documents.
-              </p>
-            )}
           </div>
         )}
 
@@ -227,70 +214,8 @@ export function LrDashboard() {
         )}
       </div>
 
-      {/* ── Driver Uploads card ──────────────────────────────────── */}
-      <div style={card}>
-        <div style={tableHeader}>
-          <span style={{ fontSize: 15, fontWeight: 700, color: '#1a1a2e' }}>🚛 Driver Uploads ({driverUploadsTotal})</span>
-          <button style={btnRefresh} onClick={() => void fetchData()} disabled={loading}>🔄 Refresh</button>
-        </div>
-
-        {driverUploads.length === 0 && !loading && (
-          <div style={emptyState}>
-            <div style={{ fontSize: 36, marginBottom: 8 }}>📭</div>
-            <p style={{ margin: 0, color: '#6b7280' }}>No driver uploads yet.</p>
-          </div>
-        )}
-
-        {driverUploads.length > 0 && (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr>
-                  {['Doc Type','Vehicle No','Date','Status','Driver Phone','Uploaded At'].map((h) => (
-                    <th key={h} style={driverTh}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {driverUploads.map((u) => (
-                  <tr key={u.id} style={{ borderBottom: '1px solid #f0f0f8' }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = '#fafafe'; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = ''; }}
-                  >
-                    <td style={driverCell}>{docTypeLabel(u.docType)}</td>
-                    <td style={driverCell}>{u.vehicleNumber ?? '—'}</td>
-                    <td style={driverCell}>{u.documentDate ?? '—'}</td>
-                    <td style={driverCell}><span style={statusStyle(u.status)}>{statusLabel(u.status)}</span></td>
-                    <td style={driverCell}>{u.driverPhone ?? '—'}</td>
-                    <td style={driverCell}>{new Date(u.uploadedAt).toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
     </div>
   );
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function docTypeLabel(t: string) {
-  if (t === 'LR') return '📄 LR';
-  if (t === 'TOLL') return '🛣️ Toll';
-  if (t === 'WEIGHMENT_SLIP') return '⚖️ Weighment';
-  return t;
-}
-function statusLabel(st: string) {
-  if (st === 'PROCESSED') return 'Linked';
-  if (st === 'UNLINKED') return 'Unlinked';
-  return 'Processing…';
-}
-function statusStyle(status: string): React.CSSProperties {
-  const base: React.CSSProperties = { padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700 };
-  if (status === 'PROCESSED') return { ...base, background: '#d1fae5', color: '#065f46' };
-  if (status === 'UNLINKED') return { ...base, background: '#fee2e2', color: '#991b1b' };
-  return { ...base, background: '#fef9c3', color: '#854d0e' };
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -329,12 +254,4 @@ const btnSyncOff: React.CSSProperties = {
 const syncInfo: React.CSSProperties = {
   fontSize: 13, color: '#065f46', background: '#d1fae5',
   borderRadius: 7, padding: '8px 12px', marginBottom: 12,
-};
-const driverTh: React.CSSProperties = {
-  padding: '9px 10px', background: '#f5f6ff', color: '#555',
-  fontWeight: 700, fontSize: 11, textAlign: 'left', borderBottom: '1px solid #e0e0f0',
-  whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '0.04em',
-};
-const driverCell: React.CSSProperties = {
-  padding: '8px 10px', color: '#333', fontSize: 12, verticalAlign: 'middle', whiteSpace: 'nowrap',
 };
