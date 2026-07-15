@@ -205,13 +205,12 @@ export const lrRepo = {
 
   // ── summary — count of acknowledged LRs and Invoices for dashboard cards ─────
   async summary(companyId: string): Promise<{ lrCount: number; invoiceCount: number; acknowledgedLrCount: number; acknowledgedInvoiceCount: number }> {
-    const [lrCount, invoiceCount, acknowledgedLrCount, acknowledgedInvoiceCount] = await Promise.all([
+    const [lrCount, acknowledgedLrCount, acknowledgedInvoiceCount] = await Promise.all([
       db.lr.count({ where: { companyId } }),
-      db.document.count({ where: { type: 'INVOICE' } }),
       db.document.count({ where: { type: 'LR' } }),
       db.document.count({ where: { type: 'INVOICE' } }),
     ]);
-    return { lrCount, invoiceCount, acknowledgedLrCount, acknowledgedInvoiceCount };
+    return { lrCount, invoiceCount: acknowledgedInvoiceCount, acknowledgedLrCount, acknowledgedInvoiceCount };
   },
 
   // ── create ───────────────────────────────────────────────────────────────────
