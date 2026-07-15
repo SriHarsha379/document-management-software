@@ -107,12 +107,24 @@ export interface ExtractedData {
   shipToParty?: string | null;
   principalCompany?: string | null;
   branchName?: string | null;
+  loadingSlipNo?: string | null;
+  companyInvoiceNo?: string | null;
+  companyInvoiceDate?: string | null;
+  companyEwayBillNo?: string | null;
+  ewayBillDate?: string | null;
+  approvedDestination?: string | null;
+  deliveryDestination?: string | null;
+  orderNo?: string | null;
+  productName?: string | null;
+  transporterName?: string | null;
   orderType?: string | null;
   tptCode?: string | null;
   quantityInMt?: number | null;
   quantityInBags?: number | null;
   driverName?: string | null;
   driverCellNo?: string | null;
+  workingCenter?: string | null;
+  depotPlantCode?: string | null;
   source?: string | null;
 }
 
@@ -157,8 +169,26 @@ export interface ReviewPayload {
   weightInfo?: string;
   billToParty?: string;
   shipToParty?: string;
+  principalCompany?: string;
+  branchName?: string;
+  loadingSlipNo?: string;
+  companyInvoiceNo?: string;
+  companyInvoiceDate?: string;
+  companyEwayBillNo?: string;
+  ewayBillDate?: string;
+  approvedDestination?: string;
+  deliveryDestination?: string;
+  orderNo?: string;
+  productName?: string;
+  transporterName?: string;
+  orderType?: string;
+  tptCode?: string;
+  quantityInMt?: number;
+  quantityInBags?: number;
   driverName?: string;
   driverCellNo?: string;
+  workingCenter?: string;
+  depotPlantCode?: string;
   source?: string;
   documentType?: DocumentType;
 }

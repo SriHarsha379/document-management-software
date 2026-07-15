@@ -300,7 +300,10 @@ model ExtractedData {
   companyInvoiceNo    String?
   companyInvoiceDate  String?
   companyEwayBillNo   String?
+  ewayBillDate        String?
+  approvedDestination String?
   deliveryDestination String?
+  orderNo             String?
   productName         String?
   transporterName     String?
   orderType           String?
@@ -309,6 +312,8 @@ model ExtractedData {
   quantityInBags      Float?
   driverName          String?
   driverCellNo        String?
+  workingCenter       String?
+  depotPlantCode      String?
   source              String?
 
   // OCR metadata

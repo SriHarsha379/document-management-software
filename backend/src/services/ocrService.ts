@@ -48,7 +48,10 @@ function parseExtractedFields(parsed: Record<string, unknown>, documentType: Doc
     companyInvoiceNo: typeof parsed.companyInvoiceNo === 'string' ? parsed.companyInvoiceNo : undefined,
     companyInvoiceDate: typeof parsed.companyInvoiceDate === 'string' ? parsed.companyInvoiceDate : undefined,
     companyEwayBillNo: typeof parsed.companyEwayBillNo === 'string' ? parsed.companyEwayBillNo : undefined,
+    ewayBillDate: typeof parsed.ewayBillDate === 'string' ? parsed.ewayBillDate : undefined,
+    approvedDestination: typeof parsed.approvedDestination === 'string' ? parsed.approvedDestination : undefined,
     deliveryDestination: typeof parsed.deliveryDestination === 'string' ? parsed.deliveryDestination : undefined,
+    orderNo: typeof parsed.orderNo === 'string' ? parsed.orderNo : undefined,
     productName: typeof parsed.productName === 'string' ? parsed.productName : undefined,
     transporterName: typeof parsed.transporterName === 'string' ? parsed.transporterName : undefined,
     orderType: typeof parsed.orderType === 'string' ? parsed.orderType : undefined,
@@ -57,6 +60,8 @@ function parseExtractedFields(parsed: Record<string, unknown>, documentType: Doc
     quantityInBags: typeof parsed.quantityInBags === 'number' ? parsed.quantityInBags : undefined,
     driverName: typeof parsed.driverName === 'string' ? parsed.driverName : undefined,
     driverCellNo: typeof parsed.driverCellNo === 'string' ? parsed.driverCellNo : undefined,
+    workingCenter: typeof parsed.workingCenter === 'string' ? parsed.workingCenter : undefined,
+    depotPlantCode: typeof parsed.depotPlantCode === 'string' ? parsed.depotPlantCode : undefined,
     source: typeof parsed.source === 'string' ? parsed.source : undefined,
     documentType,
     confidence: typeof parsed.confidence === 'number' ? parsed.confidence : defaultConfidence,
@@ -102,24 +107,30 @@ STEP 2 — Extract fields according to the identified document type using the ru
 - lrNo: LR / consignment number — look for labels "LR No", "LR No.", "L.R. No.", "LR Number", "Consignment No."
 - loadingSlipNo: Loading slip number — look for labels "LS No", "L.S. No.", "Loading Slip No.", "LS No."
 - invoiceNo: Supplier invoice number on the LR — look for "Invoice No", "Invoice No."
+- companyInvoiceDate: Invoice date / "Inv Date" / "In Date" in YYYY-MM-DD (convert DD/MM/YYYY or DD-MM-YYYY)
 - companyEwayBillNo: E-Way Bill number — look for "E-Way Bill No", "E-Way Bill No.", "EWB No."
+- ewayBillDate: E-Way Bill date in YYYY-MM-DD (convert DD/MM/YYYY or DD-MM-YYYY)
 - vehicleNo: Truck/vehicle registration number — look for "Truck No.", "Vehicle No.", "Lorry No.", "Truck No"
 - date: LR date or document date in YYYY-MM-DD (convert DD/MM/YYYY or DD-MM-YYYY)
 - billToParty: The "BILL TO PARTY" company name
 - shipToParty: The "SHIP TO PARTY" company name (delivery address party)
+- approvedDestination: Approved destination / sanctioned destination — look for labels like "Approved Destination"
+- deliveryDestination: Delivered destination / destination city / "To Destination" city or location
 - branchName: The locality/area from the sender's header address block, normalized to UPPERCASE (e.g. "DRONAGIRI"). Look for the locality token before the city/district in the "From" address. Also check "From Destination" label.
 - source: The source city/location from the sender's header address block, normalized to UPPERCASE (e.g. "NAVI MUMBAI"). Prefer the city token immediately following locality in the same address line.
+- workingCenter: Working center / working centre name
+- depotPlantCode: Depot code / plant code / depot-plant code
 - productName: Product or commodity being transported — look for "PRODUCT", "Goods Description", "Item"
 - quantity: Quantity with unit — look for "QUANTITY IN MT", "Qty", e.g. "35.38 MT" or "500 Bags"
 - quantityInMt: Numeric quantity in metric tonnes — extract only the number from quantity, e.g. 35.38 (float). Return null if unit is not MT/MTS/tonnes.
 - quantityInBags: Numeric quantity in bags — extract only the number, e.g. 500 (float). Return null if not in bags.
+- orderNo: Order number — look for "Order No", "Order Number", "SO No"
 - orderType: Order type — look for "ORDER TYPE", "Order Type", e.g. "BULK ORDER", "BAG ORDER"
 - tptCode: Transport/TPT code — look for "T.P.T Code", "TPT Code", "TPT"
 - driverName: Driver's name — look for "Driver Name", "Driver Name :", "Drfver Name" (OCR variant)
 - driverCellNo: Driver's mobile/cell number — look for "Driver Cell No", "Driver Cell No.", "Driver Mobile", "Cell No"
 - partyNames: Array [consignor/sender name, consignee/receiver name] — look for "From", "Consignor", "Sender" for index 0; "To", "Consignee", "Receiver" for index 1
 - transporterName: The transport company name (usually printed as the issuing company on the document header)
-- deliveryDestination: "To Destination" city or location
 
 === FOR WEIGHMENT (Weighbridge Slip) ===
 Extract ONLY the two fields below. Set every other field to null.
@@ -129,6 +140,7 @@ Extract ONLY the two fields below. Set every other field to null.
 === FOR INVOICE (Tax Invoice / GST Invoice) ===
 - invoiceNo: Invoice number — look for "Invoice No", "Invoice No."
 - date: Invoice date in YYYY-MM-DD (convert DD/MM/YYYY)
+- companyInvoiceDate: Invoice date / "Inv Date" / "In Date" in YYYY-MM-DD (convert DD/MM/YYYY or DD-MM-YYYY)
 - vehicleNo: Vehicle number — look for "Vehicle No", "Veh No"
 - lrNo: LR number referenced in the invoice — look for "LR No.", "LR No"
 - billToParty: "BILL TO" party name
@@ -140,6 +152,7 @@ Extract ONLY the two fields below. Set every other field to null.
 - quantity: Quantity from line items with unit
 - quantityInMt: Numeric quantity in metric tonnes from line items (float), e.g. 35.38
 - companyEwayBillNo: E-Way Bill number — look for "E-Way Bill No", "E-Way bill No"
+- ewayBillDate: E-Way Bill date in YYYY-MM-DD (convert DD/MM/YYYY or DD-MM-YYYY)
 
 === FOR TOLL ===
 - vehicleNo: Vehicle registration number
@@ -168,13 +181,18 @@ Always respond with a valid JSON object with EXACTLY these fields:
   "companyInvoiceNo": "<company's own invoice number or null>",
   "companyInvoiceDate": "<company invoice date in YYYY-MM-DD format or null>",
   "companyEwayBillNo": "<E-way Bill number or null>",
+  "ewayBillDate": "<E-way Bill date in YYYY-MM-DD format or null>",
+  "approvedDestination": "<approved destination or null>",
   "deliveryDestination": "<delivery destination city/location or null>",
+  "orderNo": "<order number or null>",
   "productName": "<name of the product/commodity being transported or null>",
   "transporterName": "<name of the transport company/transporter or null>",
   "orderType": "<order type e.g. 'BULK ORDER', 'BAG ORDER' or null>",
   "tptCode": "<T.P.T code / TPT code or null>",
   "driverName": "<driver's name from 'Driver Name' label or null>",
   "driverCellNo": "<driver's cell/mobile number from 'Driver Cell No' label or null>",
+  "workingCenter": "<working center / working centre name or null>",
+  "depotPlantCode": "<depot or plant code or null>",
   "source": "<source location from 'Source:' label in invoice header or null>",
   "rawText": "<full text extracted from document>"
 }
