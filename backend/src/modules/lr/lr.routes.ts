@@ -140,6 +140,14 @@ router.get(
         branchId:         firstQueryString(req.query.branchId) || undefined,
         lrDate:           firstQueryString(req.query.lrDate) || undefined,
         invoiceDate:      firstQueryString(req.query.invoiceDate) || undefined,
+        invoiceNo:        firstQueryString(req.query.invoiceNo) || undefined,
+        lrNo:             firstQueryString(req.query.lrNo) || undefined,
+        vehicleNo:        firstQueryString(req.query.vehicleNo) || undefined,
+        driverName:       firstQueryString(req.query.driverName) || undefined,
+        productName:      firstQueryString(req.query.productName) || undefined,
+        tptCode:          firstQueryString(req.query.tptCode) || undefined,
+        workingCenter:    firstQueryString(req.query.workingCenter) || undefined,
+        depotPlantCode:   firstQueryString(req.query.depotPlantCode) || undefined,
       };
 
       const sortBy  = firstQueryString(req.query.sortBy) || undefined;
@@ -224,10 +232,17 @@ router.post(
         tptCode:            body.tptCode?.trim(),
         transporterName:    body.transporterName?.trim(),
         driverName:         body.driverName?.trim(),
+        driverCellNo:       body.driverCellNo?.trim(),
         driverBillNo:       body.driverBillNo?.trim(),
         billDate:           body.billDate?.trim(),
         billNo:             body.billNo?.trim(),
         billAmount:         toFloat(body.billAmount),
+        // Additional logistics fields
+        ewayBillDate:         body.ewayBillDate?.trim(),
+        approvedDestination:  body.approvedDestination?.trim(),
+        orderNo:              body.orderNo?.trim(),
+        workingCenter:        body.workingCenter?.trim(),
+        depotPlantCode:       body.depotPlantCode?.trim(),
       });
 
       res.status(201).json({ data: lr });
@@ -326,10 +341,17 @@ router.patch(
         tptCode:            body.tptCode?.trim(),
         transporterName:    body.transporterName?.trim(),
         driverName:         body.driverName?.trim(),
+        driverCellNo:       body.driverCellNo?.trim(),
         driverBillNo:       body.driverBillNo?.trim(),
         billDate:           body.billDate?.trim(),
         billNo:             body.billNo?.trim(),
         billAmount:         toFloat(body.billAmount),
+        // Additional logistics fields
+        ewayBillDate:         body.ewayBillDate?.trim(),
+        approvedDestination:  body.approvedDestination?.trim(),
+        orderNo:              body.orderNo?.trim(),
+        workingCenter:        body.workingCenter?.trim(),
+        depotPlantCode:       body.depotPlantCode?.trim(),
       };
 
       const updated = await lrRepo.update(lr.id, updateData);

@@ -22,13 +22,18 @@ type FormData = {
   companyInvoiceDate: string;
   companyInvoiceNo: string;
   companyEwayBillNo: string;
+  ewayBillDate: string;
   billToParty: string;
   shipToParty: string;
+  approvedDestination: string;
   deliveryDestination: string;
   tpt: string;
   orderType: string;
+  orderNo: string;
   productName: string;
   vehicleNo: string;
+  workingCenter: string;
+  depotPlantCode: string;
   quantityInBags: string;
   quantityInMt: string;
   tollCharges: string;
@@ -44,6 +49,7 @@ type FormData = {
   tptCode: string;
   transporterName: string;
   driverName: string;
+  driverCellNo: string;
 };
 
 function toStr(v: string | number | null | undefined): string {
@@ -93,13 +99,18 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
     companyInvoiceDate: toStr(lr.companyInvoiceDate),
     companyInvoiceNo:   toStr(lr.companyInvoiceNo),
     companyEwayBillNo:  toStr(lr.companyEwayBillNo),
+    ewayBillDate:       toStr(lr.ewayBillDate),
     billToParty:        toStr(lr.billToParty),
     shipToParty:        toStr(lr.shipToParty),
+    approvedDestination: toStr(lr.approvedDestination),
     deliveryDestination: toStr(lr.deliveryDestination),
     tpt:                toStr(lr.tpt),
     orderType:          toStr(lr.orderType),
+    orderNo:            toStr(lr.orderNo),
     productName:        toStr(lr.productName),
     vehicleNo:          toStr(lr.vehicleNo),
+    workingCenter:      toStr(lr.workingCenter),
+    depotPlantCode:     toStr(lr.depotPlantCode),
     quantityInBags:     toStr(lr.quantityInBags),
     quantityInMt:       toStr(lr.quantityInMt),
     tollCharges:        toStr(lr.tollCharges),
@@ -115,6 +126,7 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
     tptCode:            toStr(lr.tptCode),
     transporterName:    toStr(lr.transporterName),
     driverName:         toStr(lr.driverName),
+    driverCellNo:       toStr(lr.driverCellNo),
   });
 
   const [saving, setSaving] = useState(false);
@@ -223,13 +235,18 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
         companyInvoiceDate: form.companyInvoiceDate.trim() || undefined,
         companyInvoiceNo:   form.companyInvoiceNo.trim() || undefined,
         companyEwayBillNo:  form.companyEwayBillNo.trim() || undefined,
+        ewayBillDate:       form.ewayBillDate.trim() || undefined,
         billToParty:        form.billToParty.trim() || undefined,
         shipToParty:        form.shipToParty.trim() || undefined,
+        approvedDestination: form.approvedDestination.trim() || undefined,
         deliveryDestination: form.deliveryDestination.trim() || undefined,
         tpt:                form.tpt.trim() || undefined,
         orderType:          form.orderType.trim() || undefined,
+        orderNo:            form.orderNo.trim() || undefined,
         productName:        form.productName.trim() || undefined,
         vehicleNo:          form.vehicleNo.trim() || undefined,
+        workingCenter:      form.workingCenter.trim() || undefined,
+        depotPlantCode:     form.depotPlantCode.trim() || undefined,
         quantityInBags:     toNum(form.quantityInBags),
         quantityInMt:       toNum(form.quantityInMt),
         tollCharges:        toNum(form.tollCharges),
@@ -245,6 +262,7 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
         tptCode:            form.tptCode.trim() || undefined,
         transporterName:    form.transporterName.trim() || undefined,
         driverName:         form.driverName.trim() || undefined,
+        driverCellNo:       form.driverCellNo.trim() || undefined,
       });
       onSaved(updated);
     } catch (err) {
@@ -317,7 +335,8 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
               <Field label="Invoice No"   value={form.companyInvoiceNo}   onChange={(v) => set('companyInvoiceNo', v)} highlight={lowConfidenceFields.has('companyInvoiceNo')} />
             </Row>
             <Row>
-              <Field label="E-Way Bill No" value={form.companyEwayBillNo} onChange={(v) => set('companyEwayBillNo', v)} />
+              <Field label="E-Way Bill No"   value={form.companyEwayBillNo} onChange={(v) => set('companyEwayBillNo', v)} />
+              <Field label="E-Way Bill Date" value={form.ewayBillDate}       onChange={(v) => set('ewayBillDate', v)} placeholder="YYYY-MM-DD" />
             </Row>
           </Section>
 
@@ -327,8 +346,19 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
               <Field label="Ship To Party"  value={form.shipToParty}  onChange={(v) => set('shipToParty', v)}  highlight={lowConfidenceFields.has('shipToParty')} />
             </Row>
             <Row>
-              <Field label="Delivery Destination" value={form.deliveryDestination} onChange={(v) => set('deliveryDestination', v)} />
-              <Field label="Order Type"            value={form.orderType}           onChange={(v) => set('orderType', v)} highlight={lowConfidenceFields.has('orderType')} />
+              <Field label="Approved Destination"  value={form.approvedDestination}  onChange={(v) => set('approvedDestination', v)} />
+              <Field label="Delivered Destination" value={form.deliveryDestination}   onChange={(v) => set('deliveryDestination', v)} />
+            </Row>
+            <Row>
+              <Field label="Order Type" value={form.orderType} onChange={(v) => set('orderType', v)} highlight={lowConfidenceFields.has('orderType')} />
+              <Field label="Order No"   value={form.orderNo}   onChange={(v) => set('orderNo', v)} />
+            </Row>
+          </Section>
+
+          <Section title="Location">
+            <Row>
+              <Field label="Working Center"    value={form.workingCenter}  onChange={(v) => set('workingCenter', v)} />
+              <Field label="Depot / Plant Code" value={form.depotPlantCode} onChange={(v) => set('depotPlantCode', v)} />
             </Row>
           </Section>
 
@@ -383,7 +413,8 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
 
           <Section title="Driver">
             <Row>
-              <Field label="Driver Name" value={form.driverName} onChange={(v) => set('driverName', v)} highlight={lowConfidenceFields.has('driverName')} />
+              <Field label="Driver Name"        value={form.driverName}    onChange={(v) => set('driverName', v)}    highlight={lowConfidenceFields.has('driverName')} />
+              <Field label="Driver Cell Number" value={form.driverCellNo}  onChange={(v) => set('driverCellNo', v)} />
             </Row>
           </Section>
         </div>

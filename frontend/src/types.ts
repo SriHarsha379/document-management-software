@@ -37,10 +37,17 @@ export interface Lr {
   tptCode: string | null;
   transporterName: string | null;
   driverName: string | null;
+  driverCellNo: string | null;
   driverBillNo: string | null;
   billDate: string | null;
   billNo: string | null;
   billAmount: number | null;
+  // Additional logistics fields
+  ewayBillDate: string | null;
+  approvedDestination: string | null;
+  orderNo: string | null;
+  workingCenter: string | null;
+  depotPlantCode: string | null;
   // Legacy
   invoiceNo: string | null;
   status: string;
@@ -66,6 +73,8 @@ export interface PaginatedLrs {
 export interface LrSummary {
   lrCount: number;
   invoiceCount: number;
+  acknowledgedLrCount: number;
+  acknowledgedInvoiceCount: number;
 }
 
 export interface ExtractedData {

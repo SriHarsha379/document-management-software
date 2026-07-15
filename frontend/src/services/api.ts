@@ -178,6 +178,14 @@ export const lrApi = {
     branchId?: string;
     lrDate?: string;
     invoiceDate?: string;
+    invoiceNo?: string;
+    lrNo?: string;
+    vehicleNo?: string;
+    driverName?: string;
+    productName?: string;
+    tptCode?: string;
+    workingCenter?: string;
+    depotPlantCode?: string;
     sortBy?: string;
     sortDir?: 'asc' | 'desc';
   }): Promise<PaginatedLrs> => {
@@ -190,8 +198,24 @@ export const lrApi = {
     return res.data;
   },
 
-  filterValues: async (): Promise<{ principalCompanies: string[] }> => {
-    const res = await api.get<{ principalCompanies: string[] }>('/lrs/filter-values');
+  filterValues: async (): Promise<{
+    principalCompanies: string[];
+    vehicleNos: string[];
+    productNames: string[];
+    tptCodes: string[];
+    driverNames: string[];
+    workingCenters: string[];
+    depotPlantCodes: string[];
+  }> => {
+    const res = await api.get<{
+      principalCompanies: string[];
+      vehicleNos: string[];
+      productNames: string[];
+      tptCodes: string[];
+      driverNames: string[];
+      workingCenters: string[];
+      depotPlantCodes: string[];
+    }>('/lrs/filter-values');
     return res.data;
   },
 

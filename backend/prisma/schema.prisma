@@ -176,10 +176,18 @@ model Lr {
   tptCode           String?
   transporterName   String?
   driverName        String?
+  driverCellNo      String?
   driverBillNo      String?
   billDate          String?
   billNo            String?
   billAmount        Float?
+
+  // Additional logistics fields
+  ewayBillDate          String?  // E-Way Bill date
+  approvedDestination   String?  // Approved/sanctioned destination
+  orderNo               String?  // Order number
+  workingCenter         String?  // Working centre name
+  depotPlantCode        String?  // Depot / Plant code
 
   // Legacy / derived fields kept for backward-compat
   invoiceNo String?
