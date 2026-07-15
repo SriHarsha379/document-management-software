@@ -289,6 +289,14 @@ router.get('/groups', async (_req: Request, res: Response): Promise<void> => {
             id: true,
             type: true,
             status: true,
+            originalFilename: true,
+            mimeType: true,
+            rawFilePath: true,
+            uploadedAt: true,
+            updatedAt: true,
+            groupId: true,
+            sourceDocumentId: true,
+            pageNumber: true,
             extractedData: { select: { invoiceNo: true } },
           },
         },
@@ -296,7 +304,18 @@ router.get('/groups', async (_req: Request, res: Response): Promise<void> => {
       orderBy: { createdAt: 'desc' },
     });
 
-    res.json({ groups });
+    res.json({
+      groups: groups.map((group) => ({
+        ...group,
+        documents: group.documents.map((doc) => {
+          const { rawFilePath, ...rest } = doc;
+          return {
+            ...rest,
+            filePath: path.basename(rawFilePath),
+          };
+        }),
+      })),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch groups';
     res.status(500).json({ error: message });
