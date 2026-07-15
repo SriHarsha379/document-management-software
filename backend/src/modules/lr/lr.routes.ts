@@ -1,4 +1,6 @@
 import { Router, type Request, type Response } from 'express';
+import nodemailer from 'nodemailer';
+import * as path from 'path';
 import rateLimit from 'express-rate-limit';
 import { requireAuth } from '../auth/auth.routes.js';
 import { requirePermission, buildScopeWhere } from '../rbac/rbac.middleware.js';
@@ -6,8 +8,35 @@ import { ALLOWED_SOURCES, ALLOWED_LR_STATUSES } from '../rbac/permissions.js';
 import { lrRepo, type LrCreateInput, type LrUpdateInput, type LrFilters } from './lr.repo.js';
 import { syncLrRecordsFromDocuments } from '../../services/documentService.js';
 import { db } from '../../lib/db.js';
+import { upload } from '../../middleware/upload.js';
 
 const router = Router();
+
+const LR_DOCUMENT_CATEGORIES = [
+  'LR_GENERATED',
+  'ACKNOWLEDGED_INVOICE',
+  'ACKNOWLEDGED_LR_COPY',
+  'DEPOT_PLANT_WEIGHMENT_SLIP',
+  'SITE_WEIGHMENT_SLIP',
+  'TOLL_RECEIPT',
+  'ADDITIONAL_ATTACHMENT_1',
+  'ADDITIONAL_ATTACHMENT_2',
+] as const;
+
+type LrDocumentCategory = typeof LR_DOCUMENT_CATEGORIES[number];
+
+const LR_DOCUMENT_CATEGORY_ORDER: LrDocumentCategory[] = [...LR_DOCUMENT_CATEGORIES];
+
+const LR_DOCUMENT_TYPE_MAP: Record<LrDocumentCategory, 'LR' | 'INVOICE' | 'RECEIVING' | 'WEIGHMENT_PARTY' | 'WEIGHMENT_SITE' | 'TOLL' | 'EWAYBILL' | 'UNKNOWN'> = {
+  LR_GENERATED: 'LR',
+  ACKNOWLEDGED_INVOICE: 'INVOICE',
+  ACKNOWLEDGED_LR_COPY: 'RECEIVING',
+  DEPOT_PLANT_WEIGHMENT_SLIP: 'WEIGHMENT_PARTY',
+  SITE_WEIGHMENT_SLIP: 'WEIGHMENT_SITE',
+  TOLL_RECEIPT: 'TOLL',
+  ADDITIONAL_ATTACHMENT_1: 'EWAYBILL',
+  ADDITIONAL_ATTACHMENT_2: 'UNKNOWN',
+};
 
 // ── Rate limiters ─────────────────────────────────────────────────────────────
 
@@ -71,6 +100,198 @@ router.get(
       res.json(stats);
     } catch (err) {
       handleRouteError(err, res, '[lr] GET /lrs/summary');
+    }
+  }
+);
+
+router.get(
+  '/:id/documents',
+  readLimiter,
+  requirePermission('lr.read'),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const lr = await getScopedLrWithDocuments(req, String(req.params.id));
+      if (!lr) {
+        res.status(404).json({ error: 'LR not found' });
+        return;
+      }
+
+      const documents = lr.uploadedDocuments
+        .slice()
+        .sort((a, b) => compareLrDocuments(a.lrDocumentCategory, b.lrDocumentCategory, a.uploadedAt, b.uploadedAt))
+        .map(formatLrDocument);
+
+      const recipientSuggestions = await resolveLrRecipientSuggestions(lr.id, lr.companyId);
+
+      res.json({
+        lr: {
+          id: lr.id,
+          lrNo: lr.lrNo,
+          lrDate: lr.lrDate ?? lr.date,
+          billToParty: lr.billToParty,
+          shipToParty: lr.shipToParty,
+        },
+        documents,
+        recipientSuggestions,
+      });
+    } catch (err) {
+      handleRouteError(err, res, '[lr] GET /lrs/:id/documents');
+    }
+  }
+);
+
+router.post(
+  '/:id/documents',
+  writeLimiter,
+  requirePermission('document.upload'),
+  upload.single('file'),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const lr = await getScopedLr(req, String(req.params.id));
+      if (!lr) {
+        res.status(404).json({ error: 'LR not found' });
+        return;
+      }
+
+      if (!req.file) {
+        res.status(400).json({ error: 'No file uploaded' });
+        return;
+      }
+
+      const category = String(req.body.category ?? '') as LrDocumentCategory;
+      if (!LR_DOCUMENT_CATEGORIES.includes(category)) {
+        res.status(400).json({ error: `category must be one of: ${LR_DOCUMENT_CATEGORIES.join(', ')}` });
+        return;
+      }
+
+      let groupId: string | undefined;
+      const vehicleNo = lr.vehicleNo?.trim().toUpperCase().replace(/\s+/g, '') || null;
+      const date = (lr.lrDate ?? lr.date)?.trim() || null;
+      if (vehicleNo && date) {
+        const group = await db.documentGroup.upsert({
+          where: { vehicleNo_date: { vehicleNo, date } },
+          update: {},
+          create: { vehicleNo, date },
+          select: { id: true },
+        });
+        groupId = group.id;
+      }
+
+      const document = await db.document.create({
+        data: {
+          lrId: lr.id,
+          lrDocumentCategory: category,
+          type: LR_DOCUMENT_TYPE_MAP[category],
+          status: 'SAVED',
+          originalFilename: req.file.originalname,
+          rawFilePath: req.file.path,
+          mimeType: req.file.mimetype,
+          uploadedById: req.user!.id,
+          ...(groupId ? { groupId } : {}),
+        },
+        include: {
+          uploadedBy: { select: { id: true, name: true, email: true } },
+        },
+      });
+
+      res.status(201).json({
+        message: 'Document uploaded successfully',
+        document: formatLrDocument(document),
+      });
+    } catch (err) {
+      handleRouteError(err, res, '[lr] POST /lrs/:id/documents');
+    }
+  }
+);
+
+router.delete(
+  '/:id/documents/:documentId',
+  writeLimiter,
+  requirePermission('document.delete'),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const lr = await getScopedLr(req, String(req.params.id));
+      if (!lr) {
+        res.status(404).json({ error: 'LR not found' });
+        return;
+      }
+
+      const document = await db.document.findFirst({
+        where: {
+          id: String(req.params.documentId),
+          lrId: lr.id,
+          lrDocumentCategory: { not: null },
+        },
+      });
+      if (!document) {
+        res.status(404).json({ error: 'Document not found' });
+        return;
+      }
+
+      await db.bundleItem.deleteMany({ where: { documentId: document.id } });
+      await db.document.delete({ where: { id: document.id } });
+      res.status(204).send();
+    } catch (err) {
+      handleRouteError(err, res, '[lr] DELETE /lrs/:id/documents/:documentId');
+    }
+  }
+);
+
+router.post(
+  '/:id/send-email',
+  writeLimiter,
+  requirePermission('communication.send'),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const lr = await getScopedLrWithDocuments(req, String(req.params.id));
+      if (!lr) {
+        res.status(404).json({ error: 'LR not found' });
+        return;
+      }
+
+      const to = normalizeEmailList((req.body as { to?: unknown }).to);
+      const cc = normalizeEmailList((req.body as { cc?: unknown }).cc);
+      const bcc = normalizeEmailList((req.body as { bcc?: unknown }).bcc);
+
+      if (to.length === 0) {
+        res.status(400).json({ error: 'At least one recipient is required' });
+        return;
+      }
+
+      const invalid = [...to, ...cc, ...bcc].filter((email) => !isValidEmail(email));
+      if (invalid.length > 0) {
+        res.status(400).json({ error: `Invalid email address(es): ${invalid.join(', ')}` });
+        return;
+      }
+
+      const attachments = lr.uploadedDocuments
+        .slice()
+        .sort((a, b) => compareLrDocuments(a.lrDocumentCategory, b.lrDocumentCategory, a.uploadedAt, b.uploadedAt))
+        .map((document) => ({
+          filename: document.originalFilename,
+          path: resolveStoredFilePath(document.rawFilePath),
+        }));
+
+      if (attachments.length === 0) {
+        res.status(400).json({ error: 'No uploaded documents available to send' });
+        return;
+      }
+
+      const smtp = await sendLrEmail({
+        to,
+        cc,
+        bcc,
+        subject: `Documents for LR ${lr.lrNo}${lr.lrDate ?? lr.date ? ` - ${lr.lrDate ?? lr.date}` : ''}`,
+        text: buildLrEmailBody(lr),
+        attachments,
+      });
+
+      res.json({
+        message: 'Email sent successfully',
+        smtp,
+      });
+    } catch (err) {
+      handleRouteError(err, res, '[lr] POST /lrs/:id/send-email');
     }
   }
 );
@@ -140,13 +361,29 @@ router.get(
         branchId:         firstQueryString(req.query.branchId) || undefined,
         lrDate:           firstQueryString(req.query.lrDate) || undefined,
         invoiceDate:      firstQueryString(req.query.invoiceDate) || undefined,
+        invoiceNo:        firstQueryString(req.query.invoiceNo) || undefined,
+        lrNo:             firstQueryString(req.query.lrNo) || undefined,
+        vehicleNo:        firstQueryString(req.query.vehicleNo) || undefined,
+        driverName:       firstQueryString(req.query.driverName) || undefined,
+        productName:      firstQueryString(req.query.productName) || undefined,
+        tptCode:          firstQueryString(req.query.tptCode) || undefined,
+        workingCenter:    firstQueryString(req.query.workingCenter) || undefined,
+        depotPlantCode:   firstQueryString(req.query.depotPlantCode) || undefined,
       };
 
       const sortBy  = firstQueryString(req.query.sortBy) || undefined;
       const sortDir = firstQueryString(req.query.sortDir) === 'desc' ? 'desc' : 'asc';
 
       const { rows, total } = await lrRepo.findMany({ where, limit, offset, q, filters, sortBy, sortDir });
-      res.json({ data: rows, total, limit, offset });
+      res.json({
+        data: rows.map((row) => ({
+          ...row,
+          uploadedDocuments: row.uploadedDocuments?.map((document) => formatLrDocument(document)) ?? [],
+        })),
+        total,
+        limit,
+        offset,
+      });
     } catch (err) {
       handleRouteError(err, res, '[lr] GET /lrs');
     }
@@ -224,10 +461,17 @@ router.post(
         tptCode:            body.tptCode?.trim(),
         transporterName:    body.transporterName?.trim(),
         driverName:         body.driverName?.trim(),
+        driverCellNo:       body.driverCellNo?.trim(),
         driverBillNo:       body.driverBillNo?.trim(),
         billDate:           body.billDate?.trim(),
         billNo:             body.billNo?.trim(),
         billAmount:         toFloat(body.billAmount),
+        // Additional logistics fields
+        ewayBillDate:         body.ewayBillDate?.trim(),
+        approvedDestination:  body.approvedDestination?.trim(),
+        orderNo:              body.orderNo?.trim(),
+        workingCenter:        body.workingCenter?.trim(),
+        depotPlantCode:       body.depotPlantCode?.trim(),
       });
 
       res.status(201).json({ data: lr });
@@ -326,10 +570,17 @@ router.patch(
         tptCode:            body.tptCode?.trim(),
         transporterName:    body.transporterName?.trim(),
         driverName:         body.driverName?.trim(),
+        driverCellNo:       body.driverCellNo?.trim(),
         driverBillNo:       body.driverBillNo?.trim(),
         billDate:           body.billDate?.trim(),
         billNo:             body.billNo?.trim(),
         billAmount:         toFloat(body.billAmount),
+        // Additional logistics fields
+        ewayBillDate:         body.ewayBillDate?.trim(),
+        approvedDestination:  body.approvedDestination?.trim(),
+        orderNo:              body.orderNo?.trim(),
+        workingCenter:        body.workingCenter?.trim(),
+        depotPlantCode:       body.depotPlantCode?.trim(),
       };
 
       const updated = await lrRepo.update(lr.id, updateData);
@@ -404,4 +655,217 @@ function firstQueryString(value: unknown): string | undefined {
   if (typeof value === 'string') return value || undefined;
   if (Array.isArray(value) && typeof value[0] === 'string') return value[0] || undefined;
   return undefined;
+}
+
+async function getScopedLr(req: Request, lrId: string) {
+  const scopeWhere = buildScopeWhere(req.user!);
+  return db.lr.findFirst({
+    where: { ...scopeWhere, id: lrId },
+  });
+}
+
+async function getScopedLrWithDocuments(req: Request, lrId: string) {
+  const scopeWhere = buildScopeWhere(req.user!);
+  return db.lr.findFirst({
+    where: { ...scopeWhere, id: lrId },
+    include: {
+      uploadedDocuments: {
+        include: {
+          uploadedBy: { select: { id: true, name: true, email: true } },
+        },
+      },
+    },
+  });
+}
+
+function compareLrDocuments(
+  categoryA: string | null,
+  categoryB: string | null,
+  uploadedAtA: Date,
+  uploadedAtB: Date,
+): number {
+  const orderA = categoryA ? LR_DOCUMENT_CATEGORY_ORDER.indexOf(categoryA as LrDocumentCategory) : Number.MAX_SAFE_INTEGER;
+  const orderB = categoryB ? LR_DOCUMENT_CATEGORY_ORDER.indexOf(categoryB as LrDocumentCategory) : Number.MAX_SAFE_INTEGER;
+  if (orderA !== orderB) return orderA - orderB;
+  return uploadedAtB.getTime() - uploadedAtA.getTime();
+}
+
+function formatLrDocument(document: {
+  id: string;
+  type: string;
+  status: string;
+  originalFilename: string;
+  mimeType: string;
+  rawFilePath: string;
+  uploadedAt: Date;
+  updatedAt: Date;
+  groupId: string | null;
+  sourceDocumentId?: string | null;
+  pageNumber?: number | null;
+  lrId?: string | null;
+  lrDocumentCategory?: string | null;
+  uploadedById?: string | null;
+  uploadedBy?: { id: string; name: string; email: string } | null;
+}) {
+  return {
+    id: document.id,
+    type: document.type,
+    status: document.status,
+    originalFilename: document.originalFilename,
+    mimeType: document.mimeType,
+    filePath: path.basename(document.rawFilePath),
+    uploadedAt: document.uploadedAt,
+    updatedAt: document.updatedAt,
+    groupId: document.groupId,
+    sourceDocumentId: document.sourceDocumentId ?? null,
+    pageNumber: document.pageNumber ?? null,
+    lrId: document.lrId ?? null,
+    lrDocumentCategory: document.lrDocumentCategory ?? null,
+    uploadedById: document.uploadedById ?? null,
+    uploadedBy: document.uploadedBy ?? null,
+  };
+}
+
+async function resolveLrRecipientSuggestions(lrId: string, companyId: string) {
+  const lr = await db.lr.findUnique({
+    where: { id: lrId },
+    select: {
+      billToParty: true,
+      shipToParty: true,
+    },
+  });
+
+  const [executive, billToParty, shipToParty] = await Promise.all([
+    db.officer.findFirst({
+      where: { companyId, isActive: true, email: { not: null } },
+      orderBy: [{ role: 'asc' }, { name: 'asc' }],
+      select: { id: true, name: true, email: true },
+    }),
+    lr?.billToParty
+      ? db.party.findFirst({
+          where: {
+            companyId,
+            isActive: true,
+            email: { not: null },
+            name: { contains: lr.billToParty.trim() },
+          },
+          select: { id: true, name: true, email: true },
+        })
+      : Promise.resolve(null),
+    lr?.shipToParty
+      ? db.party.findFirst({
+          where: {
+            companyId,
+            isActive: true,
+            email: { not: null },
+            name: { contains: lr.shipToParty.trim() },
+          },
+          select: { id: true, name: true, email: true },
+        })
+      : Promise.resolve(null),
+  ]);
+
+  const suggestions = [
+    executive?.email ? { type: 'EXECUTIVE_EMAIL', label: 'Executive Email', value: executive.email, sourceName: executive.name } : null,
+    billToParty?.email ? { type: 'BILL_TO_PARTY_EMAIL', label: 'Bill To Party Email', value: billToParty.email, sourceName: billToParty.name } : null,
+    shipToParty?.email ? { type: 'SHIP_TO_PARTY_EMAIL', label: 'Ship To Party Email', value: shipToParty.email, sourceName: shipToParty.name } : null,
+  ].filter((item): item is { type: string; label: string; value: string; sourceName: string } => item !== null);
+
+  return {
+    suggestedTo: Array.from(new Set(suggestions.map((item) => item.value))),
+    suggestions,
+  };
+}
+
+function normalizeEmailList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .filter((entry): entry is string => typeof entry === 'string')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function isValidEmail(email: string): boolean {
+  const parts = email.split('@');
+  if (parts.length !== 2) return false;
+  return parts[0]!.length > 0 && parts[1]!.includes('.');
+}
+
+function resolveStoredFilePath(rawFilePath: string): string {
+  return path.isAbsolute(rawFilePath) ? rawFilePath : path.resolve(process.cwd(), rawFilePath);
+}
+
+function buildLrEmailBody(lr: {
+  lrNo: string;
+  lrDate: string | null;
+  date: string | null;
+  vehicleNo: string | null;
+  billToParty: string | null;
+  shipToParty: string | null;
+}) {
+  return [
+    'Dear Team,',
+    '',
+    `Please find attached the uploaded documents for LR ${lr.lrNo}.`,
+    lr.lrDate ?? lr.date ? `LR Date: ${lr.lrDate ?? lr.date}` : null,
+    lr.vehicleNo ? `Vehicle Number: ${lr.vehicleNo}` : null,
+    lr.billToParty ? `Bill To Party: ${lr.billToParty}` : null,
+    lr.shipToParty ? `Ship To Party: ${lr.shipToParty}` : null,
+    '',
+    'Regards,',
+    'Logistics DMS',
+  ].filter((line): line is string => line !== null).join('\n');
+}
+
+async function sendLrEmail(opts: {
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  text: string;
+  attachments: Array<{ filename: string; path: string }>;
+}) {
+  const host = process.env.SMTP_HOST;
+  const port = parseInt(process.env.SMTP_PORT ?? '587', 10);
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+  const from = process.env.SMTP_FROM ?? user ?? 'noreply@logistics-dms.local';
+
+  if (!host || !user || !pass) {
+    throw new Error('Email not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS environment variables.');
+  }
+
+  const transporter = nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465,
+    auth: { user, pass },
+  });
+
+  const info = await transporter.sendMail({
+    from,
+    to: opts.to,
+    cc: opts.cc,
+    bcc: opts.bcc,
+    subject: opts.subject,
+    text: opts.text,
+    attachments: opts.attachments,
+  });
+
+  return {
+    messageId: typeof info.messageId === 'string' ? info.messageId : '',
+    accepted: Array.isArray((info as { accepted?: unknown }).accepted) ? (info as { accepted: string[] }).accepted : [],
+    rejected: Array.isArray((info as { rejected?: unknown }).rejected) ? (info as { rejected: string[] }).rejected : [],
+    response: typeof (info as { response?: unknown }).response === 'string'
+      ? (info as { response: string }).response
+      : undefined,
+  };
 }

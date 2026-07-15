@@ -442,14 +442,28 @@ type PrismaDocumentWithRelations = Awaited<ReturnType<typeof prisma.document.fin
     userReviewed: boolean;
     reviewedAt: Date | null;
     userEdits: string | null;
+    billToParty: string | null;
+    shipToParty: string | null;
     principalCompany: string | null;
     branchName: string | null;
+    loadingSlipNo: string | null;
+    companyInvoiceNo: string | null;
+    companyInvoiceDate: string | null;
+    companyEwayBillNo: string | null;
+    ewayBillDate: string | null;
+    approvedDestination: string | null;
+    deliveryDestination: string | null;
+    orderNo: string | null;
+    productName: string | null;
+    transporterName: string | null;
     orderType: string | null;
     tptCode: string | null;
     quantityInMt: number | null;
     quantityInBags: number | null;
     driverName: string | null;
     driverCellNo: string | null;
+    workingCenter: string | null;
+    depotPlantCode: string | null;
     source: string | null;
     createdAt: Date;
     updatedAt: Date;
@@ -517,14 +531,28 @@ function formatDocument(doc: PrismaDocumentWithRelations | null) {
       userReviewed: ed.userReviewed,
       reviewedAt: ed.reviewedAt,
       userEdits: ed.userEdits ? (JSON.parse(ed.userEdits) as Record<string, unknown>) : null,
+      billToParty: ed.billToParty,
+      shipToParty: ed.shipToParty,
       principalCompany: ed.principalCompany,
       branchName: ed.branchName,
+      loadingSlipNo: ed.loadingSlipNo,
+      companyInvoiceNo: ed.companyInvoiceNo,
+      companyInvoiceDate: ed.companyInvoiceDate,
+      companyEwayBillNo: ed.companyEwayBillNo,
+      ewayBillDate: ed.ewayBillDate,
+      approvedDestination: ed.approvedDestination,
+      deliveryDestination: ed.deliveryDestination,
+      orderNo: ed.orderNo,
+      productName: ed.productName,
+      transporterName: ed.transporterName,
       orderType: ed.orderType,
       tptCode: ed.tptCode,
       quantityInMt: ed.quantityInMt,
       quantityInBags: ed.quantityInBags,
       driverName: ed.driverName,
       driverCellNo: ed.driverCellNo,
+      workingCenter: ed.workingCenter,
+      depotPlantCode: ed.depotPlantCode,
       source: ed.source,
     };
   }

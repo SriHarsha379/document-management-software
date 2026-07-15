@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { DocumentUpload } from './components/DocumentUpload';
 import { OCRReview } from './components/OCRReview';
 import { DocumentList } from './components/DocumentList';
 import { DocumentBundler } from './components/DocumentBundler';
@@ -12,6 +11,7 @@ import { DriverPortal } from './components/DriverPortal';
 import { CustomerPortal } from './components/CustomerPortal';
 import { LrDashboard } from './components/LrDashboard';
 import { AdminLogin } from './components/AdminLogin';
+import { UploadDocumentsPage } from './components/UploadDocumentsPage';
 import { authService } from './services/authService';
 import { UserProvider, useCurrentUser, PERM } from './contexts/UserContext';
 import type { Document } from './types';
@@ -86,7 +86,6 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  const handleDocumentReady = (doc: Document) => { setSelectedDoc(doc); setView('review'); };
   const handleSaved = (_doc: Document) => { setRefreshKey((k) => k + 1); setView('list'); setSelectedDoc(null); };
   const handleSelectFromList = (doc: Document) => { setSelectedDoc(doc); setView('review'); };
 
@@ -195,7 +194,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
           <div style={{ maxWidth: 1200, margin: '0 auto' }}>
             {view === 'dashboard' && <LrDashboard />}
             {view === 'list' && <DocumentList onSelect={handleSelectFromList} refreshTrigger={refreshKey} />}
-            {view === 'upload' && canUpload && <DocumentUpload onDocumentReady={handleDocumentReady} />}
+            {view === 'upload' && canUpload && <UploadDocumentsPage />}
             {view === 'review' && selectedDoc && (
               <OCRReview
                 document={selectedDoc}

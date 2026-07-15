@@ -32,7 +32,10 @@ function mapExtractedRecordToLearnedFields(
     companyInvoiceNo: string | null;
     companyInvoiceDate: string | null;
     companyEwayBillNo: string | null;
+    ewayBillDate: string | null;
+    approvedDestination: string | null;
     deliveryDestination: string | null;
+    orderNo: string | null;
     productName: string | null;
     transporterName: string | null;
     orderType: string | null;
@@ -41,6 +44,8 @@ function mapExtractedRecordToLearnedFields(
     quantityInBags: number | null;
     driverName: string | null;
     driverCellNo: string | null;
+    workingCenter: string | null;
+    depotPlantCode: string | null;
     source: string | null;
   },
   documentType: DocumentType,
@@ -71,7 +76,10 @@ function mapExtractedRecordToLearnedFields(
     companyInvoiceNo: extracted.companyInvoiceNo ?? undefined,
     companyInvoiceDate: extracted.companyInvoiceDate ?? undefined,
     companyEwayBillNo: extracted.companyEwayBillNo ?? undefined,
+    ewayBillDate: extracted.ewayBillDate ?? undefined,
+    approvedDestination: extracted.approvedDestination ?? undefined,
     deliveryDestination: extracted.deliveryDestination ?? undefined,
+    orderNo: extracted.orderNo ?? undefined,
     productName: extracted.productName ?? undefined,
     transporterName: extracted.transporterName ?? undefined,
     orderType: extracted.orderType ?? undefined,
@@ -80,6 +88,8 @@ function mapExtractedRecordToLearnedFields(
     quantityInBags: extracted.quantityInBags ?? undefined,
     driverName: extracted.driverName ?? undefined,
     driverCellNo: extracted.driverCellNo ?? undefined,
+    workingCenter: extracted.workingCenter ?? undefined,
+    depotPlantCode: extracted.depotPlantCode ?? undefined,
     source: extracted.source ?? undefined,
     documentType,
   };
@@ -232,7 +242,10 @@ async function autoCreateLrRecord(
     companyInvoiceNo?: string | null;
     companyInvoiceDate?: string | null;
     companyEwayBillNo?: string | null;
+    ewayBillDate?: string | null;
+    approvedDestination?: string | null;
     deliveryDestination?: string | null;
+    orderNo?: string | null;
     productName?: string | null;
     transporterName?: string | null;
     orderType?: string | null;
@@ -240,6 +253,10 @@ async function autoCreateLrRecord(
     quantityInMt?: number | null;
     quantityInBags?: number | null;
     branchName?: string | null;
+    driverName?: string | null;
+    driverCellNo?: string | null;
+    workingCenter?: string | null;
+    depotPlantCode?: string | null;
     source?: string | null;
   },
 ): Promise<boolean> {
@@ -363,13 +380,20 @@ async function autoCreateLrRecord(
       companyInvoiceNo: fields.companyInvoiceNo?.trim() || undefined,
       companyInvoiceDate: fields.companyInvoiceDate?.trim() || undefined,
       companyEwayBillNo: fields.companyEwayBillNo?.trim() || undefined,
+      ewayBillDate: fields.ewayBillDate?.trim() || undefined,
+      approvedDestination: fields.approvedDestination?.trim() || undefined,
       deliveryDestination: fields.deliveryDestination?.trim() || undefined,
+      orderNo: fields.orderNo?.trim() || undefined,
       productName: fields.productName?.trim() || undefined,
       transporterName: fields.transporterName?.trim() || undefined,
       orderType: fields.orderType?.trim() || undefined,
       tptCode: fields.tptCode?.trim() || undefined,
       quantityInMt: fields.quantityInMt ?? undefined,
       quantityInBags: fields.quantityInBags ?? undefined,
+      driverName: fields.driverName?.trim() || undefined,
+      driverCellNo: fields.driverCellNo?.trim() || undefined,
+      workingCenter: fields.workingCenter?.trim() || undefined,
+      depotPlantCode: fields.depotPlantCode?.trim() || undefined,
     },
   });
 
@@ -453,14 +477,21 @@ export async function syncLrRecordsFromDocuments(): Promise<{
       companyInvoiceNo: doc.extractedData.companyInvoiceNo,
       companyInvoiceDate: doc.extractedData.companyInvoiceDate,
       companyEwayBillNo: doc.extractedData.companyEwayBillNo,
+      ewayBillDate: doc.extractedData.ewayBillDate,
+      approvedDestination: doc.extractedData.approvedDestination,
       deliveryDestination: doc.extractedData.deliveryDestination,
+      orderNo: doc.extractedData.orderNo,
       productName: doc.extractedData.productName,
       transporterName: doc.extractedData.transporterName,
       orderType: doc.extractedData.orderType,
       tptCode: doc.extractedData.tptCode,
       quantityInMt: doc.extractedData.quantityInMt,
       quantityInBags: doc.extractedData.quantityInBags,
+      driverName: doc.extractedData.driverName,
+      driverCellNo: doc.extractedData.driverCellNo,
       branchName: doc.extractedData.branchName,
+      workingCenter: doc.extractedData.workingCenter,
+      depotPlantCode: doc.extractedData.depotPlantCode,
       source: doc.extractedData.source,
     });
     if (wasCreated) created++;
@@ -532,7 +563,10 @@ export async function saveOcrResults(
     companyInvoiceNo?: string;
     companyInvoiceDate?: string;
     companyEwayBillNo?: string;
+    ewayBillDate?: string;
+    approvedDestination?: string;
     deliveryDestination?: string;
+    orderNo?: string;
     productName?: string;
     transporterName?: string;
     orderType?: string;
@@ -541,6 +575,8 @@ export async function saveOcrResults(
     quantityInBags?: number;
     driverName?: string;
     driverCellNo?: string;
+    workingCenter?: string;
+    depotPlantCode?: string;
     source?: string;
   },
   documentType: DocumentType,
@@ -569,7 +605,10 @@ export async function saveOcrResults(
         companyInvoiceNo: fields.companyInvoiceNo ?? null,
         companyInvoiceDate: fields.companyInvoiceDate ?? null,
         companyEwayBillNo: fields.companyEwayBillNo ?? null,
+        ewayBillDate: fields.ewayBillDate ?? null,
+        approvedDestination: fields.approvedDestination ?? null,
         deliveryDestination: fields.deliveryDestination ?? null,
+        orderNo: fields.orderNo ?? null,
         productName: fields.productName ?? null,
         transporterName: fields.transporterName ?? null,
         orderType: fields.orderType ?? null,
@@ -578,6 +617,8 @@ export async function saveOcrResults(
         quantityInBags: fields.quantityInBags ?? null,
         driverName: fields.driverName ?? null,
         driverCellNo: fields.driverCellNo ?? null,
+        workingCenter: fields.workingCenter ?? null,
+        depotPlantCode: fields.depotPlantCode ?? null,
         source: fields.source ?? null,
       },
       update: {
@@ -599,7 +640,10 @@ export async function saveOcrResults(
         companyInvoiceNo: fields.companyInvoiceNo ?? null,
         companyInvoiceDate: fields.companyInvoiceDate ?? null,
         companyEwayBillNo: fields.companyEwayBillNo ?? null,
+        ewayBillDate: fields.ewayBillDate ?? null,
+        approvedDestination: fields.approvedDestination ?? null,
         deliveryDestination: fields.deliveryDestination ?? null,
+        orderNo: fields.orderNo ?? null,
         productName: fields.productName ?? null,
         transporterName: fields.transporterName ?? null,
         orderType: fields.orderType ?? null,
@@ -608,6 +652,8 @@ export async function saveOcrResults(
         quantityInBags: fields.quantityInBags ?? null,
         driverName: fields.driverName ?? null,
         driverCellNo: fields.driverCellNo ?? null,
+        workingCenter: fields.workingCenter ?? null,
+        depotPlantCode: fields.depotPlantCode ?? null,
         source: fields.source ?? null,
       },
     });
@@ -655,14 +701,21 @@ export async function saveOcrResults(
       companyInvoiceNo: fields.companyInvoiceNo,
       companyInvoiceDate: fields.companyInvoiceDate,
       companyEwayBillNo: fields.companyEwayBillNo,
+      ewayBillDate: fields.ewayBillDate,
+      approvedDestination: fields.approvedDestination,
       deliveryDestination: fields.deliveryDestination,
+      orderNo: fields.orderNo,
       productName: fields.productName,
       transporterName: fields.transporterName,
       orderType: fields.orderType,
       tptCode: fields.tptCode,
       quantityInMt: fields.quantityInMt,
       quantityInBags: fields.quantityInBags,
+      driverName: fields.driverName,
+      driverCellNo: fields.driverCellNo,
       branchName: fields.branchName,
+      workingCenter: fields.workingCenter,
+      depotPlantCode: fields.depotPlantCode,
       source: fields.source,
     });
     const linkResult = await autoLinkDocument(documentId);
@@ -735,7 +788,10 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
         companyInvoiceNo: payload.companyInvoiceNo ?? existing.companyInvoiceNo,
         companyInvoiceDate: payload.companyInvoiceDate ?? existing.companyInvoiceDate,
         companyEwayBillNo: payload.companyEwayBillNo ?? existing.companyEwayBillNo,
+        ewayBillDate: payload.ewayBillDate ?? existing.ewayBillDate,
+        approvedDestination: payload.approvedDestination ?? existing.approvedDestination,
         deliveryDestination: payload.deliveryDestination ?? existing.deliveryDestination,
+        orderNo: payload.orderNo ?? existing.orderNo,
         productName: payload.productName ?? existing.productName,
         transporterName: payload.transporterName ?? existing.transporterName,
         orderType: payload.orderType ?? existing.orderType,
@@ -744,6 +800,8 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
         quantityInBags: payload.quantityInBags ?? existing.quantityInBags,
         driverName: payload.driverName ?? existing.driverName,
         driverCellNo: payload.driverCellNo ?? existing.driverCellNo,
+        workingCenter: payload.workingCenter ?? existing.workingCenter,
+        depotPlantCode: payload.depotPlantCode ?? existing.depotPlantCode,
         source: payload.source ?? existing.source,
         userReviewed: true,
         reviewedAt: new Date(),
@@ -790,10 +848,21 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
         companyInvoiceNo: updatedExtracted.companyInvoiceNo,
         companyInvoiceDate: updatedExtracted.companyInvoiceDate,
         companyEwayBillNo: updatedExtracted.companyEwayBillNo,
+        ewayBillDate: updatedExtracted.ewayBillDate,
+        approvedDestination: updatedExtracted.approvedDestination,
         deliveryDestination: updatedExtracted.deliveryDestination,
+        orderNo: updatedExtracted.orderNo,
         productName: updatedExtracted.productName,
         transporterName: updatedExtracted.transporterName,
+        orderType: updatedExtracted.orderType,
+        tptCode: updatedExtracted.tptCode,
+        quantityInMt: updatedExtracted.quantityInMt,
+        quantityInBags: updatedExtracted.quantityInBags,
+        driverName: updatedExtracted.driverName,
+        driverCellNo: updatedExtracted.driverCellNo,
         branchName: updatedExtracted.branchName,
+        workingCenter: updatedExtracted.workingCenter,
+        depotPlantCode: updatedExtracted.depotPlantCode,
         source: updatedExtracted.source,
       });
     }
@@ -819,4 +888,3 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
 export async function getOcrMetrics() {
   return getOcrQualityMetrics();
 }
-

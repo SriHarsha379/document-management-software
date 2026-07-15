@@ -25,8 +25,9 @@ type OcrQualityMetrics = {
 const EDIT_TRACKED_FIELDS: (keyof ExtractedFields | 'documentType')[] = [
   'lrNo', 'invoiceNo', 'vehicleNo', 'quantity', 'date', 'partyNames', 'tollAmount', 'weightInfo',
   'billToParty', 'shipToParty', 'principalCompany', 'branchName', 'loadingSlipNo', 'companyInvoiceNo',
-  'companyInvoiceDate', 'companyEwayBillNo', 'deliveryDestination', 'productName', 'transporterName',
-  'orderType', 'tptCode', 'quantityInMt', 'quantityInBags', 'documentType',
+  'companyInvoiceDate', 'companyEwayBillNo', 'ewayBillDate', 'approvedDestination', 'deliveryDestination',
+  'orderNo', 'productName', 'transporterName', 'orderType', 'tptCode', 'quantityInMt', 'quantityInBags',
+  'driverName', 'driverCellNo', 'workingCenter', 'depotPlantCode', 'source', 'documentType',
 ];
 
 function cleanText(value: unknown): string | undefined {
@@ -82,11 +83,19 @@ export function normalizeExtractedFields(fields: ExtractedFields): ExtractedFiel
     companyInvoiceNo: cleanText(fields.companyInvoiceNo)?.toUpperCase(),
     companyInvoiceDate: normalizeDate(fields.companyInvoiceDate),
     companyEwayBillNo: cleanText(fields.companyEwayBillNo)?.toUpperCase(),
+    ewayBillDate: normalizeDate(fields.ewayBillDate),
+    approvedDestination: cleanText(fields.approvedDestination),
     deliveryDestination: cleanText(fields.deliveryDestination),
+    orderNo: cleanText(fields.orderNo)?.toUpperCase(),
     productName: cleanText(fields.productName),
     transporterName: cleanText(fields.transporterName),
     orderType: cleanText(fields.orderType)?.toUpperCase(),
     tptCode: cleanText(fields.tptCode)?.toUpperCase(),
+    driverName: cleanText(fields.driverName),
+    driverCellNo: cleanText(fields.driverCellNo),
+    workingCenter: cleanText(fields.workingCenter),
+    depotPlantCode: cleanText(fields.depotPlantCode)?.toUpperCase(),
+    source: cleanText(fields.source)?.toUpperCase(),
     partyNames: Array.isArray(fields.partyNames)
       ? fields.partyNames.map((p) => p.trim()).filter(Boolean)
       : undefined,
@@ -111,6 +120,12 @@ export function getValidationIssues(fields: ExtractedFields, documentType: Docum
   if (fields.date && !/^\d{4}-\d{2}-\d{2}$/.test(fields.date)) {
     issues.push('date format invalid');
   }
+  if (fields.companyInvoiceDate && !/^\d{4}-\d{2}-\d{2}$/.test(fields.companyInvoiceDate)) {
+    issues.push('companyInvoiceDate format invalid');
+  }
+  if (fields.ewayBillDate && !/^\d{4}-\d{2}-\d{2}$/.test(fields.ewayBillDate)) {
+    issues.push('ewayBillDate format invalid');
+  }
   return issues;
 }
 
@@ -123,8 +138,9 @@ export function computeFieldConfidence(fields: ExtractedFields, baseConfidence: 
   const keys: (keyof ExtractedFields)[] = [
     'vehicleNo', 'date', 'lrNo', 'invoiceNo', 'quantity', 'tollAmount', 'weightInfo',
     'billToParty', 'shipToParty', 'principalCompany', 'branchName', 'loadingSlipNo',
-    'companyInvoiceNo', 'companyInvoiceDate', 'companyEwayBillNo', 'deliveryDestination',
-    'productName', 'transporterName', 'orderType', 'tptCode',
+    'companyInvoiceNo', 'companyInvoiceDate', 'companyEwayBillNo', 'ewayBillDate',
+    'approvedDestination', 'deliveryDestination', 'orderNo', 'productName', 'transporterName',
+    'orderType', 'tptCode', 'driverName', 'driverCellNo', 'workingCenter', 'depotPlantCode', 'source',
   ];
 
   for (const key of keys) {

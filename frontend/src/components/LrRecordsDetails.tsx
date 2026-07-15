@@ -8,31 +8,34 @@ import { LrEditModal } from './LrEditModal';
 
 const PAGE_SIZE = 25;
 
-/** Value displayed in cells and filters for fields not yet in the data model. */
-const PLACEHOLDER = '—';
-
 type SortDir = 'asc' | 'desc';
 
 interface Filters {
   principalCompany: string;
   branchId: string;
   workingCenter: string;
-  depot: string;
-  plantCode: string;
+  depotPlantCode: string;
   lrDate: string;
-  invoiceDate: string;
-  ewayBillDate: string;
+  invoiceNo: string;
+  lrNo: string;
+  vehicleNo: string;
+  driverName: string;
+  productName: string;
+  tptCode: string;
 }
 
 const EMPTY_FILTERS: Filters = {
   principalCompany: '',
   branchId: '',
   workingCenter: '',
-  depot: '',
-  plantCode: '',
+  depotPlantCode: '',
   lrDate: '',
-  invoiceDate: '',
-  ewayBillDate: '',
+  invoiceNo: '',
+  lrNo: '',
+  vehicleNo: '',
+  driverName: '',
+  productName: '',
+  tptCode: '',
 };
 
 interface FetchParams {
@@ -59,8 +62,6 @@ interface ColDef {
   sortField: string | null;
   width: number;
   render: (lr: Lr) => React.ReactNode;
-  /** True for columns whose backing field is not yet in the data model. */
-  placeholder?: boolean;
 }
 
 function formatDate(v: string | null | undefined): string {
@@ -74,26 +75,29 @@ function formatNumber(v: number | null | undefined): string {
 }
 
 const COLUMNS: ColDef[] = [
-  { key: 'lrDate',               label: 'LR Date',               sortField: 'lrDate',               width: 100, render: (lr) => formatDate(lr.lrDate) },
-  { key: 'lrNo',                 label: 'LR Number',             sortField: 'lrNo',                 width: 150, render: (lr) => lr.lrNo },
-  { key: 'inDate',               label: 'In Date',               sortField: 'date',                 width: 100, render: (lr) => formatDate(lr.date) },
-  { key: 'companyInvoiceNo',     label: 'Invoice Number',        sortField: 'companyInvoiceNo',     width: 150, render: (lr) => lr.companyInvoiceNo ?? '—' },
-  // NOTE: ewayBillDate, shipApproved, and driverMobile are required by the spec but do not
-  // yet exist in the LR data model. They are shown as PLACEHOLDER until the schema is extended.
-  { key: 'ewayBillDate',         label: 'E-Way Bill Date',       sortField: null,                   width: 120, placeholder: true, render: () => PLACEHOLDER },
-  { key: 'companyEwayBillNo',    label: 'E-Way Bill Number',     sortField: 'companyEwayBillNo',    width: 160, render: (lr) => lr.companyEwayBillNo ?? '—' },
-  { key: 'loadingSlipNo',        label: 'Loading Slip Number',   sortField: 'loadingSlipNo',        width: 150, render: (lr) => lr.loadingSlipNo ?? '—' },
-  { key: 'billNo',               label: 'Bill Number',           sortField: 'billNo',               width: 120, render: (lr) => lr.billNo ?? '—' },
-  { key: 'shipApproved',         label: 'Ship Approved',         sortField: null,                   width: 110, placeholder: true, render: () => PLACEHOLDER }, // not yet in schema
-  { key: 'destination',          label: 'Destination',           sortField: 'shipToParty',          width: 160, render: (lr) => lr.shipToParty ?? '—' },
-  { key: 'deliveredDestination', label: 'Delivered Destination', sortField: 'deliveryDestination',  width: 170, render: (lr) => lr.deliveryDestination ?? '—' },
-  { key: 'quantityInBags',       label: 'Order Quantity (Bags)', sortField: 'quantityInBags',       width: 150, render: (lr) => formatNumber(lr.quantityInBags) },
-  { key: 'quantityInMt',         label: 'Quantity (MT)',         sortField: 'quantityInMt',         width: 120, render: (lr) => formatNumber(lr.quantityInMt) },
-  { key: 'productName',          label: 'Product',               sortField: 'productName',          width: 140, render: (lr) => lr.productName ?? '—' },
-  { key: 'vehicleNo',            label: 'Vehicle Number',        sortField: 'vehicleNo',            width: 130, render: (lr) => lr.vehicleNo ?? '—' },
-  { key: 'tptCode',              label: 'Transport Code',        sortField: 'tptCode',              width: 130, render: (lr) => lr.tptCode ?? '—' },
-  { key: 'driverName',           label: 'Driver Name',           sortField: 'driverName',           width: 140, render: (lr) => lr.driverName ?? '—' },
-  { key: 'driverMobile',         label: 'Driver Mobile Number',  sortField: null,                   width: 150, placeholder: true, render: () => PLACEHOLDER }, // not yet in schema
+  { key: 'principalCompany',    label: 'Principal Company',     sortField: 'principalCompany',    width: 160, render: (lr) => lr.principalCompany ?? '—' },
+  { key: 'branch',              label: 'Branch',                sortField: null,                  width: 130, render: (lr) => lr.branch?.name ?? '—' },
+  { key: 'workingCenter',       label: 'Working Center',        sortField: 'workingCenter',       width: 140, render: (lr) => lr.workingCenter ?? '—' },
+  { key: 'depotPlantCode',      label: 'Depot / Plant Code',    sortField: 'depotPlantCode',      width: 140, render: (lr) => lr.depotPlantCode ?? '—' },
+  { key: 'lrDate',              label: 'LR Date',               sortField: 'lrDate',              width: 100, render: (lr) => formatDate(lr.lrDate) },
+  { key: 'lrNo',                label: 'LR Number',             sortField: 'lrNo',                width: 150, render: (lr) => lr.lrNo },
+  { key: 'inDate',              label: 'In Date',               sortField: 'date',                width: 100, render: (lr) => formatDate(lr.date) },
+  { key: 'companyInvoiceNo',    label: 'Invoice Number',        sortField: 'companyInvoiceNo',    width: 150, render: (lr) => lr.companyInvoiceNo ?? '—' },
+  { key: 'ewayBillDate',        label: 'E-Way Bill Date',       sortField: 'ewayBillDate',        width: 120, render: (lr) => formatDate(lr.ewayBillDate) },
+  { key: 'companyEwayBillNo',   label: 'E-Way Bill Number',     sortField: 'companyEwayBillNo',   width: 160, render: (lr) => lr.companyEwayBillNo ?? '—' },
+  { key: 'loadingSlipNo',       label: 'Loading Slip Number',   sortField: 'loadingSlipNo',       width: 150, render: (lr) => lr.loadingSlipNo ?? '—' },
+  { key: 'billToParty',         label: 'Bill To',               sortField: null,                  width: 150, render: (lr) => lr.billToParty ?? '—' },
+  { key: 'shipToParty',         label: 'Ship To',               sortField: 'shipToParty',         width: 150, render: (lr) => lr.shipToParty ?? '—' },
+  { key: 'approvedDestination', label: 'Approved Destination',  sortField: 'approvedDestination', width: 170, render: (lr) => lr.approvedDestination ?? '—' },
+  { key: 'deliveryDestination', label: 'Delivered Destination', sortField: 'deliveryDestination', width: 170, render: (lr) => lr.deliveryDestination ?? '—' },
+  { key: 'orderNo',             label: 'Order Number',          sortField: 'orderNo',             width: 130, render: (lr) => lr.orderNo ?? '—' },
+  { key: 'quantityInBags',      label: 'Quantity (Bags)',       sortField: 'quantityInBags',      width: 130, render: (lr) => formatNumber(lr.quantityInBags) },
+  { key: 'quantityInMt',        label: 'Quantity (MT)',         sortField: 'quantityInMt',        width: 120, render: (lr) => formatNumber(lr.quantityInMt) },
+  { key: 'productName',         label: 'Product',               sortField: 'productName',         width: 140, render: (lr) => lr.productName ?? '—' },
+  { key: 'vehicleNo',           label: 'Vehicle Number',        sortField: 'vehicleNo',           width: 130, render: (lr) => lr.vehicleNo ?? '—' },
+  { key: 'tptCode',             label: 'Transport Code',        sortField: 'tptCode',             width: 130, render: (lr) => lr.tptCode ?? '—' },
+  { key: 'driverName',          label: 'Driver Name',           sortField: 'driverName',          width: 140, render: (lr) => lr.driverName ?? '—' },
+  { key: 'driverCellNo',        label: 'Driver Cell Number',    sortField: 'driverCellNo',        width: 150, render: (lr) => lr.driverCellNo ?? '—' },
 ];
 
 // ── SearchableSelect ──────────────────────────────────────────────────────────
@@ -233,6 +237,12 @@ export function LrRecordsDetails({ refreshTrigger = 0 }: { refreshTrigger?: numb
   // ── Dropdown option lists ───────────────────────────────────────────────────
   const [branches, setBranches] = useState<{ value: string; label: string }[]>([]);
   const [principalCompanies, setPrincipalCompanies] = useState<{ value: string; label: string }[]>([]);
+  const [vehicleNos, setVehicleNos] = useState<{ value: string; label: string }[]>([]);
+  const [productNames, setProductNames] = useState<{ value: string; label: string }[]>([]);
+  const [tptCodes, setTptCodes] = useState<{ value: string; label: string }[]>([]);
+  const [driverNames, setDriverNames] = useState<{ value: string; label: string }[]>([]);
+  const [workingCenters, setWorkingCenters] = useState<{ value: string; label: string }[]>([]);
+  const [depotPlantCodes, setDepotPlantCodes] = useState<{ value: string; label: string }[]>([]);
 
   // ── Edit modal ──────────────────────────────────────────────────────────────
   const [editingLr, setEditingLr] = useState<Lr | null>(null);
@@ -245,6 +255,12 @@ export function LrRecordsDetails({ refreshTrigger = 0 }: { refreshTrigger?: numb
 
     lrApi.filterValues().then((fv) => {
       setPrincipalCompanies(fv.principalCompanies.map((v) => ({ value: v, label: v })));
+      setVehicleNos(fv.vehicleNos.map((v) => ({ value: v, label: v })));
+      setProductNames(fv.productNames.map((v) => ({ value: v, label: v })));
+      setTptCodes(fv.tptCodes.map((v) => ({ value: v, label: v })));
+      setDriverNames(fv.driverNames.map((v) => ({ value: v, label: v })));
+      setWorkingCenters(fv.workingCenters.map((v) => ({ value: v, label: v })));
+      setDepotPlantCodes(fv.depotPlantCodes.map((v) => ({ value: v, label: v })));
     }).catch(() => {});
   }, []);
 
@@ -261,7 +277,14 @@ export function LrRecordsDetails({ refreshTrigger = 0 }: { refreshTrigger?: numb
         principalCompany: params.filters.principalCompany || undefined,
         branchId: params.filters.branchId || undefined,
         lrDate: params.filters.lrDate || undefined,
-        invoiceDate: params.filters.invoiceDate || undefined,
+        invoiceNo: params.filters.invoiceNo || undefined,
+        lrNo: params.filters.lrNo || undefined,
+        vehicleNo: params.filters.vehicleNo || undefined,
+        driverName: params.filters.driverName || undefined,
+        productName: params.filters.productName || undefined,
+        tptCode: params.filters.tptCode || undefined,
+        workingCenter: params.filters.workingCenter || undefined,
+        depotPlantCode: params.filters.depotPlantCode || undefined,
         sortBy: params.sortBy ?? undefined,
         sortDir: params.sortBy ? params.sortDir : undefined,
       });
@@ -324,7 +347,7 @@ export function LrRecordsDetails({ refreshTrigger = 0 }: { refreshTrigger?: numb
       {/* ── Section header ─────────────────────────────────────────── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#1a1a2e' }}>
-          LR Records Details
+          LR Details
           {total > 0 && (
             <span style={{ fontSize: 13, fontWeight: 400, color: '#6b7280', marginLeft: 8 }}>
               ({total.toLocaleString()} records)
@@ -347,15 +370,13 @@ export function LrRecordsDetails({ refreshTrigger = 0 }: { refreshTrigger?: numb
           <span style={{
             position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
             fontSize: 14, color: '#9ca3af', pointerEvents: 'none',
-          }}>
-            🔍
-          </span>
+          }}>🔍</span>
           <input
             type="text"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={handleSearchKeyDown}
-            placeholder="Search by LR No, Invoice No, Vehicle No, Driver Name, E-Way Bill No, Loading Slip No…"
+            placeholder="Search by LR No, Invoice No, Vehicle No, Driver Name, Driver Mobile, Product, E-Way Bill No…"
             style={{
               width: '100%', padding: '8px 12px 8px 34px',
               borderRadius: 8, border: '1px solid #d1d5db',
@@ -409,33 +430,19 @@ export function LrRecordsDetails({ refreshTrigger = 0 }: { refreshTrigger?: numb
             <SearchableSelect
               value={pendingFilters.workingCenter}
               onChange={(v) => setPendingFilters((f) => ({ ...f, workingCenter: v }))}
-              options={[]}
+              options={workingCenters}
               placeholder="All Centers"
-              disabled
             />
           </div>
 
-          {/* Depot */}
+          {/* Depot / Plant Code */}
           <div>
-            <div style={sFilterLabel}>Depot</div>
+            <div style={sFilterLabel}>Depot / Plant Code</div>
             <SearchableSelect
-              value={pendingFilters.depot}
-              onChange={(v) => setPendingFilters((f) => ({ ...f, depot: v }))}
-              options={[]}
+              value={pendingFilters.depotPlantCode}
+              onChange={(v) => setPendingFilters((f) => ({ ...f, depotPlantCode: v }))}
+              options={depotPlantCodes}
               placeholder="All Depots"
-              disabled
-            />
-          </div>
-
-          {/* Plant Code */}
-          <div>
-            <div style={sFilterLabel}>Plant Code</div>
-            <SearchableSelect
-              value={pendingFilters.plantCode}
-              onChange={(v) => setPendingFilters((f) => ({ ...f, plantCode: v }))}
-              options={[]}
-              placeholder="All Plants"
-              disabled
             />
           </div>
 
@@ -450,27 +457,73 @@ export function LrRecordsDetails({ refreshTrigger = 0 }: { refreshTrigger?: numb
             />
           </div>
 
-          {/* Invoice Date */}
+          {/* Invoice Number */}
           <div>
-            <div style={sFilterLabel}>Invoice Date</div>
+            <div style={sFilterLabel}>Invoice Number</div>
             <input
-              type="date"
-              value={pendingFilters.invoiceDate}
-              onChange={(e) => setPendingFilters((f) => ({ ...f, invoiceDate: e.target.value }))}
-              style={sDateInput}
+              type="text"
+              value={pendingFilters.invoiceNo}
+              onChange={(e) => setPendingFilters((f) => ({ ...f, invoiceNo: e.target.value }))}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="Invoice No…"
+              style={sTextInput}
             />
           </div>
 
-          {/* E-Way Bill Date — filter placeholder; ewayBillDate field not yet in schema */}
+          {/* LR Number */}
           <div>
-            <div style={sFilterLabel}>E-Way Bill Date</div>
+            <div style={sFilterLabel}>LR Number</div>
             <input
-              type="date"
-              value={pendingFilters.ewayBillDate}
-              onChange={(e) => setPendingFilters((f) => ({ ...f, ewayBillDate: e.target.value }))}
-              style={{ ...sDateInput, opacity: 0.5, cursor: 'not-allowed' }}
-              disabled
-              title="E-Way Bill Date filtering is not yet available (field not in data model)"
+              type="text"
+              value={pendingFilters.lrNo}
+              onChange={(e) => setPendingFilters((f) => ({ ...f, lrNo: e.target.value }))}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="LR No…"
+              style={sTextInput}
+            />
+          </div>
+
+          {/* Vehicle Number */}
+          <div>
+            <div style={sFilterLabel}>Vehicle Number</div>
+            <SearchableSelect
+              value={pendingFilters.vehicleNo}
+              onChange={(v) => setPendingFilters((f) => ({ ...f, vehicleNo: v }))}
+              options={vehicleNos}
+              placeholder="All Vehicles"
+            />
+          </div>
+
+          {/* Driver Name */}
+          <div>
+            <div style={sFilterLabel}>Driver Name</div>
+            <SearchableSelect
+              value={pendingFilters.driverName}
+              onChange={(v) => setPendingFilters((f) => ({ ...f, driverName: v }))}
+              options={driverNames}
+              placeholder="All Drivers"
+            />
+          </div>
+
+          {/* Product */}
+          <div>
+            <div style={sFilterLabel}>Product</div>
+            <SearchableSelect
+              value={pendingFilters.productName}
+              onChange={(v) => setPendingFilters((f) => ({ ...f, productName: v }))}
+              options={productNames}
+              placeholder="All Products"
+            />
+          </div>
+
+          {/* Transport Code */}
+          <div>
+            <div style={sFilterLabel}>Transport Code</div>
+            <SearchableSelect
+              value={pendingFilters.tptCode}
+              onChange={(v) => setPendingFilters((f) => ({ ...f, tptCode: v }))}
+              options={tptCodes}
+              placeholder="All Transporters"
             />
           </div>
         </div>
@@ -578,7 +631,7 @@ export function LrRecordsDetails({ refreshTrigger = 0 }: { refreshTrigger?: numb
               >
                 {COLUMNS.map((col) => {
                   const rendered = col.render(lr);
-                  const tipVal = typeof rendered === 'string' && rendered !== PLACEHOLDER ? rendered : undefined;
+                  const tipVal = typeof rendered === 'string' && rendered !== '—' ? rendered : undefined;
                   return (
                     <td key={col.key} style={sTdBase} title={tipVal}>
                       <span style={{
@@ -704,6 +757,10 @@ const sDateInput: React.CSSProperties = {
   color: '#1a1a2e', boxSizing: 'border-box',
 };
 
+const sTextInput: React.CSSProperties = {
+  ...sDateInput,
+};
+
 const sBtnApply: React.CSSProperties = {
   padding: '7px 16px', background: '#4361ee', color: '#fff',
   border: 'none', borderRadius: 7, cursor: 'pointer', fontSize: 13, fontWeight: 600,
@@ -751,3 +808,4 @@ const sPageBtn: React.CSSProperties = {
   padding: '5px 12px', background: '#eef0ff', border: '1px solid #c0c8ff',
   borderRadius: 6, cursor: 'pointer', fontSize: 12, color: '#4361ee', fontWeight: 500,
 };
+

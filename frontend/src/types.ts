@@ -2,6 +2,15 @@ export type DocumentType = 'LR' | 'INVOICE' | 'TOLL' | 'WEIGHMENT' | 'WEIGHMENT_
 export type DocumentStatus = 'PENDING_OCR' | 'PENDING_REVIEW' | 'REVIEWED' | 'SAVED';
 export type RecipientType = 'ACCOUNTS' | 'PARTY' | 'TRANSPORTER';
 export type BundleStatus = 'DRAFT' | 'READY' | 'SENT';
+export type LrDocumentCategory =
+  | 'LR_GENERATED'
+  | 'ACKNOWLEDGED_INVOICE'
+  | 'ACKNOWLEDGED_LR_COPY'
+  | 'DEPOT_PLANT_WEIGHMENT_SLIP'
+  | 'SITE_WEIGHMENT_SLIP'
+  | 'TOLL_RECEIPT'
+  | 'ADDITIONAL_ATTACHMENT_1'
+  | 'ADDITIONAL_ATTACHMENT_2';
 
 // ── Lorry Receipt (LR) ────────────────────────────────────────────────────────
 
@@ -37,10 +46,17 @@ export interface Lr {
   tptCode: string | null;
   transporterName: string | null;
   driverName: string | null;
+  driverCellNo: string | null;
   driverBillNo: string | null;
   billDate: string | null;
   billNo: string | null;
   billAmount: number | null;
+  // Additional logistics fields
+  ewayBillDate: string | null;
+  approvedDestination: string | null;
+  orderNo: string | null;
+  workingCenter: string | null;
+  depotPlantCode: string | null;
   // Legacy
   invoiceNo: string | null;
   status: string;
@@ -54,6 +70,7 @@ export interface Lr {
   updatedAt: string;
   company?: { id: string; name: string };
   branch?: { id: string; name: string };
+  uploadedDocuments?: Document[];
 }
 
 export interface PaginatedLrs {
@@ -64,8 +81,11 @@ export interface PaginatedLrs {
 }
 
 export interface LrSummary {
-  lrCount: number;
-  invoiceCount: number;
+  generatedLrCount: number | null;
+  generatedInvoiceCount: number | null;
+  acknowledgedLrCount: number;
+  acknowledgedInvoiceCount: number;
+  totalUploadedDocuments: number;
 }
 
 export interface ExtractedData {
@@ -87,12 +107,24 @@ export interface ExtractedData {
   shipToParty?: string | null;
   principalCompany?: string | null;
   branchName?: string | null;
+  loadingSlipNo?: string | null;
+  companyInvoiceNo?: string | null;
+  companyInvoiceDate?: string | null;
+  companyEwayBillNo?: string | null;
+  ewayBillDate?: string | null;
+  approvedDestination?: string | null;
+  deliveryDestination?: string | null;
+  orderNo?: string | null;
+  productName?: string | null;
+  transporterName?: string | null;
   orderType?: string | null;
   tptCode?: string | null;
   quantityInMt?: number | null;
   quantityInBags?: number | null;
   driverName?: string | null;
   driverCellNo?: string | null;
+  workingCenter?: string | null;
+  depotPlantCode?: string | null;
   source?: string | null;
 }
 
@@ -114,6 +146,10 @@ export interface Document {
   uploadedAt: string;
   updatedAt: string;
   groupId: string | null;
+  lrId?: string | null;
+  lrDocumentCategory?: LrDocumentCategory | null;
+  uploadedById?: string | null;
+  uploadedBy?: { id: string; name: string; email: string } | null;
   /** Present when this document was extracted from a multi-page PDF. */
   sourceDocumentId?: string | null;
   /** 1-based page index within the source PDF; null for non-page documents. */
@@ -133,8 +169,26 @@ export interface ReviewPayload {
   weightInfo?: string;
   billToParty?: string;
   shipToParty?: string;
+  principalCompany?: string;
+  branchName?: string;
+  loadingSlipNo?: string;
+  companyInvoiceNo?: string;
+  companyInvoiceDate?: string;
+  companyEwayBillNo?: string;
+  ewayBillDate?: string;
+  approvedDestination?: string;
+  deliveryDestination?: string;
+  orderNo?: string;
+  productName?: string;
+  transporterName?: string;
+  orderType?: string;
+  tptCode?: string;
+  quantityInMt?: number;
+  quantityInBags?: number;
   driverName?: string;
   driverCellNo?: string;
+  workingCenter?: string;
+  depotPlantCode?: string;
   source?: string;
   documentType?: DocumentType;
 }
