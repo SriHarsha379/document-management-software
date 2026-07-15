@@ -164,6 +164,7 @@ export const bundlesApi = {
 
 import type { SearchResponse } from '../types';
 import type { Lr, PaginatedLrs, LrSummary } from '../types';
+import type { LrDocumentCategory } from '../types';
 
 // ── LR API ────────────────────────────────────────────────────────────────────
 
@@ -195,6 +196,60 @@ export const lrApi = {
 
   summary: async (): Promise<LrSummary> => {
     const res = await api.get<LrSummary>('/lrs/summary');
+    return res.data;
+  },
+
+  listDocuments: async (lrId: string): Promise<{
+    lr: { id: string; lrNo: string; lrDate: string | null; billToParty: string | null; shipToParty: string | null };
+    documents: Document[];
+    recipientSuggestions: {
+      suggestedTo: string[];
+      suggestions: Array<{ type: string; label: string; value: string; sourceName: string }>;
+    };
+  }> => {
+    const res = await api.get<{
+      lr: { id: string; lrNo: string; lrDate: string | null; billToParty: string | null; shipToParty: string | null };
+      documents: Document[];
+      recipientSuggestions: {
+        suggestedTo: string[];
+        suggestions: Array<{ type: string; label: string; value: string; sourceName: string }>;
+      };
+    }>(`/lrs/${lrId}/documents`);
+    return res.data;
+  },
+
+  uploadDocument: async (lrId: string, category: LrDocumentCategory, file: File): Promise<Document> => {
+    const formData = new FormData();
+    formData.append('category', category);
+    formData.append('file', file);
+    const res = await api.post<{ message: string; document: Document }>(`/lrs/${lrId}/documents`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data.document;
+  },
+
+  deleteDocument: async (lrId: string, documentId: string): Promise<void> => {
+    await api.delete(`/lrs/${lrId}/documents/${documentId}`);
+  },
+
+  sendDocumentsEmail: async (lrId: string, payload: { to: string[]; cc?: string[]; bcc?: string[] }): Promise<{
+    message: string;
+    smtp: {
+      messageId: string;
+      accepted: string[];
+      rejected: string[];
+      response?: string;
+    };
+  }> => {
+    const res = await api.post<{
+      message: string;
+      smtp: {
+        messageId: string;
+        accepted: string[];
+        rejected: string[];
+        response?: string;
+      };
+    }>(`/lrs/${lrId}/send-email`, payload);
     return res.data;
   },
 

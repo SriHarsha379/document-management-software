@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { LrSummary } from '../types';
 import { lrApi } from '../services/api';
 import { LrRecordsDetails } from './LrRecordsDetails';
@@ -79,6 +79,22 @@ export function LrDashboard() {
       {/* ── Summary Cards ────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 24 }}>
         <SummaryCard
+          title="Generated LR"
+          count={summary?.generatedLrCount ?? null}
+          icon="🚛"
+          color="#2563eb"
+          bgColor="#dbeafe"
+          subtitle="Generated LR records available in DMS"
+        />
+        <SummaryCard
+          title="Generated Invoices"
+          count={summary?.generatedInvoiceCount ?? null}
+          icon="🧾"
+          color="#0f766e"
+          bgColor="#ccfbf1"
+          subtitle="Generated invoice records available in DMS"
+        />
+        <SummaryCard
           title="Acknowledged LR"
           count={summary?.acknowledgedLrCount ?? null}
           icon="📋"
@@ -94,6 +110,14 @@ export function LrDashboard() {
           bgColor="#d1fae5"
           subtitle="Invoice documents uploaded to DMS"
         />
+        <SummaryCard
+          title="Total Uploaded Documents"
+          count={summary?.totalUploadedDocuments ?? null}
+          icon="📂"
+          color="#7c3aed"
+          bgColor="#ede9fe"
+          subtitle="All uploaded LR-related documents"
+        />
       </div>
 
       {/* ── LR Records Details ───────────────────────────────────────── */}
@@ -101,4 +125,3 @@ export function LrDashboard() {
     </div>
   );
 }
-

@@ -2,6 +2,15 @@ export type DocumentType = 'LR' | 'INVOICE' | 'TOLL' | 'WEIGHMENT' | 'WEIGHMENT_
 export type DocumentStatus = 'PENDING_OCR' | 'PENDING_REVIEW' | 'REVIEWED' | 'SAVED';
 export type RecipientType = 'ACCOUNTS' | 'PARTY' | 'TRANSPORTER';
 export type BundleStatus = 'DRAFT' | 'READY' | 'SENT';
+export type LrDocumentCategory =
+  | 'LR_GENERATED'
+  | 'ACKNOWLEDGED_INVOICE'
+  | 'ACKNOWLEDGED_LR_COPY'
+  | 'DEPOT_PLANT_WEIGHMENT_SLIP'
+  | 'SITE_WEIGHMENT_SLIP'
+  | 'TOLL_RECEIPT'
+  | 'ADDITIONAL_ATTACHMENT_1'
+  | 'ADDITIONAL_ATTACHMENT_2';
 
 // ── Lorry Receipt (LR) ────────────────────────────────────────────────────────
 
@@ -61,6 +70,7 @@ export interface Lr {
   updatedAt: string;
   company?: { id: string; name: string };
   branch?: { id: string; name: string };
+  uploadedDocuments?: Document[];
 }
 
 export interface PaginatedLrs {
@@ -71,10 +81,11 @@ export interface PaginatedLrs {
 }
 
 export interface LrSummary {
-  lrCount: number;
-  invoiceCount: number;
+  generatedLrCount: number | null;
+  generatedInvoiceCount: number | null;
   acknowledgedLrCount: number;
   acknowledgedInvoiceCount: number;
+  totalUploadedDocuments: number;
 }
 
 export interface ExtractedData {
@@ -123,6 +134,10 @@ export interface Document {
   uploadedAt: string;
   updatedAt: string;
   groupId: string | null;
+  lrId?: string | null;
+  lrDocumentCategory?: LrDocumentCategory | null;
+  uploadedById?: string | null;
+  uploadedBy?: { id: string; name: string; email: string } | null;
   /** Present when this document was extracted from a multi-page PDF. */
   sourceDocumentId?: string | null;
   /** 1-based page index within the source PDF; null for non-page documents. */

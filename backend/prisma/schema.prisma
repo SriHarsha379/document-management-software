@@ -61,6 +61,7 @@ model User {
   userRoles        UserRole[]
   userBranchAccess UserBranchAccess[]
   userSourceAccess UserSourceAccess[]
+  uploadedDocuments Document[] @relation("DocumentUploader")
 
   @@map("users")
 }
@@ -207,6 +208,7 @@ model Lr {
   source    String  @default("INTERNAL")
 
   documentLinks DocumentLinkRecord[]
+  uploadedDocuments Document[]
 
   @@index([companyId])
   @@index([lrNo])
@@ -245,6 +247,12 @@ model Document {
   groupId       String?
   group         DocumentGroup? @relation(fields: [groupId], references: [id])
 
+  lrId                String?
+  lr                  Lr?                @relation(fields: [lrId], references: [id], onDelete: Cascade)
+  lrDocumentCategory  LrDocumentCategory?
+  uploadedById        String?
+  uploadedBy          User?              @relation("DocumentUploader", fields: [uploadedById], references: [id])
+
   // For documents extracted from a multi-page PDF, these fields link the page
   // Document back to the original source PDF Document.
   sourceDocumentId String?
@@ -260,6 +268,9 @@ model Document {
   @@index([status])
   @@index([uploadedAt])
   @@index([sourceDocumentId])
+  @@index([lrId])
+  @@index([lrDocumentCategory])
+  @@index([uploadedById])
 
   @@map("documents")
 }
@@ -391,6 +402,17 @@ enum DocumentStatus {
   PENDING_REVIEW
   REVIEWED
   SAVED
+}
+
+enum LrDocumentCategory {
+  LR_GENERATED
+  ACKNOWLEDGED_INVOICE
+  ACKNOWLEDGED_LR_COPY
+  DEPOT_PLANT_WEIGHMENT_SLIP
+  SITE_WEIGHMENT_SLIP
+  TOLL_RECEIPT
+  ADDITIONAL_ATTACHMENT_1
+  ADDITIONAL_ATTACHMENT_2
 }
 
 enum RecipientType {

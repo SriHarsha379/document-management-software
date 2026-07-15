@@ -116,7 +116,31 @@ export const lrRepo = {
         orderBy,
         take: opts.limit ?? 50,
         skip: opts.offset ?? 0,
-        include: { company: { select: { id: true, name: true } }, branch: { select: { id: true, name: true } } },
+        include: {
+          company: { select: { id: true, name: true } },
+          branch: { select: { id: true, name: true } },
+          uploadedDocuments: {
+            select: {
+              id: true,
+              type: true,
+              status: true,
+              originalFilename: true,
+              mimeType: true,
+              rawFilePath: true,
+              uploadedAt: true,
+              updatedAt: true,
+              groupId: true,
+              sourceDocumentId: true,
+              pageNumber: true,
+              lrDocumentCategory: true,
+              uploadedById: true,
+              uploadedBy: {
+                select: { id: true, name: true, email: true },
+              },
+            },
+            orderBy: [{ uploadedAt: 'desc' }],
+          },
+        },
       }),
       db.lr.count({ where }),
     ]);
@@ -204,13 +228,39 @@ export const lrRepo = {
   },
 
   // ── summary — count of acknowledged LRs and Invoices for dashboard cards ─────
-  async summary(companyId: string): Promise<{ lrCount: number; invoiceCount: number; acknowledgedLrCount: number; acknowledgedInvoiceCount: number }> {
-    const [lrCount, acknowledgedLrCount, acknowledgedInvoiceCount] = await Promise.all([
+  async summary(companyId: string): Promise<{
+    generatedLrCount: number | null;
+    generatedInvoiceCount: number | null;
+    acknowledgedLrCount: number;
+    acknowledgedInvoiceCount: number;
+    totalUploadedDocuments: number;
+  }> {
+    const [
+      generatedLrCount,
+      generatedInvoiceRows,
+      acknowledgedLrCount,
+      acknowledgedInvoiceCount,
+      totalUploadedDocuments,
+    ] = await Promise.all([
       db.lr.count({ where: { companyId } }),
-      db.document.count({ where: { type: 'LR' } }),
-      db.document.count({ where: { type: 'INVOICE' } }),
+      db.lr.findMany({
+        where: { companyId, companyInvoiceNo: { not: null } },
+        select: { companyInvoiceNo: true },
+        distinct: ['companyInvoiceNo'],
+      }),
+      db.document.count({ where: { lr: { companyId }, lrDocumentCategory: 'ACKNOWLEDGED_LR_COPY' } }),
+      db.document.count({ where: { lr: { companyId }, lrDocumentCategory: 'ACKNOWLEDGED_INVOICE' } }),
+      db.document.count({ where: { lr: { companyId }, lrDocumentCategory: { not: null } } }),
     ]);
-    return { lrCount, invoiceCount: acknowledgedInvoiceCount, acknowledgedLrCount, acknowledgedInvoiceCount };
+    return {
+      generatedLrCount,
+      generatedInvoiceCount: generatedInvoiceRows
+        .filter((row) => typeof row.companyInvoiceNo === 'string' && row.companyInvoiceNo.trim() !== '')
+        .length,
+      acknowledgedLrCount,
+      acknowledgedInvoiceCount,
+      totalUploadedDocuments,
+    };
   },
 
   // ── create ───────────────────────────────────────────────────────────────────
