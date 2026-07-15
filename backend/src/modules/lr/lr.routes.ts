@@ -110,7 +110,7 @@ router.get(
   requirePermission('lr.read'),
   async (req: Request, res: Response): Promise<void> => {
     try {
-      const lr = await getScopedLr(req, String(req.params.id));
+      const lr = await getScopedLrWithDocuments(req, String(req.params.id));
       if (!lr) {
         res.status(404).json({ error: 'LR not found' });
         return;
@@ -210,7 +210,7 @@ router.delete(
   requirePermission('document.delete'),
   async (req: Request, res: Response): Promise<void> => {
     try {
-      const lr = await getScopedLr(req, String(req.params.id), false);
+      const lr = await getScopedLr(req, String(req.params.id));
       if (!lr) {
         res.status(404).json({ error: 'LR not found' });
         return;
@@ -243,7 +243,7 @@ router.post(
   requirePermission('communication.send'),
   async (req: Request, res: Response): Promise<void> => {
     try {
-      const lr = await getScopedLr(req, String(req.params.id), false);
+      const lr = await getScopedLrWithDocuments(req, String(req.params.id));
       if (!lr) {
         res.status(404).json({ error: 'LR not found' });
         return;
@@ -657,19 +657,24 @@ function firstQueryString(value: unknown): string | undefined {
   return undefined;
 }
 
-async function getScopedLr(req: Request, lrId: string, includeDocuments: boolean = true) {
+async function getScopedLr(req: Request, lrId: string) {
   const scopeWhere = buildScopeWhere(req.user!);
   return db.lr.findFirst({
     where: { ...scopeWhere, id: lrId },
-    include: includeDocuments
-      ? {
-          uploadedDocuments: {
-            include: {
-              uploadedBy: { select: { id: true, name: true, email: true } },
-            },
-          },
-        }
-      : undefined,
+  });
+}
+
+async function getScopedLrWithDocuments(req: Request, lrId: string) {
+  const scopeWhere = buildScopeWhere(req.user!);
+  return db.lr.findFirst({
+    where: { ...scopeWhere, id: lrId },
+    include: {
+      uploadedDocuments: {
+        include: {
+          uploadedBy: { select: { id: true, name: true, email: true } },
+        },
+      },
+    },
   });
 }
 
