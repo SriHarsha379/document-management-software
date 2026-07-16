@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import type { Document, DocumentType, DocumentStatus } from '../types';
+import type { Document, DocumentType, DocumentStatus, DocumentGroup } from '../types';
 import { documentsApi } from '../services/api';
 import { useCurrentUser, PERM } from '../contexts/UserContext';
 
@@ -36,6 +36,9 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
   const [filterVehicle, setFilterVehicle] = useState('');
   const [filterUngrouped, setFilterUngrouped] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [groupLoadingId, setGroupLoadingId] = useState<string | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<DocumentGroup | null>(null);
+  const [groupError, setGroupError] = useState<string | null>(null);
 
   const LIMIT = 15;
 
@@ -66,6 +69,19 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
       setError(err instanceof Error ? err.message : 'Failed to delete document');
     } finally { setDeletingId(null); }
   }, [fetchDocuments]);
+
+  const handleOpenGroup = useCallback(async (groupId: string) => {
+    try {
+      setGroupLoadingId(groupId);
+      setGroupError(null);
+      const group = await documentsApi.getGroup(groupId);
+      setSelectedGroup(group);
+    } catch (err) {
+      setGroupError(err instanceof Error ? err.message : 'Failed to load linked group');
+    } finally {
+      setGroupLoadingId(null);
+    }
+  }, []);
 
   useEffect(() => { void fetchDocuments(); }, [fetchDocuments, refreshTrigger]);
 
@@ -150,9 +166,10 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
               <tbody>
                 {documents.map((doc) => {
                   const ed = doc.extractedData;
+                  const groupId = doc.groupId;
                   const missingVehicle = !ed?.vehicleNo;
                   const missingDate = !ed?.date;
-                  const needsFix = !doc.groupId && (missingVehicle || missingDate);
+                  const needsFix = !groupId && (missingVehicle || missingDate);
                   return (
                     <tr
                       key={doc.id}
@@ -187,9 +204,17 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
                         </span>
                       </td>
                       <td style={td}>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: doc.groupId ? '#4361ee' : '#e53e3e' }}>
-                          {doc.groupId ? '🔗 Linked' : '⚠️ No group'}
-                        </span>
+                        {groupId ? (
+                          <button
+                            style={btnGroup}
+                            onClick={(e) => { e.stopPropagation(); void handleOpenGroup(groupId); }}
+                            disabled={groupLoadingId === groupId}
+                          >
+                            {groupLoadingId === groupId ? 'Loading…' : '🔗 Linked Group'}
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: 12, fontWeight: 600, color: '#e53e3e' }}>⚠️ No group</span>
+                        )}
                       </td>
                       <td style={td} onClick={(e) => e.stopPropagation()}>
                         <a
@@ -238,6 +263,46 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
           <button disabled={page === pages} onClick={() => setPage((p) => p + 1)} style={pageBtn}>Next →</button>
         </div>
       )}
+
+      {groupError && (
+        <div style={{ marginTop: 12, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '10px 14px', color: '#b91c1c', fontSize: 13 }}>
+          ⚠️ {groupError}
+        </div>
+      )}
+
+      {selectedGroup && (
+        <div style={groupBackdrop} onClick={() => setSelectedGroup(null)}>
+          <div style={groupModal} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h3 style={{ margin: 0, color: '#1a1a2e' }}>
+                🔗 Linked Documents · {selectedGroup.vehicleNo} · {selectedGroup.date}
+              </h3>
+              <button style={groupCloseBtn} onClick={() => setSelectedGroup(null)}>✕</button>
+            </div>
+            <div style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+              {(selectedGroup.documents ?? []).map((linkedDoc) => (
+                <div key={linkedDoc.id} style={groupDocRow}>
+                  <div>
+                    <div style={{ fontWeight: 700, color: '#1a1a2e' }}>{linkedDoc.type}</div>
+                    <div style={{ fontSize: 12, color: '#4b5563' }}>{linkedDoc.originalFilename}</div>
+                  </div>
+                  <a
+                    href={`/uploads/${linkedDoc.filePath}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={groupDocLink}
+                  >
+                    👁 View
+                  </a>
+                </div>
+              ))}
+              {(selectedGroup.documents ?? []).length === 0 && (
+                <p style={{ margin: 0, fontSize: 13, color: '#6b7280' }}>No documents found in this linked group.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -270,7 +335,31 @@ const btnDelete: React.CSSProperties = {
   padding: '3px 8px', background: '#ef4444', color: '#fff', border: 'none',
   borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 600,
 };
+const btnGroup: React.CSSProperties = {
+  padding: '4px 8px', background: '#eef2ff', border: '1px solid #c7d2fe',
+  color: '#3730a3', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 700,
+};
 const pageBtn: React.CSSProperties = {
   padding: '6px 14px', background: '#eef0ff', border: '1px solid #c0c8ff',
   borderRadius: 6, cursor: 'pointer', fontSize: 13, color: '#4361ee', fontWeight: 500,
+};
+const groupBackdrop: React.CSSProperties = {
+  position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 2000,
+  display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+};
+const groupModal: React.CSSProperties = {
+  width: 'min(760px, 100%)', background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb',
+  boxShadow: '0 10px 30px rgba(0,0,0,0.2)', padding: 16,
+};
+const groupCloseBtn: React.CSSProperties = {
+  width: 30, height: 30, borderRadius: 8, border: '1px solid #e5e7eb',
+  background: '#fff', cursor: 'pointer', fontWeight: 700,
+};
+const groupDocRow: React.CSSProperties = {
+  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+  border: '1px solid #eef2ff', borderRadius: 8, padding: '10px 12px', marginBottom: 8,
+};
+const groupDocLink: React.CSSProperties = {
+  color: '#4361ee', fontSize: 12, fontWeight: 700, textDecoration: 'none',
+  border: '1px solid #c0c8ff', borderRadius: 6, padding: '4px 10px',
 };
