@@ -193,7 +193,7 @@ Always respond with a valid JSON object with EXACTLY these fields:
   "driverCellNo": "<driver's cell/mobile number from 'Driver Cell No' label or null>",
   "workingCenter": "<working center / working centre name or null>",
   "depotPlantCode": "<depot or plant code or null>",
-  "source": "<source location from 'Source:' label in invoice header or null>",
+  "source": "<source location from sender/company header for LR and INVOICE (use explicit 'Source:' label when present, otherwise infer city/location from address block) or null>",
   "rawText": "<full text extracted from document>"
 }
 
