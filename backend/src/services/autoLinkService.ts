@@ -260,7 +260,7 @@ export async function autoLinkDocument(
  * data that was already captured from the LR document or entered manually.
  *
  * Called after an INVOICE-type document is successfully linked to an Lr record,
- * so that the dashboard INV. NO / INV. DATE / PRINCIPAL COMPANY columns are
+ * so that the dashboard INV. NO / INV. DATE / PRIN. COMPANY columns are
  * populated even when the LR document itself did not carry those values.
  */
 export async function backfillLrFromLinkedInvoice(
