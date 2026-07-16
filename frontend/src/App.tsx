@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { OCRReview } from './components/OCRReview';
-import { DocumentList } from './components/DocumentList';
+import { DocumentUpload } from './components/DocumentUpload';
 import { DocumentBundler } from './components/DocumentBundler';
 import { SmartSearch } from './components/SmartSearch';
 import { DispatchHistory } from './components/DispatchHistory';
@@ -11,18 +11,20 @@ import { DriverPortal } from './components/DriverPortal';
 import { CustomerPortal } from './components/CustomerPortal';
 import { LrDashboard } from './components/LrDashboard';
 import { AdminLogin } from './components/AdminLogin';
-import { UploadDocumentsPage } from './components/UploadDocumentsPage';
+import { UploadDocumentsPage as LrDocumentsTablePage } from './components/UploadDocumentsPage';
 import { authService } from './services/authService';
 import { UserProvider, useCurrentUser, PERM } from './contexts/UserContext';
 import type { Document } from './types';
 
-type View = 'dashboard' | 'list' | 'upload' | 'review' | 'bundle' | 'search' | 'dispatch' | 'drivers' | 'customers' | 'master';
+type View = 'dashboard' | 'documents' | 'upload' | 'review' | 'bundle' | 'search' | 'dispatch' | 'drivers' | 'customers' | 'master';
 
-const HASH_VIEWS: View[] = ['dashboard', 'list', 'upload', 'bundle', 'search', 'dispatch', 'drivers', 'customers', 'master'];
+const HASH_VIEWS: View[] = ['dashboard', 'documents', 'upload', 'bundle', 'search', 'dispatch', 'drivers', 'customers', 'master'];
 
 function viewFromHash(): View {
-  const raw = window.location.hash.replace('#', '') as View;
-  return HASH_VIEWS.includes(raw) ? raw : 'dashboard';
+  const raw = window.location.hash.replace('#', '');
+  if (raw === 'list') return 'documents';
+  const candidate = raw as View;
+  return HASH_VIEWS.includes(candidate) ? candidate : 'dashboard';
 }
 
 function App() {
@@ -53,7 +55,6 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
   const { user, hasPermission } = useCurrentUser();
   const [view, setViewState] = useState<View>(viewFromHash);
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const canUpload       = hasPermission(PERM.DOCUMENT_UPLOAD);
@@ -86,12 +87,12 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  const handleSaved = (_doc: Document) => { setRefreshKey((k) => k + 1); setView('list'); setSelectedDoc(null); };
-  const handleSelectFromList = (doc: Document) => { setSelectedDoc(doc); setView('review'); };
+  const handleSaved = () => { setView('documents'); setSelectedDoc(null); };
+  const handleSelectForReview = (doc: Document) => { setSelectedDoc(doc); setView('review'); };
 
   const allNavItems: (NavItem & { permitted: boolean })[] = [
     { view: 'dashboard',  icon: '📊', label: 'Dashboard',   permitted: true },
-    { view: 'list',       icon: '📋', label: 'Documents',   permitted: true },
+    { view: 'documents',  icon: '📋', label: 'Documents',   permitted: true },
     { view: 'upload',     icon: '➕', label: 'Upload',       permitted: canUpload },
     { view: 'bundle',     icon: '📦', label: 'Bundle',       permitted: canBundle },
     { view: 'search',     icon: '🔍', label: 'Search',       permitted: true },
@@ -193,13 +194,13 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
         <main style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
           <div style={{ maxWidth: 1200, margin: '0 auto' }}>
             {view === 'dashboard' && <LrDashboard />}
-            {view === 'list' && <DocumentList onSelect={handleSelectFromList} refreshTrigger={refreshKey} />}
-            {view === 'upload' && canUpload && <UploadDocumentsPage />}
+            {view === 'documents' && <LrDocumentsTablePage />}
+            {view === 'upload' && canUpload && <DocumentUpload onDocumentReady={handleSelectForReview} />}
             {view === 'review' && selectedDoc && (
               <OCRReview
                 document={selectedDoc}
                 onSaved={handleSaved}
-                onCancel={() => { setRefreshKey((k) => k + 1); setView('list'); setSelectedDoc(null); }}
+                onCancel={() => { setView('documents'); setSelectedDoc(null); }}
               />
             )}
             {view === 'bundle' && canBundle && <DocumentBundler />}
