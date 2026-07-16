@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { OCRReview } from './components/OCRReview';
 import { DocumentUpload } from './components/DocumentUpload';
 import { DocumentBundler } from './components/DocumentBundler';
 import { SmartSearch } from './components/SmartSearch';
@@ -14,9 +13,7 @@ import { AdminLogin } from './components/AdminLogin';
 import { UploadDocumentsPage as LrDocumentsTablePage } from './components/UploadDocumentsPage';
 import { authService } from './services/authService';
 import { UserProvider, useCurrentUser, PERM } from './contexts/UserContext';
-import type { Document } from './types';
-
-type View = 'dashboard' | 'documents' | 'upload' | 'review' | 'bundle' | 'search' | 'dispatch' | 'drivers' | 'customers' | 'master';
+type View = 'dashboard' | 'documents' | 'upload' | 'bundle' | 'search' | 'dispatch' | 'drivers' | 'customers' | 'master';
 
 const HASH_VIEWS: View[] = ['dashboard', 'documents', 'upload', 'bundle', 'search', 'dispatch', 'drivers', 'customers', 'master'];
 
@@ -54,7 +51,6 @@ interface NavItem { view: View; icon: string; label: string; }
 function AdminApp({ onLogout }: { onLogout: () => void }) {
   const { user, hasPermission } = useCurrentUser();
   const [view, setViewState] = useState<View>(viewFromHash);
-  const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const canUpload       = hasPermission(PERM.DOCUMENT_UPLOAD);
@@ -86,9 +82,6 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
-
-  const handleSaved = () => { setView('documents'); setSelectedDoc(null); };
-  const handleSelectForReview = (doc: Document) => { setSelectedDoc(doc); setView('review'); };
 
   const allNavItems: (NavItem & { permitted: boolean })[] = [
     { view: 'dashboard',  icon: '📊', label: 'Dashboard',   permitted: true },
@@ -195,14 +188,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
           <div style={{ maxWidth: 1200, margin: '0 auto' }}>
             {view === 'dashboard' && <LrDashboard />}
             {view === 'documents' && <LrDocumentsTablePage />}
-            {view === 'upload' && canUpload && <DocumentUpload onDocumentReady={handleSelectForReview} />}
-            {view === 'review' && selectedDoc && (
-              <OCRReview
-                document={selectedDoc}
-                onSaved={handleSaved}
-                onCancel={() => { setView('documents'); setSelectedDoc(null); }}
-              />
-            )}
+            {view === 'upload' && canUpload && <DocumentUpload />}
             {view === 'bundle' && canBundle && <DocumentBundler />}
             {view === 'search' && <SmartSearch />}
             {view === 'dispatch' && canDispatch && <DispatchHistory />}

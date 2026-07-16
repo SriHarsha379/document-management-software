@@ -39,6 +39,11 @@ export interface ExtractedFields {
   source?: string;
   documentType?: DocumentType;
   confidence?: number;
+  classificationConfidence?: number;
+  ocrConfidence?: number;
+  appliedRotation?: number;
+  imageQuality?: 'HIGH' | 'MEDIUM' | 'LOW';
+  processingNotes?: string[];
   fieldConfidence?: Record<string, number>;
   validationIssues?: string[];
 }
@@ -48,6 +53,15 @@ export interface OcrResult {
   rawResponse: string;
   documentType: DocumentType;
   confidence: number;
+  metadata: {
+    classificationConfidence: number;
+    ocrConfidence: number;
+    appliedRotation: number;
+    imageQuality: 'HIGH' | 'MEDIUM' | 'LOW';
+    processingNotes: string[];
+    fieldConfidence: Record<string, number>;
+    validationIssues: string[];
+  };
 }
 
 export interface DocumentWithExtracted {

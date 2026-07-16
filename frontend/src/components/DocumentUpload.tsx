@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import type { Document } from '../types';
 import { documentsApi } from '../services/api';
 
-interface Props { onDocumentReady: (doc: Document) => void; }
+interface Props { onDocumentReady?: (doc: Document) => void; }
 
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'];
 
@@ -86,7 +86,7 @@ export function DocumentUpload({ onDocumentReady }: Props) {
         allProcessed.find((doc) => doc.type !== 'UNKNOWN') ??
         allProcessed[0];
 
-      if (reviewDoc) onDocumentReady(reviewDoc);
+      if (reviewDoc) onDocumentReady?.(reviewDoc);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload or OCR failed');
       setUploading(false); setProcessingOcr(false); setProgress('idle');
