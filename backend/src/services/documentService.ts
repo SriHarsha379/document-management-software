@@ -129,7 +129,7 @@ async function autoLinkDocumentToGroup(
   // Business rule: a lorry trip typically starts on the day the LR and party
   // weighment slip are generated.  The driver may take up to ~3 days to deliver
   // the goods and return; late-arriving documents (site weighment slip,
-  // acknowledgement) therefore carry dates 1–7 days after the trip start date.
+  // acknowledgement) therefore carry dates 1–3 days after the trip start date.
   // Rather than creating a separate DocumentGroup for those later documents,
   // we link them into the existing group for the same vehicle whose date is
   // closest within a 3-day window.

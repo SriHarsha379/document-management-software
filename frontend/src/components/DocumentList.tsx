@@ -166,9 +166,10 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
               <tbody>
                 {documents.map((doc) => {
                   const ed = doc.extractedData;
+                  const groupId = doc.groupId;
                   const missingVehicle = !ed?.vehicleNo;
                   const missingDate = !ed?.date;
-                  const needsFix = !doc.groupId && (missingVehicle || missingDate);
+                  const needsFix = !groupId && (missingVehicle || missingDate);
                   return (
                     <tr
                       key={doc.id}
@@ -203,13 +204,13 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
                         </span>
                       </td>
                       <td style={td}>
-                        {doc.groupId ? (
+                        {groupId ? (
                           <button
                             style={btnGroup}
-                            onClick={(e) => { e.stopPropagation(); void handleOpenGroup(doc.groupId!); }}
-                            disabled={groupLoadingId === doc.groupId}
+                            onClick={(e) => { e.stopPropagation(); void handleOpenGroup(groupId); }}
+                            disabled={groupLoadingId === groupId}
                           >
-                            {groupLoadingId === doc.groupId ? 'Loading…' : '🔗 Linked Group'}
+                            {groupLoadingId === groupId ? 'Loading…' : '🔗 Linked Group'}
                           </button>
                         ) : (
                           <span style={{ fontSize: 12, fontWeight: 600, color: '#e53e3e' }}>⚠️ No group</span>
