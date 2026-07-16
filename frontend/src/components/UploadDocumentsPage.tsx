@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import type { Document, DocumentGroup, DocumentType, Lr, LrDocumentCategory } from '../types';
 import { documentsApi, lrApi } from '../services/api';
 import { useCurrentUser, PERM } from '../contexts/UserContext';
-import { DocumentExtractionSummary, getDocumentSummaryTitle } from './DocumentExtractionSummary';
+import { DocumentExtractionSummary } from './DocumentExtractionSummary';
 
 const PAGE_SIZE = 10;
 
@@ -361,7 +361,6 @@ function DocumentsModal({
                 <tr key={document.id} style={{ borderBottom: '1px solid #eef0ff' }}>
                   <td style={td}>
                     <div style={{ fontWeight: 700 }}>{categoryLabel}</div>
-                    <div style={{ fontSize: 12, color: '#4f46e5', marginTop: 4 }}>{getDocumentSummaryTitle(document)}</div>
                     <div style={{ fontSize: 12, color: '#6b7280' }}>{document.originalFilename}</div>
                   </td>
                   <td style={{ ...td, minWidth: 260 }}>

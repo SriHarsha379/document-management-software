@@ -758,7 +758,8 @@ function compareLrDocuments(
 }
 
 function deriveLrDocumentCategory(type: string): LrDocumentCategory | null {
-  return isDocumentTypeCategoryKey(type) ? DOCUMENT_TYPE_CATEGORY_MAP[type] ?? null : null;
+  if (!isDocumentTypeCategoryKey(type)) return null;
+  return DOCUMENT_TYPE_CATEGORY_MAP[type] ?? null;
 }
 
 function formatLrDocument(document: {
