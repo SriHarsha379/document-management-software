@@ -53,6 +53,8 @@ const DOCUMENT_TYPE_CATEGORY_MAP: Partial<Record<
   UNKNOWN: 'ADDITIONAL_ATTACHMENT_2',
 };
 
+const DOCUMENT_TYPE_CATEGORY_KEYS = Object.keys(DOCUMENT_TYPE_CATEGORY_MAP) as Array<keyof typeof DOCUMENT_TYPE_CATEGORY_MAP>;
+
 // ── Rate limiters ─────────────────────────────────────────────────────────────
 
 const readLimiter = rateLimit({
@@ -756,7 +758,7 @@ function compareLrDocuments(
 }
 
 function deriveLrDocumentCategory(type: string): LrDocumentCategory | null {
-  return DOCUMENT_TYPE_CATEGORY_MAP[type as keyof typeof DOCUMENT_TYPE_CATEGORY_MAP] ?? null;
+  return isDocumentTypeCategoryKey(type) ? DOCUMENT_TYPE_CATEGORY_MAP[type] ?? null : null;
 }
 
 function formatLrDocument(document: {
@@ -846,7 +848,7 @@ function formatLrDocument(document: {
         vehicleNo: ed.vehicleNo,
         quantity: ed.quantity,
         date: ed.date,
-        partyNames: ed.partyNames ? (JSON.parse(ed.partyNames) as string[]) : null,
+        partyNames: safeJsonParse(ed.partyNames, null as string[] | null),
         tollAmount: ed.tollAmount,
         weightInfo: ed.weightInfo,
         confidence: ed.confidence,
@@ -860,7 +862,7 @@ function formatLrDocument(document: {
         ocrProcessedAt: ed.ocrProcessedAt,
         userReviewed: ed.userReviewed,
         reviewedAt: ed.reviewedAt,
-        userEdits: ed.userEdits ? (JSON.parse(ed.userEdits) as Record<string, unknown>) : null,
+        userEdits: safeJsonParse(ed.userEdits, null as Record<string, unknown> | null),
         billToParty: ed.billToParty,
         shipToParty: ed.shipToParty,
         principalCompany: ed.principalCompany,
@@ -889,6 +891,19 @@ function formatLrDocument(document: {
   }
 
   return formatted;
+}
+
+function isDocumentTypeCategoryKey(value: string): value is keyof typeof DOCUMENT_TYPE_CATEGORY_MAP {
+  return DOCUMENT_TYPE_CATEGORY_KEYS.includes(value as keyof typeof DOCUMENT_TYPE_CATEGORY_MAP);
+}
+
+function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
 }
 
 function parseStoredOcrResponse(rawOcrResponse: string, fallbackConfidence: number | null) {

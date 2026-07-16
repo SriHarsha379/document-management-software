@@ -12,8 +12,8 @@ const SLOT_CONFIG: Array<{ type: DocumentType; category: LrDocumentCategory; lab
   { type: 'WEIGHMENT_PARTY', category: 'DEPOT_PLANT_WEIGHMENT_SLIP', label: 'Party Weighment Slip' },
   { type: 'WEIGHMENT_SITE', category: 'SITE_WEIGHMENT_SLIP', label: 'Site Weighment Slip' },
   { type: 'TOLL', category: 'TOLL_RECEIPT', label: 'Tollgate' },
-  { type: 'EWAYBILL', category: 'ADDITIONAL_ATTACHMENT_1', label: 'Other 1' },
-  { type: 'RECEIVING', category: 'ACKNOWLEDGED_LR_COPY', label: 'Other 2' },
+  { type: 'EWAYBILL', category: 'ADDITIONAL_ATTACHMENT_1', label: 'E-Way Bill' },
+  { type: 'RECEIVING', category: 'ACKNOWLEDGED_LR_COPY', label: 'Receiving Copy' },
 ];
 
 type ModalState =

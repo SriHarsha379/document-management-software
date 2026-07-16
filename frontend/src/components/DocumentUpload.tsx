@@ -115,7 +115,7 @@ export function DocumentUpload({ onDocumentReady }: Props) {
   const activeReviewDoc = processedDocs.find((doc) => doc.id === activeReviewId) ?? null;
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div style={{ maxWidth: activeReviewDoc || processedDocs.length > 0 ? 1000 : 600, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e0e0f0', padding: '28px 28px 24px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
         <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 800, color: '#1a1a2e' }}>Upload Document</h2>
         <p style={{ margin: '0 0 22px', fontSize: 13, color: '#6b7280' }}>
