@@ -1,22 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import type { Document, Lr, LrDocumentCategory } from '../types';
-import { lrApi } from '../services/api';
+import type { Document, DocumentGroup, DocumentType, Lr, LrDocumentCategory } from '../types';
+import { documentsApi, lrApi } from '../services/api';
 import { useCurrentUser, PERM } from '../contexts/UserContext';
+import { DocumentExtractionSummary, getDocumentSummaryTitle } from './DocumentExtractionSummary';
 
 const PAGE_SIZE = 10;
 
-const CATEGORY_CONFIG: Array<{ key: LrDocumentCategory; label: string }> = [
-  { key: 'LR_GENERATED', label: 'LR Generated' },
-  { key: 'ACKNOWLEDGED_INVOICE', label: 'Acknowledged Invoice' },
-  { key: 'ACKNOWLEDGED_LR_COPY', label: 'Acknowledged LR Copy' },
-  { key: 'DEPOT_PLANT_WEIGHMENT_SLIP', label: 'Depot / Plant Weighment Slip' },
-  { key: 'SITE_WEIGHMENT_SLIP', label: 'Site Weighment Slip' },
-  { key: 'TOLL_RECEIPT', label: 'Toll Receipt' },
-  { key: 'ADDITIONAL_ATTACHMENT_1', label: 'Additional Attachment 1' },
-  { key: 'ADDITIONAL_ATTACHMENT_2', label: 'Additional Attachment 2' },
+const SLOT_CONFIG: Array<{ type: DocumentType; category: LrDocumentCategory; label: string }> = [
+  { type: 'INVOICE', category: 'ACKNOWLEDGED_INVOICE', label: 'Tax Invoice' },
+  { type: 'LR', category: 'LR_GENERATED', label: 'Lorry Receipt' },
+  { type: 'WEIGHMENT_PARTY', category: 'DEPOT_PLANT_WEIGHMENT_SLIP', label: 'Party Weighment Slip' },
+  { type: 'WEIGHMENT_SITE', category: 'SITE_WEIGHMENT_SLIP', label: 'Site Weighment Slip' },
+  { type: 'TOLL', category: 'TOLL_RECEIPT', label: 'Tollgate' },
+  { type: 'EWAYBILL', category: 'ADDITIONAL_ATTACHMENT_1', label: 'Other 1' },
+  { type: 'RECEIVING', category: 'ACKNOWLEDGED_LR_COPY', label: 'Other 2' },
 ];
-
-const CATEGORY_LABELS = Object.fromEntries(CATEGORY_CONFIG.map((item) => [item.key, item.label])) as Record<LrDocumentCategory, string>;
 
 type ModalState =
   | { type: 'documents'; lr: Lr }
@@ -38,6 +36,7 @@ export function UploadDocumentsPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [groupsByKey, setGroupsByKey] = useState<Record<string, DocumentGroup>>({});
   const [modal, setModal] = useState<ModalState>(null);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -67,24 +66,54 @@ export function UploadDocumentsPage() {
     return () => { ignore = true; };
   }, [page, search, refreshKey]);
 
+  useEffect(() => {
+    let ignore = false;
+    const run = async () => {
+      try {
+        const groups = await documentsApi.listGroups();
+        if (!ignore) {
+          setGroupsByKey(Object.fromEntries(groups.map((group) => [getGroupKey(group.vehicleNo, group.date), group])));
+        }
+      } catch {
+        if (!ignore) setGroupsByKey({});
+      }
+    };
+    void run();
+    return () => { ignore = true; };
+  }, [refreshKey]);
+
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const triggerRefresh = () => setRefreshKey((value) => value + 1);
 
-  const handleUpload = async (lrId: string, category: LrDocumentCategory, file: File | null) => {
+  const getRowDocuments = (lr: Lr) => {
+    const all = new Map<string, Document>();
+    for (const document of lr.uploadedDocuments ?? []) all.set(document.id, document);
+    const group = groupsByKey[getGroupKey(lr.vehicleNo, lr.lrDate ?? lr.date)];
+    for (const document of group?.documents ?? []) {
+      if (!all.has(document.id)) all.set(document.id, document);
+    }
+    return Array.from(all.values());
+  };
+
+  const handleUpload = async (
+    lrId: string,
+    slot: { type: DocumentType; category: LrDocumentCategory; label: string },
+    file: File | null,
+  ) => {
     if (!file) return;
-    const key = `${lrId}:${category}`;
+    const key = `${lrId}:${slot.type}`;
     setUploadingKey(key);
     setMessage(null);
     try {
-      await lrApi.uploadDocument(lrId, category, file);
-      setMessage({ type: 'success', text: `${CATEGORY_LABELS[category]} uploaded successfully.` });
+      await lrApi.uploadDocument(lrId, slot.category, file);
+      setMessage({ type: 'success', text: `${slot.label} uploaded successfully.` });
       triggerRefresh();
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Upload failed' });
     } finally {
       setUploadingKey(null);
-      const refKey = `${lrId}-${category}`;
+      const refKey = `${lrId}-${slot.type}`;
       if (inputRefs.current[refKey]) inputRefs.current[refKey]!.value = '';
     }
   };
@@ -136,8 +165,8 @@ export function UploadDocumentsPage() {
               <tr>
                 <th style={th}>LR Number</th>
                 <th style={th}>Date</th>
-                {CATEGORY_CONFIG.map((category) => (
-                  <th key={category.key} style={th}>{category.label}</th>
+                {SLOT_CONFIG.map((slot) => (
+                  <th key={slot.type} style={th}>{slot.label}</th>
                 ))}
                 <th style={th}>View Documents</th>
                 <th style={th}>Send</th>
@@ -146,13 +175,13 @@ export function UploadDocumentsPage() {
             <tbody>
               {loading && rows.length === 0 ? (
                 <tr>
-                  <td colSpan={CATEGORY_CONFIG.length + 4} style={{ ...td, textAlign: 'center', padding: 28, color: '#6b7280' }}>
+                  <td colSpan={SLOT_CONFIG.length + 4} style={{ ...td, textAlign: 'center', padding: 28, color: '#6b7280' }}>
                     Loading records...
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={CATEGORY_CONFIG.length + 4} style={{ ...td, textAlign: 'center', padding: 28, color: '#6b7280' }}>
+                  <td colSpan={SLOT_CONFIG.length + 4} style={{ ...td, textAlign: 'center', padding: 28, color: '#6b7280' }}>
                     No LR records found.
                   </td>
                 </tr>
@@ -160,12 +189,12 @@ export function UploadDocumentsPage() {
                 <tr key={lr.id} style={{ borderBottom: '1px solid #eef0ff' }}>
                   <td style={{ ...td, fontWeight: 700 }}>{lr.lrNo}</td>
                   <td style={td}>{lr.lrDate ?? lr.date ?? '—'}</td>
-                  {CATEGORY_CONFIG.map((category) => {
-                    const docs = (lr.uploadedDocuments ?? []).filter((document) => document.lrDocumentCategory === category.key);
-                    const inputKey = `${lr.id}-${category.key}`;
-                    const busy = uploadingKey === `${lr.id}:${category.key}`;
+                  {SLOT_CONFIG.map((slot) => {
+                    const docs = getRowDocuments(lr).filter((document) => matchesSlot(document, slot.type));
+                    const inputKey = `${lr.id}-${slot.type}`;
+                    const busy = uploadingKey === `${lr.id}:${slot.type}`;
                     return (
-                      <td key={category.key} style={{ ...td, minWidth: 150 }}>
+                      <td key={slot.type} style={{ ...td, minWidth: 150 }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
                           <span style={docs.length > 0 ? presentBadge : missingBadge}>
                             {docs.length > 0 ? `${docs.length} uploaded` : 'Not uploaded'}
@@ -177,7 +206,7 @@ export function UploadDocumentsPage() {
                                 type="file"
                                 accept=".pdf,.png,.jpg,.jpeg,.webp,.gif"
                                 style={{ display: 'none' }}
-                                onChange={(e) => { void handleUpload(lr.id, category.key, e.target.files?.[0] ?? null); }}
+                                onChange={(e) => { void handleUpload(lr.id, slot, e.target.files?.[0] ?? null); }}
                               />
                               <button
                                 style={secondaryBtn}
@@ -282,10 +311,10 @@ function DocumentsModal({
   }, [lr.id]);
 
   const groupedDocuments = useMemo(
-    () => CATEGORY_CONFIG.flatMap((category) =>
+    () => SLOT_CONFIG.flatMap((slot) =>
       documents
-        .filter((document) => document.lrDocumentCategory === category.key)
-        .map((document) => ({ document, categoryLabel: category.label }))
+        .filter((document) => matchesSlot(document, slot.type))
+        .map((document) => ({ document, categoryLabel: slot.label }))
     ),
     [documents]
   );
@@ -294,7 +323,11 @@ function DocumentsModal({
     if (!window.confirm(`Delete ${document.originalFilename}?`)) return;
     setDeletingId(document.id);
     try {
-      await lrApi.deleteDocument(lr.id, document.id);
+      if (document.lrId === lr.id && document.lrDocumentCategory) {
+        await lrApi.deleteDocument(lr.id, document.id);
+      } else {
+        await documentsApi.delete(document.id);
+      }
       await load();
       onDeleteSuccess();
     } catch (err) {
@@ -316,6 +349,7 @@ function DocumentsModal({
             <thead>
               <tr>
                 <th style={th}>Document Name</th>
+                <th style={th}>Extracted Fields</th>
                 <th style={th}>Uploaded Date</th>
                 <th style={th}>Uploaded By</th>
                 <th style={th}>View</th>
@@ -327,7 +361,11 @@ function DocumentsModal({
                 <tr key={document.id} style={{ borderBottom: '1px solid #eef0ff' }}>
                   <td style={td}>
                     <div style={{ fontWeight: 700 }}>{categoryLabel}</div>
+                    <div style={{ fontSize: 12, color: '#4f46e5', marginTop: 4 }}>{getDocumentSummaryTitle(document)}</div>
                     <div style={{ fontSize: 12, color: '#6b7280' }}>{document.originalFilename}</div>
+                  </td>
+                  <td style={{ ...td, minWidth: 260 }}>
+                    <DocumentExtractionSummary document={document} compact />
                   </td>
                   <td style={td}>{new Date(document.uploadedAt).toLocaleString()}</td>
                   <td style={td}>{document.uploadedBy?.name ?? '—'}</td>
@@ -475,6 +513,19 @@ function parseEmailInput(value: string): string[] {
     .split(',')
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+function getGroupKey(vehicleNo: string | null | undefined, date: string | null | undefined) {
+  const normalizedVehicle = vehicleNo?.trim().toUpperCase().replace(/\s+/g, '') || '';
+  const normalizedDate = date?.trim() || '';
+  return `${normalizedVehicle}::${normalizedDate}`;
+}
+
+function matchesSlot(document: Document, slotType: DocumentType) {
+  if (slotType === 'WEIGHMENT_PARTY') {
+    return document.type === 'WEIGHMENT_PARTY' || document.type === 'WEIGHMENT';
+  }
+  return document.type === slotType;
 }
 
 const card: CSSProperties = {

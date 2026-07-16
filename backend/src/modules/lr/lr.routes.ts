@@ -38,6 +38,21 @@ const LR_DOCUMENT_TYPE_MAP: Record<LrDocumentCategory, 'LR' | 'INVOICE' | 'RECEI
   ADDITIONAL_ATTACHMENT_2: 'UNKNOWN',
 };
 
+const DOCUMENT_TYPE_CATEGORY_MAP: Partial<Record<
+  'LR' | 'INVOICE' | 'TOLL' | 'WEIGHMENT' | 'WEIGHMENT_PARTY' | 'WEIGHMENT_SITE' | 'EWAYBILL' | 'RECEIVING' | 'UNKNOWN',
+  LrDocumentCategory
+>> = {
+  LR: 'LR_GENERATED',
+  INVOICE: 'ACKNOWLEDGED_INVOICE',
+  RECEIVING: 'ACKNOWLEDGED_LR_COPY',
+  WEIGHMENT: 'DEPOT_PLANT_WEIGHMENT_SLIP',
+  WEIGHMENT_PARTY: 'DEPOT_PLANT_WEIGHMENT_SLIP',
+  WEIGHMENT_SITE: 'SITE_WEIGHMENT_SLIP',
+  TOLL: 'TOLL_RECEIPT',
+  EWAYBILL: 'ADDITIONAL_ATTACHMENT_1',
+  UNKNOWN: 'ADDITIONAL_ATTACHMENT_2',
+};
+
 // ── Rate limiters ─────────────────────────────────────────────────────────────
 
 const readLimiter = rateLimit({
@@ -116,7 +131,7 @@ router.get(
         return;
       }
 
-      const documents = lr.uploadedDocuments
+      const documents = (await listLrRelatedDocuments(lr))
         .slice()
         .sort((a, b) => compareLrDocuments(a.lrDocumentCategory, b.lrDocumentCategory, a.uploadedAt, b.uploadedAt))
         .map(formatLrDocument);
@@ -264,7 +279,7 @@ router.post(
         return;
       }
 
-      const attachments = lr.uploadedDocuments
+      const attachments = (await listLrRelatedDocuments(lr))
         .slice()
         .sort((a, b) => compareLrDocuments(a.lrDocumentCategory, b.lrDocumentCategory, a.uploadedAt, b.uploadedAt))
         .map((document) => ({
@@ -672,10 +687,60 @@ async function getScopedLrWithDocuments(req: Request, lrId: string) {
       uploadedDocuments: {
         include: {
           uploadedBy: { select: { id: true, name: true, email: true } },
+          extractedData: true,
         },
       },
     },
   });
+}
+
+function normalizeVehicleNo(value: string | null | undefined) {
+  return value?.trim().toUpperCase().replace(/\s+/g, '') || null;
+}
+
+function resolveLrGroupLookup(lr: {
+  vehicleNo?: string | null;
+  lrDate?: string | null;
+  date?: string | null;
+}) {
+  const vehicleNo = normalizeVehicleNo(lr.vehicleNo);
+  const date = (lr.lrDate ?? lr.date)?.trim() || null;
+  if (!vehicleNo || !date) return null;
+  return { vehicleNo, date };
+}
+
+async function listLrRelatedDocuments(lr: Awaited<ReturnType<typeof getScopedLrWithDocuments>>) {
+  if (!lr) return [];
+
+  const merged = new Map<string, typeof lr.uploadedDocuments[number]>();
+  for (const document of lr.uploadedDocuments) {
+    merged.set(document.id, document);
+  }
+
+  const groupLookup = resolveLrGroupLookup(lr);
+  if (groupLookup) {
+    const group = await db.documentGroup.findUnique({
+      where: { vehicleNo_date: groupLookup },
+      include: {
+        documents: {
+          include: {
+            uploadedBy: { select: { id: true, name: true, email: true } },
+            extractedData: true,
+          },
+        },
+      },
+    });
+
+    for (const document of group?.documents ?? []) {
+      if (merged.has(document.id)) continue;
+      merged.set(document.id, {
+        ...document,
+        lrDocumentCategory: document.lrDocumentCategory ?? deriveLrDocumentCategory(document.type),
+      });
+    }
+  }
+
+  return Array.from(merged.values());
 }
 
 function compareLrDocuments(
@@ -688,6 +753,10 @@ function compareLrDocuments(
   const orderB = categoryB ? LR_DOCUMENT_CATEGORY_ORDER.indexOf(categoryB as LrDocumentCategory) : Number.MAX_SAFE_INTEGER;
   if (orderA !== orderB) return orderA - orderB;
   return uploadedAtB.getTime() - uploadedAtA.getTime();
+}
+
+function deriveLrDocumentCategory(type: string): LrDocumentCategory | null {
+  return DOCUMENT_TYPE_CATEGORY_MAP[type as keyof typeof DOCUMENT_TYPE_CATEGORY_MAP] ?? null;
 }
 
 function formatLrDocument(document: {
@@ -706,8 +775,48 @@ function formatLrDocument(document: {
   lrDocumentCategory?: string | null;
   uploadedById?: string | null;
   uploadedBy?: { id: string; name: string; email: string } | null;
+  extractedData?: {
+    id: string;
+    lrNo: string | null;
+    invoiceNo: string | null;
+    vehicleNo: string | null;
+    quantity: string | null;
+    date: string | null;
+    partyNames: string | null;
+    tollAmount: string | null;
+    weightInfo: string | null;
+    confidence: number | null;
+    rawOcrResponse: string;
+    ocrProcessedAt: Date;
+    userReviewed: boolean;
+    reviewedAt: Date | null;
+    userEdits: string | null;
+    billToParty: string | null;
+    shipToParty: string | null;
+    principalCompany: string | null;
+    branchName: string | null;
+    loadingSlipNo: string | null;
+    companyInvoiceNo: string | null;
+    companyInvoiceDate: string | null;
+    companyEwayBillNo: string | null;
+    ewayBillDate: string | null;
+    approvedDestination: string | null;
+    deliveryDestination: string | null;
+    orderNo: string | null;
+    productName: string | null;
+    transporterName: string | null;
+    orderType: string | null;
+    tptCode: string | null;
+    quantityInMt: number | null;
+    quantityInBags: number | null;
+    driverName: string | null;
+    driverCellNo: string | null;
+    workingCenter: string | null;
+    depotPlantCode: string | null;
+    source: string | null;
+  } | null;
 }) {
-  return {
+  const formatted = {
     id: document.id,
     type: document.type,
     status: document.status,
@@ -724,6 +833,99 @@ function formatLrDocument(document: {
     uploadedById: document.uploadedById ?? null,
     uploadedBy: document.uploadedBy ?? null,
   };
+
+  if (document.extractedData) {
+    const ed = document.extractedData;
+    const ocrMetadata = parseStoredOcrResponse(ed.rawOcrResponse, ed.confidence);
+    return {
+      ...formatted,
+      extractedData: {
+        id: ed.id,
+        lrNo: ed.lrNo,
+        invoiceNo: ed.invoiceNo,
+        vehicleNo: ed.vehicleNo,
+        quantity: ed.quantity,
+        date: ed.date,
+        partyNames: ed.partyNames ? (JSON.parse(ed.partyNames) as string[]) : null,
+        tollAmount: ed.tollAmount,
+        weightInfo: ed.weightInfo,
+        confidence: ed.confidence,
+        classificationConfidence: ocrMetadata.classificationConfidence,
+        ocrConfidence: ocrMetadata.ocrConfidence,
+        appliedRotation: ocrMetadata.appliedRotation,
+        imageQuality: ocrMetadata.imageQuality,
+        processingNotes: ocrMetadata.processingNotes,
+        fieldConfidence: ocrMetadata.fieldConfidence,
+        validationIssues: ocrMetadata.validationIssues,
+        ocrProcessedAt: ed.ocrProcessedAt,
+        userReviewed: ed.userReviewed,
+        reviewedAt: ed.reviewedAt,
+        userEdits: ed.userEdits ? (JSON.parse(ed.userEdits) as Record<string, unknown>) : null,
+        billToParty: ed.billToParty,
+        shipToParty: ed.shipToParty,
+        principalCompany: ed.principalCompany,
+        branchName: ed.branchName,
+        loadingSlipNo: ed.loadingSlipNo,
+        companyInvoiceNo: ed.companyInvoiceNo,
+        companyInvoiceDate: ed.companyInvoiceDate,
+        companyEwayBillNo: ed.companyEwayBillNo,
+        ewayBillDate: ed.ewayBillDate,
+        approvedDestination: ed.approvedDestination,
+        deliveryDestination: ed.deliveryDestination,
+        orderNo: ed.orderNo,
+        productName: ed.productName,
+        transporterName: ed.transporterName,
+        orderType: ed.orderType,
+        tptCode: ed.tptCode,
+        quantityInMt: ed.quantityInMt,
+        quantityInBags: ed.quantityInBags,
+        driverName: ed.driverName,
+        driverCellNo: ed.driverCellNo,
+        workingCenter: ed.workingCenter,
+        depotPlantCode: ed.depotPlantCode,
+        source: ed.source,
+      },
+    };
+  }
+
+  return formatted;
+}
+
+function parseStoredOcrResponse(rawOcrResponse: string, fallbackConfidence: number | null) {
+  try {
+    const parsed = JSON.parse(rawOcrResponse) as {
+      providerResponse?: string;
+      metadata?: {
+        classificationConfidence?: number;
+        ocrConfidence?: number;
+        appliedRotation?: number;
+        imageQuality?: 'HIGH' | 'MEDIUM' | 'LOW';
+        processingNotes?: string[];
+        fieldConfidence?: Record<string, number>;
+        validationIssues?: string[];
+      };
+    };
+
+    return {
+      classificationConfidence: parsed.metadata?.classificationConfidence ?? fallbackConfidence,
+      ocrConfidence: parsed.metadata?.ocrConfidence ?? fallbackConfidence,
+      appliedRotation: parsed.metadata?.appliedRotation ?? 0,
+      imageQuality: parsed.metadata?.imageQuality ?? null,
+      processingNotes: parsed.metadata?.processingNotes ?? [],
+      fieldConfidence: parsed.metadata?.fieldConfidence ?? {},
+      validationIssues: parsed.metadata?.validationIssues ?? [],
+    };
+  } catch {
+    return {
+      classificationConfidence: fallbackConfidence,
+      ocrConfidence: fallbackConfidence,
+      appliedRotation: 0,
+      imageQuality: null,
+      processingNotes: [],
+      fieldConfidence: {},
+      validationIssues: [],
+    };
+  }
 }
 
 async function resolveLrRecipientSuggestions(lrId: string, companyId: string) {

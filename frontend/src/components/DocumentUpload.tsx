@@ -1,6 +1,8 @@
 import React, { useState, useRef } from 'react';
 import type { Document } from '../types';
 import { documentsApi } from '../services/api';
+import { OCRReview } from './OCRReview';
+import { DocumentExtractionSummary, getDocumentSummaryTitle } from './DocumentExtractionSummary';
 
 interface Props { onDocumentReady?: (doc: Document) => void; }
 
@@ -15,6 +17,8 @@ export function DocumentUpload({ onDocumentReady }: Props) {
   const [fileProgress, setFileProgress] = useState<{ current: number; total: number } | null>(null);
   const [ocrProgress, setOcrProgress] = useState<{ current: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [processedDocs, setProcessedDocs] = useState<Document[]>([]);
+  const [activeReviewId, setActiveReviewId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const addFiles = (incoming: FileList | File[]) => {
@@ -80,13 +84,19 @@ export function DocumentUpload({ onDocumentReady }: Props) {
 
       setProcessingOcr(false); setProgress('idle');
       setOcrProgress(null);
+      setProcessedDocs(allProcessed);
 
       const reviewDoc =
         allProcessed.find((doc) => doc.status === 'PENDING_REVIEW') ??
         allProcessed.find((doc) => doc.type !== 'UNKNOWN') ??
         allProcessed[0];
 
-      if (reviewDoc) onDocumentReady?.(reviewDoc);
+      if (reviewDoc) {
+        setActiveReviewId(reviewDoc.id);
+        onDocumentReady?.(reviewDoc);
+      } else {
+        setActiveReviewId(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload or OCR failed');
       setUploading(false); setProcessingOcr(false); setProgress('idle');
@@ -97,13 +107,15 @@ export function DocumentUpload({ onDocumentReady }: Props) {
   const reset = () => {
     setFiles([]); setError(null); setProgress('idle');
     setFileProgress(null); setOcrProgress(null);
+    setProcessedDocs([]); setActiveReviewId(null);
     if (inputRef.current) inputRef.current.value = '';
   };
 
   const busy = uploading || processingOcr;
+  const activeReviewDoc = processedDocs.find((doc) => doc.id === activeReviewId) ?? null;
 
   return (
-    <div style={{ maxWidth: 600, margin: '0 auto' }}>
+    <div style={{ maxWidth: 1000, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e0e0f0', padding: '28px 28px 24px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
         <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 800, color: '#1a1a2e' }}>Upload Document</h2>
         <p style={{ margin: '0 0 22px', fontSize: 13, color: '#6b7280' }}>
@@ -213,6 +225,61 @@ export function DocumentUpload({ onDocumentReady }: Props) {
           )}
         </div>
       </div>
+
+      {processedDocs.length > 0 && (
+        <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e0e0f0', padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#1a1a2e' }}>Extracted Results</h3>
+              <p style={{ margin: '6px 0 0', fontSize: 13, color: '#6b7280' }}>
+                Review the fields extracted from each uploaded page/document.
+              </p>
+            </div>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#4338ca', background: '#eef2ff', borderRadius: 999, padding: '6px 10px' }}>
+              {processedDocs.length} extracted document{processedDocs.length === 1 ? '' : 's'}
+            </span>
+          </div>
+
+          <div style={{ display: 'grid', gap: 12 }}>
+            {processedDocs.map((doc) => (
+              <div key={doc.id} style={{ border: activeReviewId === doc.id ? '1px solid #818cf8' : '1px solid #e5e7eb', borderRadius: 12, padding: 14, background: activeReviewId === doc.id ? '#f8faff' : '#fff' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: '#1f2937' }}>{getDocumentSummaryTitle(doc)}</div>
+                    <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>{doc.originalFilename}</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, borderRadius: 999, padding: '5px 9px', background: doc.extractedData?.userReviewed ? '#dcfce7' : '#dbeafe', color: doc.extractedData?.userReviewed ? '#166534' : '#1d4ed8' }}>
+                      {doc.extractedData?.userReviewed ? 'Reviewed' : 'Extracted'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveReviewId((current) => current === doc.id ? null : doc.id)}
+                      style={{ border: '1px solid #c7d2fe', borderRadius: 8, background: '#eef2ff', color: '#4338ca', padding: '7px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      {activeReviewId === doc.id ? 'Hide Review' : 'Review Fields'}
+                    </button>
+                  </div>
+                </div>
+                <DocumentExtractionSummary document={doc} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {activeReviewDoc && (
+        <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e0e0f0', padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+          <OCRReview
+            document={activeReviewDoc}
+            onSaved={(savedDoc) => {
+              setProcessedDocs((prev) => prev.map((doc) => doc.id === savedDoc.id ? savedDoc : doc));
+              setActiveReviewId(savedDoc.id);
+            }}
+            onCancel={() => setActiveReviewId(null)}
+          />
+        </div>
+      )}
     </div>
   );
 }
