@@ -100,7 +100,7 @@ function mapExtractedRecordToLearnedFields(
  *
  * Matching strategy (in priority order):
  *  1. vehicleNo + date   — fuzzy match: if an existing group for the same
- *                          vehicleNo has a date within 7 days of the document's
+ *                          vehicleNo has a date within 3 days of the document's
  *                          date, the document joins that group (handles
  *                          late-arriving docs like site weighment slips and
  *                          acknowledgements that arrive 1-3 days after trip
@@ -124,7 +124,7 @@ async function autoLinkDocumentToGroup(
 ): Promise<string | null> {
   const { vehicleNo, date, lrNo, invoiceNo } = fields;
 
-  // ── Strategy 1: vehicleNo + date (fuzzy match within 7 days, else create) ──
+  // ── Strategy 1: vehicleNo + date (fuzzy match within 3 days, else create) ──
   //
   // Business rule: a lorry trip typically starts on the day the LR and party
   // weighment slip are generated.  The driver may take up to ~3 days to deliver
@@ -132,7 +132,7 @@ async function autoLinkDocumentToGroup(
   // acknowledgement) therefore carry dates 1–7 days after the trip start date.
   // Rather than creating a separate DocumentGroup for those later documents,
   // we link them into the existing group for the same vehicle whose date is
-  // closest within a 7-day window.
+  // closest within a 3-day window.
   if (vehicleNo?.trim() && date?.trim()) {
     const normalizedVehicle = vehicleNo.trim().toUpperCase().replace(/\s+/g, '');
     const normalizedDate = date.trim();
@@ -142,9 +142,9 @@ async function autoLinkDocumentToGroup(
     // The window is intentionally bidirectional (absolute diff): a party
     // weighment tare reading can be taken the day *before* the trip start, so
     // a doc dated 1 day prior to an existing group should still join it.
-    // 7 days = up to 3 days for the lorry to deliver and return, plus a
-    // comfortable buffer for administrative delays in submitting the docs.
-    const TRIP_TOLERANCE_DAYS = 7;
+    // 3 days = the allowed ±3 day matching window across Invoice/LR/Weighment
+    // documents for the same vehicle.
+    const TRIP_TOLERANCE_DAYS = 3;
     const candidateGroups = await prisma.documentGroup.findMany({
       where: { vehicleNo: normalizedVehicle },
     });

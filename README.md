@@ -8,7 +8,7 @@ A full-stack Document Management System for logistics operations with AI-powered
 - **OCR** via OpenAI Vision API (GPT-4o) — auto-extracts:
   - LR No, Invoice No, Vehicle No, Quantity, Date, Party Names, Toll Amount, Weight Info
 - **Auto-tagging** — classifies document as LR / Invoice / Toll / Weighment
-- **Auto-linking** — groups documents sharing the same Vehicle Number + Date
+- **Auto-linking** — groups documents sharing the same Vehicle Number with document dates within ±3 days
 - **Review & Edit** — user can correct any extracted field before saving
 - **REST API** with pagination and filtering
 - **Temporary Driver Portal** — time-limited access for drivers to upload documents from mobile
