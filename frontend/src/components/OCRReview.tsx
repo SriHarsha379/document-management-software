@@ -18,10 +18,10 @@ const WEIGHT_INFO_TYPES: DocumentType[] = ['TOLL', 'EWAYBILL', 'RECEIVING', 'UNK
 const TYPE_LABELS: Record<DocumentType, string> = {
   LR: '📦 Lorry Receipt (LR)',
   INVOICE: '🧾 Invoice',
-  TOLL: '🛣️ Toll Receipt',
+  TOLL: '🛣️ Toll Gate Slip',
   WEIGHMENT: '⚖️ Weighment Slip',
-  WEIGHMENT_PARTY: '⚖️ Weighment Slip (Party)',
-  WEIGHMENT_SITE: '⚖️ Weighment Slip (Site)',
+  WEIGHMENT_PARTY: '⚖️ Party Weighment Slip',
+  WEIGHMENT_SITE: '⚖️ Site Weighment Slip',
   EWAYBILL: '🔖 E-Way Bill',
   RECEIVING: '📬 Receiving Copy',
   UNKNOWN: '❓ Unknown',
@@ -79,7 +79,11 @@ export function OCRReview({ document, onSaved, onCancel }: Props) {
   };
 
   const confidence = ed?.confidence ?? null;
+  const classificationConfidence = ed?.classificationConfidence ?? confidence;
+  const ocrConfidence = ed?.ocrConfidence ?? confidence;
   const imageUrl = document.mimeType.startsWith('image/') ? `/uploads/${document.filePath}` : null;
+  const processingNotes = ed?.processingNotes ?? [];
+  const validationIssues = ed?.validationIssues ?? [];
 
   return (
     <div>
@@ -89,11 +93,23 @@ export function OCRReview({ document, onSaved, onCancel }: Props) {
           <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 800, color: '#1a1a2e' }}>Review Extracted Data</h2>
           <p style={{ margin: 0, fontSize: 13, color: '#6b7280' }}>{document.originalFilename}</p>
         </div>
-        {confidence !== null && (
-          <div style={{ fontWeight: 700, fontSize: 14, border: '2px solid currentColor', borderRadius: 20, padding: '5px 14px', color: CONFIDENCE_COLOR(confidence) }}>
-            {Math.round(confidence * 100)}% confidence
-          </div>
-        )}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {classificationConfidence !== null && (
+            <div style={{ fontWeight: 700, fontSize: 14, border: '2px solid currentColor', borderRadius: 20, padding: '5px 14px', color: CONFIDENCE_COLOR(classificationConfidence) }}>
+              Type {Math.round(classificationConfidence * 100)}%
+            </div>
+          )}
+          {ocrConfidence !== null && (
+            <div style={{ fontWeight: 700, fontSize: 14, border: '2px solid currentColor', borderRadius: 20, padding: '5px 14px', color: CONFIDENCE_COLOR(ocrConfidence) }}>
+              OCR {Math.round(ocrConfidence * 100)}%
+            </div>
+          )}
+          {ed?.imageQuality && (
+            <div style={{ fontWeight: 700, fontSize: 13, borderRadius: 20, padding: '7px 14px', background: ed.imageQuality === 'LOW' ? '#fff1f2' : ed.imageQuality === 'MEDIUM' ? '#fff7ed' : '#ecfdf5', color: ed.imageQuality === 'LOW' ? '#be123c' : ed.imageQuality === 'MEDIUM' ? '#c2410c' : '#166534' }}>
+              {ed.imageQuality} quality
+            </div>
+          )}
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
@@ -106,6 +122,14 @@ export function OCRReview({ document, onSaved, onCancel }: Props) {
 
         {/* Form */}
         <div style={{ flex: '1 1 400px', background: '#fff', borderRadius: 12, border: '1px solid #e0e0f0', padding: '20px 24px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+          {(processingNotes.length > 0 || validationIssues.length > 0 || ed?.appliedRotation) && (
+            <div style={{ background: '#f8faff', border: '1px solid #dbe4ff', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#334155', marginBottom: 16, lineHeight: 1.6 }}>
+              {ed?.appliedRotation ? <div><strong>Rotation applied:</strong> {ed.appliedRotation}°</div> : null}
+              {processingNotes.length > 0 ? <div><strong>OCR handling:</strong> {processingNotes.join(' • ')}</div> : null}
+              {validationIssues.length > 0 ? <div><strong>Review flags:</strong> {validationIssues.join(' • ')}</div> : null}
+            </div>
+          )}
+
           {(!form.vehicleNo || !form.date) && (
             <div style={{ background: '#fff8f0', border: '1.5px solid #e97a00', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#7a3f00', marginBottom: 16, lineHeight: 1.5 }}>
               ⚠️ <strong>Action needed:</strong>{' '}

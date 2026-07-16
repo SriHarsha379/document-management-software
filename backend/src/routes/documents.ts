@@ -181,7 +181,10 @@ router.post('/:id/ocr', async (req: Request, res: Response): Promise<void> => {
       id,
       ocrResult.fields,
       ocrResult.documentType,
-      ocrResult.rawResponse
+      JSON.stringify({
+        providerResponse: ocrResult.rawResponse,
+        metadata: ocrResult.metadata,
+      }),
     );
 
     const updated = await prisma.document.findUnique({
@@ -497,6 +500,45 @@ function formatUploadedDocument(doc: {
   };
 }
 
+function parseStoredOcrResponse(rawOcrResponse: string, fallbackConfidence: number | null) {
+  try {
+    const parsed = JSON.parse(rawOcrResponse) as {
+      providerResponse?: string;
+      metadata?: {
+        classificationConfidence?: number;
+        ocrConfidence?: number;
+        appliedRotation?: number;
+        imageQuality?: 'HIGH' | 'MEDIUM' | 'LOW';
+        processingNotes?: string[];
+        fieldConfidence?: Record<string, number>;
+        validationIssues?: string[];
+      };
+    };
+
+    return {
+      rawOcrResponse: parsed.providerResponse ?? rawOcrResponse,
+      classificationConfidence: parsed.metadata?.classificationConfidence ?? fallbackConfidence,
+      ocrConfidence: parsed.metadata?.ocrConfidence ?? fallbackConfidence,
+      appliedRotation: parsed.metadata?.appliedRotation ?? 0,
+      imageQuality: parsed.metadata?.imageQuality ?? null,
+      processingNotes: parsed.metadata?.processingNotes ?? [],
+      fieldConfidence: parsed.metadata?.fieldConfidence ?? {},
+      validationIssues: parsed.metadata?.validationIssues ?? [],
+    };
+  } catch {
+    return {
+      rawOcrResponse,
+      classificationConfidence: fallbackConfidence,
+      ocrConfidence: fallbackConfidence,
+      appliedRotation: 0,
+      imageQuality: null,
+      processingNotes: [],
+      fieldConfidence: {},
+      validationIssues: [],
+    };
+  }
+}
+
 function formatDocument(doc: PrismaDocumentWithRelations | null) {
   if (!doc) return null;
 
@@ -516,6 +558,7 @@ function formatDocument(doc: PrismaDocumentWithRelations | null) {
 
   if (doc.extractedData) {
     const ed = doc.extractedData;
+    const ocrMetadata = parseStoredOcrResponse(ed.rawOcrResponse, ed.confidence);
     result.extractedData = {
       id: ed.id,
       lrNo: ed.lrNo,
@@ -527,6 +570,13 @@ function formatDocument(doc: PrismaDocumentWithRelations | null) {
       tollAmount: ed.tollAmount,
       weightInfo: ed.weightInfo,
       confidence: ed.confidence,
+      classificationConfidence: ocrMetadata.classificationConfidence,
+      ocrConfidence: ocrMetadata.ocrConfidence,
+      appliedRotation: ocrMetadata.appliedRotation,
+      imageQuality: ocrMetadata.imageQuality,
+      processingNotes: ocrMetadata.processingNotes,
+      fieldConfidence: ocrMetadata.fieldConfidence,
+      validationIssues: ocrMetadata.validationIssues,
       ocrProcessedAt: ed.ocrProcessedAt,
       userReviewed: ed.userReviewed,
       reviewedAt: ed.reviewedAt,

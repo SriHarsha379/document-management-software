@@ -99,6 +99,13 @@ export interface ExtractedData {
   tollAmount: string | null;
   weightInfo: string | null;
   confidence: number | null;
+  classificationConfidence?: number | null;
+  ocrConfidence?: number | null;
+  appliedRotation?: number | null;
+  imageQuality?: 'HIGH' | 'MEDIUM' | 'LOW' | null;
+  processingNotes?: string[] | null;
+  fieldConfidence?: Record<string, number> | null;
+  validationIssues?: string[] | null;
   ocrProcessedAt: string;
   userReviewed: boolean;
   reviewedAt: string | null;

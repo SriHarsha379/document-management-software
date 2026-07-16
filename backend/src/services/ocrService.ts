@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { execSync } from 'child_process';
+import sharp from 'sharp';
 import type { DocumentType, ExtractedFields, OcrResult } from '../types/index.js';
 import {
   computeFieldConfidence,
@@ -15,6 +16,8 @@ import {
 } from './ocrLearningService.js';
 
 const WEIGHMENT_TYPES: DocumentType[] = ['WEIGHMENT', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE'];
+const VALID_TYPES: DocumentType[] = ['LR', 'INVOICE', 'TOLL', 'WEIGHMENT', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE', 'EWAYBILL', 'RECEIVING', 'UNKNOWN'];
+type ImageQuality = 'HIGH' | 'MEDIUM' | 'LOW';
 
 /** For weighment slips only vehicleNo and date should be retained; strip everything else. */
 function restrictToWeighmentFields(fields: ExtractedFields): ExtractedFields {
@@ -23,6 +26,13 @@ function restrictToWeighmentFields(fields: ExtractedFields): ExtractedFields {
     date: fields.date,
     documentType: fields.documentType,
     confidence: fields.confidence,
+    classificationConfidence: fields.classificationConfidence,
+    ocrConfidence: fields.ocrConfidence,
+    appliedRotation: fields.appliedRotation,
+    imageQuality: fields.imageQuality,
+    processingNotes: fields.processingNotes,
+    fieldConfidence: fields.fieldConfidence,
+    validationIssues: fields.validationIssues,
   };
 }
 
@@ -64,7 +74,21 @@ function parseExtractedFields(parsed: Record<string, unknown>, documentType: Doc
     depotPlantCode: typeof parsed.depotPlantCode === 'string' ? parsed.depotPlantCode : undefined,
     source: typeof parsed.source === 'string' ? parsed.source : undefined,
     documentType,
-    confidence: typeof parsed.confidence === 'number' ? parsed.confidence : defaultConfidence,
+    confidence: typeof parsed.ocrConfidence === 'number'
+      ? parsed.ocrConfidence
+      : typeof parsed.confidence === 'number'
+        ? parsed.confidence
+        : defaultConfidence,
+    classificationConfidence: typeof parsed.classificationConfidence === 'number'
+      ? parsed.classificationConfidence
+      : typeof parsed.confidence === 'number'
+        ? parsed.confidence
+        : defaultConfidence,
+    ocrConfidence: typeof parsed.ocrConfidence === 'number'
+      ? parsed.ocrConfidence
+      : typeof parsed.confidence === 'number'
+        ? parsed.confidence
+        : defaultConfidence,
   };
   const normalized = normalizeExtractedFields(fields);
   if (WEIGHMENT_TYPES.includes(documentType)) {
@@ -81,7 +105,7 @@ function parseExtractedFields(parsed: Record<string, unknown>, documentType: Doc
 const DOCUMENT_TYPE_KEYWORDS: Record<DocumentType, string[]> = {
   LR: ['lorry receipt', 'lr no', 'lr number', 'consignment note', 'bilty', 'goods receipt'],
   INVOICE: ['invoice', 'bill', 'gst invoice', 'tax invoice', 'proforma', 'invoice no', 'invoice number'],
-  TOLL: ['toll', 'toll tax', 'toll receipt', 'national highway', 'fastag', 'toll plaza'],
+  TOLL: ['toll', 'toll tax', 'toll receipt', 'toll gate slip', 'national highway', 'fastag', 'toll plaza'],
   WEIGHMENT: ['weighment', 'weight slip', 'gross weight', 'tare weight', 'net weight', 'weighbridge', 'weigh bridge'],
   WEIGHMENT_PARTY: ['weighment party', 'party weighment', 'party weight slip'],
   WEIGHMENT_SITE: ['weighment site', 'site weighment', 'site weight slip'],
@@ -96,8 +120,10 @@ Analyze the provided document image and perform TWO steps:
 STEP 1 — Identify the document type from the visual layout, printed title, and content:
 - LR: Document titled "LORRY RECEIPT", "LORRY RECEIPT CUM CONSIGNMENT NOTE", "BILTY", "GOODS RECEIPT", or similar. Contains an LR number, consignor/consignee or Bill-To/Ship-To parties, vehicle/truck number, and goods description.
 - INVOICE: Document titled "TAX INVOICE", "GST INVOICE", "INVOICE", "PROFORMA INVOICE". Contains invoice number, HSN/SAC codes, GSTIN, line-item rates and totals.
-- TOLL: Toll receipt from a highway/expressway toll plaza. Contains toll plaza name, vehicle number, and amount collected.
-- WEIGHMENT: Weighbridge or Weigh Bridge slip. Contains vehicle number, gross weight, tare weight, and net weight in KGS.
+- TOLL: Toll gate slip / toll receipt from a highway or expressway toll plaza. Contains toll plaza name, vehicle number, and amount collected.
+- WEIGHMENT_PARTY: Party weighment slip. Usually taken at loading/origin/plant/party location before the trip starts.
+- WEIGHMENT_SITE: Site weighment slip. Usually taken at delivery/site/destination or unloading location after the trip ends.
+- WEIGHMENT: Generic weighbridge or weighment slip when it is clearly a weighment document but origin (party) vs destination (site) cannot be determined.
 - EWAYBILL: E-Way Bill document with EWB/EWay Bill number, GSTIN, and transporter details.
 - RECEIVING: Delivery or receiving acknowledgement, proof of delivery (POD), unloading report.
 
@@ -136,6 +162,9 @@ STEP 2 — Extract fields according to the identified document type using the ru
 Extract ONLY the two fields below. Set every other field to null.
 - vehicleNo: Vehicle registration number — look for "VEHICLE NO", "Vehicle No.", "Veh. No.", "Truck No."
 - date: Date from the slip in YYYY-MM-DD. The date may appear as "DT:DD-MM-YYYY TM:HH:MM" (e.g. "DT:16-09-2025 TM:12:05") or "DD/MM/YYYY" — extract only the date part and convert to YYYY-MM-DD.
+- If the slip explicitly indicates PARTY / LOADING / PLANT / ORIGIN weighment, classify as WEIGHMENT_PARTY.
+- If the slip explicitly indicates SITE / DESTINATION / DELIVERY / UNLOADING weighment, classify as WEIGHMENT_SITE.
+- Otherwise classify as WEIGHMENT.
 
 === FOR INVOICE (Tax Invoice / GST Invoice) ===
 - invoiceNo: Invoice number — look for "Invoice No", "Invoice No."
@@ -162,7 +191,8 @@ Extract ONLY the two fields below. Set every other field to null.
 Always respond with a valid JSON object with EXACTLY these fields:
 {
   "documentType": "<LR|INVOICE|TOLL|WEIGHMENT|EWAYBILL|RECEIVING|UNKNOWN>",
-  "confidence": <0.0-1.0>,
+  "classificationConfidence": <0.0-1.0>,
+  "ocrConfidence": <0.0-1.0>,
   "lrNo": "<LR number or null>",
   "invoiceNo": "<invoice/bill number or null>",
   "vehicleNo": "<vehicle registration number in Indian format like MH12AB1234 or null>",
@@ -204,6 +234,7 @@ Important rules:
 - For weighment slips the date often appears alongside a time stamp like "DT:16-09-2025 TM:12:05" — extract only the date portion.
 - quantityInMt and quantityInBags must be plain numbers (no units), e.g. 35.38 not "35.38 MT".
 - If a field is not present or cannot be read clearly, return null for that field.
+- Use lower confidence values when the page is blurry, noisy, incomplete, skewed, or rotated.
 - Always extract rawText with the complete readable text from the document.`;
 
 function detectDocumentTypeFromText(text: string): DocumentType {
@@ -275,6 +306,68 @@ function convertPdfToImage(pdfPath: string): { imagePath: string; tempDir: strin
   return { imagePath: path.join(tempDir, pages[0]!), tempDir };
 }
 
+async function prepareImageVariants(sourcePath: string): Promise<{
+  variants: Array<{ path: string; rotation: number }>;
+  tempDir: string;
+  imageQuality: ImageQuality;
+  processingNotes: string[];
+}> {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ocr-preprocessed-'));
+  const metadata = await sharp(sourcePath, { failOn: 'none' }).metadata();
+  const width = metadata.width ?? 0;
+  const height = metadata.height ?? 0;
+  const processingNotes = ['Applied auto-orientation, grayscale normalization, and sharpening before OCR'];
+
+  let imageQuality: ImageQuality = 'HIGH';
+  if (width < 900 || height < 900) {
+    imageQuality = 'LOW';
+    processingNotes.push('Upscaled a low-resolution scan before OCR');
+  } else if (width < 1400 || height < 1400) {
+    imageQuality = 'MEDIUM';
+  }
+
+  const baseImagePath = path.join(tempDir, 'base.png');
+  let basePipeline = sharp(sourcePath, { failOn: 'none' })
+    .rotate()
+    .flatten({ background: '#ffffff' })
+    .grayscale()
+    .normalize()
+    .sharpen();
+
+  if (width > 0 && width < 1600) {
+    basePipeline = basePipeline.resize({ width: 1600, fit: 'inside', withoutEnlargement: false });
+  } else {
+    basePipeline = basePipeline.resize({ width: 2200, fit: 'inside', withoutEnlargement: true });
+  }
+
+  await basePipeline.png({ compressionLevel: 9 }).toFile(baseImagePath);
+
+  const rotations = [0, 90, 180, 270];
+  const variants: Array<{ path: string; rotation: number }> = [];
+
+  for (const rotation of rotations) {
+    const outputPath = rotation === 0 ? baseImagePath : path.join(tempDir, `rot-${rotation}.png`);
+    if (rotation !== 0) {
+      await sharp(baseImagePath, { failOn: 'none' })
+        .rotate(rotation)
+        .png({ compressionLevel: 9 })
+        .toFile(outputPath);
+    }
+    variants.push({ path: outputPath, rotation });
+  }
+
+  return { variants, tempDir, imageQuality, processingNotes };
+}
+
+function scoreOcrCandidate(
+  fields: ExtractedFields,
+  issues: string[],
+  classificationConfidence: number,
+  ocrConfidence: number,
+): number {
+  return classificationConfidence * 0.4 + ocrConfidence * 0.6 - issues.length * ISSUE_PENALTY_WEIGHT;
+}
+
 export async function processDocumentOcr(filePath: string, mimeType: string): Promise<OcrResult> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -287,26 +380,31 @@ export async function processDocumentOcr(filePath: string, mimeType: string): Pr
   // GPT-4o vision only accepts image types (jpeg/png/gif/webp).
   // PDFs must be rasterised to an image before being sent to the API.
   let actualFilePath = filePath;
-  let tempDir: string | null = null;
+  const tempDirs: string[] = [];
 
   if (mimeType === 'application/pdf') {
     const converted = convertPdfToImage(filePath);
     actualFilePath = converted.imagePath;
-    tempDir = converted.tempDir;
+    tempDirs.push(converted.tempDir);
   }
   // ─────────────────────────────────────────────────────────────────────────
 
   try {
-    const fileBuffer = fs.readFileSync(actualFilePath);
-    const base64Image = fileBuffer.toString('base64');
+    const prepared = await prepareImageVariants(actualFilePath);
+    tempDirs.push(prepared.tempDir);
 
-    const ext = path.extname(actualFilePath).toLowerCase();
-    let imageMediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' = 'image/jpeg';
-    if (ext === '.png') imageMediaType = 'image/png';
-    else if (ext === '.gif') imageMediaType = 'image/gif';
-    else if (ext === '.webp') imageMediaType = 'image/webp';
+    const runOcrPass = async (
+      imagePath: string,
+      extraGuidance?: string,
+    ): Promise<{ parsed: Record<string, unknown>; rawResponse: string; rawContent: string }> => {
+      const fileBuffer = fs.readFileSync(imagePath);
+      const base64Image = fileBuffer.toString('base64');
+      const ext = path.extname(imagePath).toLowerCase();
+      let imageMediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' = 'image/jpeg';
+      if (ext === '.png') imageMediaType = 'image/png';
+      else if (ext === '.gif') imageMediaType = 'image/gif';
+      else if (ext === '.webp') imageMediaType = 'image/webp';
 
-    const runOcrPass = async (extraGuidance?: string): Promise<{ parsed: Record<string, unknown>; rawResponse: string; rawContent: string }> => {
       const response = await client.chat.completions.create({
         model: 'gpt-4o',
         messages: [
@@ -352,60 +450,94 @@ export async function processDocumentOcr(filePath: string, mimeType: string): Pr
       return { parsed, rawResponse, rawContent };
     };
 
-    const firstPass = await runOcrPass();
-    let parsed = firstPass.parsed;
-    let rawResponse = firstPass.rawResponse;
-    const rawContent = firstPass.rawContent;
+    const evaluateCandidate = async (imagePath: string, rotation: number, extraGuidance?: string) => {
+      const pass = await runOcrPass(imagePath, extraGuidance);
+      const rawText = typeof pass.parsed.rawText === 'string' ? pass.parsed.rawText : pass.rawContent;
+      let documentType = (pass.parsed.documentType as DocumentType) ?? 'UNKNOWN';
+      if (!VALID_TYPES.includes(documentType)) {
+        documentType = detectDocumentTypeFromText(rawText);
+      }
 
-    const rawText = typeof parsed.rawText === 'string' ? parsed.rawText : rawContent;
-    let documentType = (parsed.documentType as DocumentType) ?? 'UNKNOWN';
+      const fields = parseExtractedFields(pass.parsed, documentType, 0.5);
+      if (fields.vehicleNo && !VEHICLE_NO_PATTERN.test(fields.vehicleNo)) {
+        fields.vehicleNo = undefined;
+      }
 
-    const validTypes: DocumentType[] = ['LR', 'INVOICE', 'TOLL', 'WEIGHMENT', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE', 'EWAYBILL', 'RECEIVING', 'UNKNOWN'];
-    if (!validTypes.includes(documentType)) {
-      documentType = detectDocumentTypeFromText(rawText);
-    }
+      const issues = getValidationIssues(fields, documentType);
+      const classificationConfidence = fields.classificationConfidence ?? fields.confidence ?? 0.5;
+      const ocrConfidence = fields.ocrConfidence ?? fields.confidence ?? 0.5;
 
-    let fields = parseExtractedFields(parsed, documentType, 0.5);
-    if (fields.vehicleNo && !VEHICLE_NO_PATTERN.test(fields.vehicleNo)) {
-      fields.vehicleNo = undefined;
-    }
-    let issues = getValidationIssues(fields, documentType);
+      return {
+        pass,
+        documentType,
+        fields,
+        issues,
+        rotation,
+        classificationConfidence,
+        ocrConfidence,
+        score: scoreOcrCandidate(fields, issues, classificationConfidence, ocrConfidence),
+      };
+    };
 
-    if (shouldRetryOcr(issues, fields.confidence ?? 0.5)) {
-      const hints = await getContextualOcrHints(documentType, fields);
-      if (hints.length > 0) {
-        const secondPass = await runOcrPass(hints.map((h) => `- ${h}`).join('\n'));
-        const retryParsed = secondPass.parsed;
-        let retryDocumentType = (retryParsed.documentType as DocumentType) ?? documentType;
-        if (!validTypes.includes(retryDocumentType)) retryDocumentType = documentType;
+    let bestCandidate = await evaluateCandidate(prepared.variants[0]!.path, 0);
 
-        const retryFields = parseExtractedFields(retryParsed, retryDocumentType, fields.confidence ?? 0.5);
-        const retryIssues = getValidationIssues(retryFields, retryDocumentType);
-        const retryScore = (retryFields.confidence ?? 0) - retryIssues.length * ISSUE_PENALTY_WEIGHT;
-        const currentScore = (fields.confidence ?? 0) - issues.length * ISSUE_PENALTY_WEIGHT;
-        if (retryScore >= currentScore) {
-          fields = retryFields;
-          documentType = retryDocumentType;
-          rawResponse = secondPass.rawResponse;
-          issues = retryIssues;
+    if (shouldRetryOcr(bestCandidate.issues, bestCandidate.ocrConfidence) || bestCandidate.classificationConfidence < 0.75) {
+      for (const variant of prepared.variants.slice(1)) {
+        const candidate = await evaluateCandidate(variant.path, variant.rotation);
+        if (candidate.score > bestCandidate.score) {
+          bestCandidate = candidate;
         }
       }
     }
 
+    if (shouldRetryOcr(bestCandidate.issues, bestCandidate.ocrConfidence)) {
+      const hints = await getContextualOcrHints(bestCandidate.documentType, bestCandidate.fields);
+      if (hints.length > 0) {
+        const retryCandidate = await evaluateCandidate(
+          prepared.variants.find((variant) => variant.rotation === bestCandidate.rotation)?.path ?? prepared.variants[0]!.path,
+          bestCandidate.rotation,
+          hints.map((hint) => `- ${hint}`).join('\n'),
+        );
+        if (retryCandidate.score >= bestCandidate.score) {
+          bestCandidate = retryCandidate;
+        }
+      }
+    }
+
+    const fields = bestCandidate.fields;
+    const issues = bestCandidate.issues;
+    fields.confidence = bestCandidate.ocrConfidence;
+    fields.classificationConfidence = bestCandidate.classificationConfidence;
+    fields.ocrConfidence = bestCandidate.ocrConfidence;
+    fields.appliedRotation = bestCandidate.rotation;
+    fields.imageQuality = prepared.imageQuality;
+    fields.processingNotes = [
+      ...prepared.processingNotes,
+      ...(bestCandidate.rotation !== 0 ? [`Selected a ${bestCandidate.rotation}° rotated variant after OCR scoring`] : []),
+    ];
     fields.validationIssues = issues;
-    fields.fieldConfidence = computeFieldConfidence(fields, fields.confidence ?? 0.5, issues);
+    fields.fieldConfidence = computeFieldConfidence(fields, bestCandidate.ocrConfidence, issues);
 
     return {
       fields,
-      rawResponse,
-      documentType,
-      confidence: fields.confidence ?? 0.5,
+      rawResponse: bestCandidate.pass.rawResponse,
+      documentType: bestCandidate.documentType,
+      confidence: bestCandidate.ocrConfidence,
+      metadata: {
+        classificationConfidence: bestCandidate.classificationConfidence,
+        ocrConfidence: bestCandidate.ocrConfidence,
+        appliedRotation: bestCandidate.rotation,
+        imageQuality: prepared.imageQuality,
+        processingNotes: fields.processingNotes,
+        fieldConfidence: fields.fieldConfidence ?? {},
+        validationIssues: issues,
+      },
     };
 
   } finally {
     // Always clean up the temp directory created for PDF conversion
-    if (tempDir) {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+    for (const dir of tempDirs) {
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   }
 }
