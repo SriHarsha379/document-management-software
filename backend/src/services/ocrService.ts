@@ -21,11 +21,12 @@ type ImageQuality = 'HIGH' | 'MEDIUM' | 'LOW';
 const CLASSIFICATION_WEIGHT = 0.4;
 const OCR_WEIGHT = 0.6;
 
-/** For weighment slips only vehicleNo and date should be retained; strip everything else. */
+/** For weighment slips only vehicleNo, date, and weightInfo should be retained; strip everything else. */
 function restrictToWeighmentFields(fields: ExtractedFields): ExtractedFields {
   return {
     vehicleNo: fields.vehicleNo,
     date: fields.date,
+    weightInfo: fields.weightInfo,
     documentType: fields.documentType,
     confidence: fields.confidence,
     classificationConfidence: fields.classificationConfidence,
@@ -161,9 +162,10 @@ STEP 2 — Extract fields according to the identified document type using the ru
 - transporterName: The transport company name (usually printed as the issuing company on the document header)
 
 === FOR WEIGHMENT (Weighbridge Slip) ===
-Extract ONLY the two fields below. Set every other field to null.
+Extract ONLY the three fields below. Set every other field to null.
 - vehicleNo: Vehicle registration number — look for "VEHICLE NO", "Vehicle No.", "Veh. No.", "Truck No."
 - date: Date from the slip in YYYY-MM-DD. The date may appear as "DT:DD-MM-YYYY TM:HH:MM" (e.g. "DT:16-09-2025 TM:12:05") or "DD/MM/YYYY" — extract only the date part and convert to YYYY-MM-DD.
+- weightInfo: Weight details from the slip — look for gross weight, tare weight, and net weight labels (e.g. "Gross Wt", "Tare Wt", "Net Wt", "GWT", "TWt", "NWT"). Combine all weight readings into a single string, e.g. "Gross: 49670 kg, Tare: 14290 kg, Net: 35380 kg".
 - If the slip explicitly indicates PARTY / LOADING / PLANT / ORIGIN weighment, classify as WEIGHMENT_PARTY.
 - If the slip explicitly indicates SITE / DESTINATION / DELIVERY / UNLOADING weighment, classify as WEIGHMENT_SITE.
 - Otherwise classify as WEIGHMENT.
