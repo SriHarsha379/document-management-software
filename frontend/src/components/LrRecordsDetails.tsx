@@ -344,54 +344,6 @@ export function LrRecordsDetails({ refreshTrigger = 0 }: { refreshTrigger?: numb
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div style={sCard}>
-      {/* ── Section header ─────────────────────────────────────────── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#1a1a2e' }}>
-          LR Details
-          {total > 0 && (
-            <span style={{ fontSize: 13, fontWeight: 400, color: '#6b7280', marginLeft: 8 }}>
-              ({total.toLocaleString()} records)
-            </span>
-          )}
-        </h3>
-        {hasActiveFilters && (
-          <span style={{
-            fontSize: 11, fontWeight: 600, color: '#4361ee',
-            background: '#eef0ff', borderRadius: 99, padding: '3px 10px',
-          }}>
-            Filters active
-          </span>
-        )}
-      </div>
-
-      {/* ── Global search ──────────────────────────────────────────── */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ position: 'relative', maxWidth: 560 }}>
-          <span style={{
-            position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
-            fontSize: 14, color: '#9ca3af', pointerEvents: 'none',
-          }}>🔍</span>
-          <input
-            type="text"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            onKeyDown={handleSearchKeyDown}
-            placeholder="Search by LR No, Invoice No, Vehicle No, Driver Name, Driver Mobile, Product, E-Way Bill No…"
-            style={{
-              width: '100%', padding: '8px 12px 8px 34px',
-              borderRadius: 8, border: '1px solid #d1d5db',
-              fontSize: 13, outline: 'none', boxSizing: 'border-box',
-              color: '#1a1a2e', background: '#fafafa', transition: 'border-color 0.15s, background 0.15s',
-            }}
-            onFocus={(e) => { e.currentTarget.style.borderColor = '#4361ee'; e.currentTarget.style.background = '#fff'; }}
-            onBlur={(e) => { e.currentTarget.style.borderColor = '#d1d5db'; e.currentTarget.style.background = '#fafafa'; }}
-          />
-        </div>
-        <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 3 }}>
-          Press Enter or click Apply Filters to search
-        </div>
-      </div>
-
       {/* ── Filter panel ───────────────────────────────────────────── */}
       <div style={filterPanel}>
         <div style={filterPanelTitle}>Filters</div>

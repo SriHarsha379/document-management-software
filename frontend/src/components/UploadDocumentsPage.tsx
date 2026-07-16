@@ -191,13 +191,14 @@ export function UploadDocumentsPage() {
                   <td style={td}>{lr.lrDate ?? lr.date ?? '—'}</td>
                   {SLOT_CONFIG.map((slot) => {
                     const docs = getRowDocuments(lr).filter((document) => matchesSlot(document, slot.type));
+                    const uniqueSourceCount = new Set(docs.map((d) => d.sourceDocumentId ?? d.id)).size;
                     const inputKey = `${lr.id}-${slot.type}`;
                     const busy = uploadingKey === `${lr.id}:${slot.type}`;
                     return (
                       <td key={slot.type} style={{ ...td, minWidth: 150 }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
-                          <span style={docs.length > 0 ? presentBadge : missingBadge}>
-                            {docs.length > 0 ? `${docs.length} uploaded` : 'Not uploaded'}
+                          <span style={uniqueSourceCount > 0 ? presentBadge : missingBadge}>
+                            {uniqueSourceCount > 0 ? `${uniqueSourceCount} uploaded` : 'Not uploaded'}
                           </span>
                           {canUpload && (
                             <>

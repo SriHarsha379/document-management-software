@@ -235,9 +235,24 @@ export function DocumentUpload({ onDocumentReady }: Props) {
                 Review the fields extracted from each uploaded page/document.
               </p>
             </div>
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#4338ca', background: '#eef2ff', borderRadius: 999, padding: '6px 10px' }}>
-              {processedDocs.length} extracted document{processedDocs.length === 1 ? '' : 's'}
-            </span>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#4338ca', background: '#eef2ff', borderRadius: 999, padding: '6px 10px' }}>
+                {processedDocs.length} extracted document{processedDocs.length === 1 ? '' : 's'}
+              </span>
+              <button
+                type="button"
+                onClick={reset}
+                style={{
+                  border: 'none', borderRadius: 9, background: '#22c55e', color: '#fff',
+                  padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(34,197,94,0.3)', transition: 'background 0.15s',
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#16a34a'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#22c55e'; }}
+              >
+                💾 Save & Done
+              </button>
+            </div>
           </div>
 
           <div style={{ display: 'grid', gap: 12 }}>

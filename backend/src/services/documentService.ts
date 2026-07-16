@@ -518,6 +518,7 @@ export async function syncLrRecordsFromDocuments(): Promise<{
           companyInvoiceDate: true,
           companyEwayBillNo: true,
           date: true,
+          principalCompany: true,
         },
       },
     },
@@ -533,6 +534,7 @@ export async function syncLrRecordsFromDocuments(): Promise<{
       companyInvoiceDate: inv.extractedData.companyInvoiceDate,
       companyEwayBillNo: inv.extractedData.companyEwayBillNo,
       date: inv.extractedData.date,
+      principalCompany: inv.extractedData.principalCompany,
     });
     backfilled++;
   }
@@ -874,6 +876,7 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
         companyInvoiceDate: updatedExtracted.companyInvoiceDate,
         companyEwayBillNo: updatedExtracted.companyEwayBillNo,
         date: updatedExtracted.date,
+        principalCompany: updatedExtracted.principalCompany,
       });
     }
     await autoLinkDocumentToGroup(documentId, {

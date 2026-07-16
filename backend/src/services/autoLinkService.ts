@@ -260,8 +260,8 @@ export async function autoLinkDocument(
  * data that was already captured from the LR document or entered manually.
  *
  * Called after an INVOICE-type document is successfully linked to an Lr record,
- * so that the dashboard INV. NO / INV. DATE columns are populated even when
- * the LR document itself did not carry those values.
+ * so that the dashboard INV. NO / INV. DATE / PRINCIPAL COMPANY columns are
+ * populated even when the LR document itself did not carry those values.
  */
 export async function backfillLrFromLinkedInvoice(
   lrId: string,
@@ -271,6 +271,7 @@ export async function backfillLrFromLinkedInvoice(
     companyInvoiceDate?: string | null;
     companyEwayBillNo?: string | null;
     date?: string | null;
+    principalCompany?: string | null;
   },
 ): Promise<void> {
   const lr = await db.lr.findUnique({
@@ -280,6 +281,7 @@ export async function backfillLrFromLinkedInvoice(
       companyInvoiceNo: true,
       companyInvoiceDate: true,
       companyEwayBillNo: true,
+      principalCompany: true,
     },
   });
   if (!lr) return;
@@ -295,6 +297,8 @@ export async function backfillLrFromLinkedInvoice(
   if (!lr.companyEwayBillNo && fields.companyEwayBillNo?.trim()) update.companyEwayBillNo = fields.companyEwayBillNo.trim();
   // Also fill legacy invoiceNo if blank (used by the auto-link matcher)
   if (!lr.invoiceNo && incomingInvoiceNo) update.invoiceNo = incomingInvoiceNo;
+  // Backfill principal company from the invoice when the LR record has none
+  if (!lr.principalCompany && fields.principalCompany?.trim()) update.principalCompany = fields.principalCompany.trim();
 
   if (Object.keys(update).length > 0) {
     await db.lr.update({ where: { id: lrId }, data: update });
@@ -328,6 +332,7 @@ export async function relinkPendingDocuments(
           companyInvoiceDate: true,
           companyEwayBillNo: true,
           date: true,
+          principalCompany: true,
         },
       },
     },
@@ -346,6 +351,7 @@ export async function relinkPendingDocuments(
           companyInvoiceDate: doc.extractedData.companyInvoiceDate,
           companyEwayBillNo: doc.extractedData.companyEwayBillNo,
           date: doc.extractedData.date,
+          principalCompany: doc.extractedData.principalCompany,
         });
       }
     }
