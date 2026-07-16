@@ -18,6 +18,8 @@ import {
 const WEIGHMENT_TYPES: DocumentType[] = ['WEIGHMENT', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE'];
 const VALID_TYPES: DocumentType[] = ['LR', 'INVOICE', 'TOLL', 'WEIGHMENT', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE', 'EWAYBILL', 'RECEIVING', 'UNKNOWN'];
 type ImageQuality = 'HIGH' | 'MEDIUM' | 'LOW';
+const CLASSIFICATION_WEIGHT = 0.4;
+const OCR_WEIGHT = 0.6;
 
 /** For weighment slips only vehicleNo and date should be retained; strip everything else. */
 function restrictToWeighmentFields(fields: ExtractedFields): ExtractedFields {
@@ -365,7 +367,7 @@ function scoreOcrCandidate(
   classificationConfidence: number,
   ocrConfidence: number,
 ): number {
-  return classificationConfidence * 0.4 + ocrConfidence * 0.6 - issues.length * ISSUE_PENALTY_WEIGHT;
+  return classificationConfidence * CLASSIFICATION_WEIGHT + ocrConfidence * OCR_WEIGHT - issues.length * ISSUE_PENALTY_WEIGHT;
 }
 
 export async function processDocumentOcr(filePath: string, mimeType: string): Promise<OcrResult> {
@@ -479,7 +481,11 @@ export async function processDocumentOcr(filePath: string, mimeType: string): Pr
       };
     };
 
-    let bestCandidate = await evaluateCandidate(prepared.variants[0]!.path, 0);
+    const firstVariant = prepared.variants[0];
+    if (!firstVariant) {
+      throw new Error('No image variants were prepared for OCR');
+    }
+    let bestCandidate = await evaluateCandidate(firstVariant.path, 0);
 
     if (shouldRetryOcr(bestCandidate.issues, bestCandidate.ocrConfidence) || bestCandidate.classificationConfidence < 0.75) {
       for (const variant of prepared.variants.slice(1)) {
