@@ -40,8 +40,8 @@ export function DispatchModal({ bundle, onClose, onSent }: Props) {
           const rows: TransporterDropdownItem[] = await masterApi.transportersDropdown();
           setContacts(rows.map((r) => ({ id: r.id, label: r.label, phone: r.phone, email: r.email })));
         } else if (recipientType === 'ACCOUNTS') {
-          const rows = await masterApi.listOfficers({ page: 1, limit: 200, includeInactive: false });
-          setContacts(rows.items.map((r) => ({ id: r.id, label: r.role ? `${r.name} (${r.role})` : r.name, phone: r.phone, email: r.email })));
+          const officersResult = await masterApi.listOfficers({ page: 1, limit: 200, includeInactive: false });
+          setContacts(officersResult.items.map((r) => ({ id: r.id, label: r.role ? `${r.name} (${r.role})` : r.name, phone: r.phone, email: r.email })));
         } else {
           setContacts([]);
         }

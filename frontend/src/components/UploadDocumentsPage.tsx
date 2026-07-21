@@ -3,6 +3,7 @@ import type { Document, DocumentGroup, DocumentType, Lr, LrDocumentCategory } fr
 import { documentsApi, lrApi, masterApi } from '../services/api';
 import { useCurrentUser, PERM } from '../contexts/UserContext';
 import { DocumentExtractionSummary } from './DocumentExtractionSummary';
+import { formatOfficerLabel } from '../utils/masterData';
 
 const PAGE_SIZE = 10;
 
@@ -431,7 +432,7 @@ function SendEmailModal({
             .map((p) => ({ id: `party:${p.id}`, label: `${p.name} (Party)`, email: p.email! })),
           ...officers.items
             .filter((o) => !!o.email)
-            .map((o) => ({ id: `officer:${o.id}`, label: `${o.name}${o.role ? ` (${o.role})` : ' (Accountant)'}`, email: o.email! })),
+            .map((o) => ({ id: `officer:${o.id}`, label: formatOfficerLabel(o.name, o.role), email: o.email! })),
           ...transporters.items
             .filter((t) => !!t.email)
             .map((t) => ({ id: `transporter:${t.id}`, label: `${t.name} (Transporter)`, email: t.email! })),

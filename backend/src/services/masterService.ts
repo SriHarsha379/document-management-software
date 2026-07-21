@@ -331,6 +331,7 @@ function validateParty(data: PartyCreateInput): void {
   assertRequired(data.name, 'name');
   assertEmail(data.email, 'email');
   assertPhone(data.phone, 'phone');
+  // Undefined role flags default to true at persistence time; only explicit false/false is invalid.
   if (data.isBillToParty === false && data.isShipToParty === false) {
     throw new ValidationError('At least one party role must be selected');
   }

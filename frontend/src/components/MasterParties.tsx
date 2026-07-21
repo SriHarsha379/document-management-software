@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { masterApi } from '../services/api';
+import { ACCOUNTANT_ROLE, masterApi } from '../services/api';
+import { getOfficerRoleLabel } from '../utils/masterData';
 
 type MasterContact = {
   key: string;
@@ -37,8 +38,8 @@ const EMPTY_FORM: CreateForm = {
 const LIMIT = 200;
 
 function generateCode(prefix: string, name: string): string {
-  const slug = name.toUpperCase().replace(/[^A-Z0-9]+/g, '').slice(0, 8) || 'ITEM';
-  const suffix = Math.random().toString(36).toUpperCase().slice(2, 6);
+  const slug = name.toUpperCase().replace(/[^A-Z0-9]+/g, '').slice(0, 8) || prefix;
+  const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase();
   return `${prefix}-${slug}-${suffix}`;
 }
 
@@ -86,7 +87,7 @@ export function MasterParties({ canManage = false }: { canManage?: boolean }) {
           email: o.email,
           phone: o.phone,
           contactPerson: null,
-          roles: [o.role?.trim() || 'Accountant'],
+          roles: [getOfficerRoleLabel(o.role)],
         })),
         ...transporters.items.map((t) => ({
           key: `transporter:${t.id}`,
@@ -134,7 +135,7 @@ export function MasterParties({ canManage = false }: { canManage?: boolean }) {
           name: form.name.trim(),
           email: form.email.trim() || undefined,
           phone: form.phone.trim() || undefined,
-          role: 'Accountant',
+          role: ACCOUNTANT_ROLE,
         }));
       }
 

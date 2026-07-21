@@ -166,6 +166,8 @@ import type { SearchResponse } from '../types';
 import type { Lr, PaginatedLrs, LrSummary } from '../types';
 import type { LrDocumentCategory } from '../types';
 
+export const ACCOUNTANT_ROLE = 'Accountant';
+
 // ── LR API ────────────────────────────────────────────────────────────────────
 
 export type LrCreatePayload = Omit<Lr, 'id' | 'serialNo' | 'createdAt' | 'updatedAt' | 'company' | 'branch'>;
