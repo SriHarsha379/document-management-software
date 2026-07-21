@@ -42,17 +42,16 @@ type TableColumn = {
   checkType: DocumentType;
   uploadType: DocumentType;
   color: string;
-  isOther?: boolean;
 };
 
 const TABLE_COLUMNS: TableColumn[] = [
-  { key: 'INVOICE', header: 'Tax Invoice',           checkType: 'INVOICE',         uploadType: 'INVOICE',         color: TYPE_COLORS.INVOICE },
-  { key: 'LR',      header: 'Lorry Receipt',         checkType: 'LR',              uploadType: 'LR',              color: TYPE_COLORS.LR },
+  { key: 'INVOICE',         header: 'Tax Invoice',           checkType: 'INVOICE',         uploadType: 'INVOICE',         color: TYPE_COLORS.INVOICE },
+  { key: 'LR',             header: 'Lorry Receipt',         checkType: 'LR',              uploadType: 'LR',              color: TYPE_COLORS.LR },
   { key: 'WEIGHMENT_PARTY', header: 'Party Weighment Slip', checkType: 'WEIGHMENT_PARTY', uploadType: 'WEIGHMENT_PARTY', color: TYPE_COLORS.WEIGHMENT_PARTY },
   { key: 'WEIGHMENT_SITE',  header: 'Site Weighment Slip',  checkType: 'WEIGHMENT_SITE',  uploadType: 'WEIGHMENT_SITE',  color: TYPE_COLORS.WEIGHMENT_SITE },
-  { key: 'TOLL',    header: 'Tollgate',              checkType: 'TOLL',            uploadType: 'TOLL',            color: TYPE_COLORS.TOLL },
-  { key: 'OTHER_1', header: 'Other 1 (Add)',         checkType: 'EWAYBILL',        uploadType: 'EWAYBILL',        color: TYPE_COLORS.EWAYBILL, isOther: true },
-  { key: 'OTHER_2', header: 'Other 2 (Add)',         checkType: 'RECEIVING',       uploadType: 'RECEIVING',       color: TYPE_COLORS.RECEIVING, isOther: true },
+  { key: 'TOLL',            header: 'Tollgate',              checkType: 'TOLL',            uploadType: 'TOLL',            color: TYPE_COLORS.TOLL },
+  { key: 'OTHER_1',         header: 'E-Way Bill',            checkType: 'EWAYBILL',        uploadType: 'EWAYBILL',        color: TYPE_COLORS.EWAYBILL },
+  { key: 'OTHER_2',         header: 'Receiving Copy',        checkType: 'RECEIVING',       uploadType: 'RECEIVING',       color: TYPE_COLORS.RECEIVING },
 ];
 
 const CHANNEL_INFO: Record<DispatchChannel, { icon: string; label: string; placeholder: string }> = {
@@ -360,6 +359,9 @@ export function DocumentBundler({ onBundleSaved }: Props) {
   // The slot being previewed in the ImagePreviewModal (null = closed)
   const [viewSlot, setViewSlot] = useState<{ docs: import('../types').Document[]; header: string } | null>(null);
 
+  // The group for which all documents are being viewed (null = closed)
+  const [viewAllGroup, setViewAllGroup] = useState<DocumentGroup | null>(null);
+
   const refreshGroups = useCallback(() => {
     documentsApi.listGroups()
       .then((g) => setGroups(g))
@@ -457,7 +459,7 @@ export function DocumentBundler({ onBundleSaved }: Props) {
           <table style={styles.table}>
             <thead>
               <tr>
-                <th style={{ ...styles.th, ...styles.thFixed, minWidth: 140 }}>Invoice No.</th>
+                <th style={{ ...styles.th, ...styles.thFixed, minWidth: 140 }}>LR Number</th>
                 <th style={{ ...styles.th, ...styles.thFixed, minWidth: 90 }}>Date</th>
                 {TABLE_COLUMNS.map((col) => (
                   <th key={col.key} style={{ ...styles.th, minWidth: 120 }}>
@@ -466,26 +468,27 @@ export function DocumentBundler({ onBundleSaved }: Props) {
                     </span>
                   </th>
                 ))}
-                <th style={{ ...styles.th, minWidth: 90 }}>Actions</th>
+                <th style={{ ...styles.th, minWidth: 90 }}>View Documents</th>
+                <th style={{ ...styles.th, minWidth: 90 }}>Send</th>
               </tr>
             </thead>
             <tbody>
               {groups.map((g, rowIdx) => {
                 const docs = g.documents ?? [];
                 const docTypeSet = new Set(docs.map((d) => d.type));
-                let invoiceNo = '—';
+                let lrNo = '—';
                 for (const doc of docs) {
-                  const currentInvoiceNo = doc.extractedData?.invoiceNo?.trim();
-                  if (!currentInvoiceNo) continue;
-                  invoiceNo = currentInvoiceNo;
-                  if (doc.type === 'INVOICE') break;
+                  const currentLrNo = doc.extractedData?.lrNo?.trim();
+                  if (!currentLrNo) continue;
+                  lrNo = currentLrNo;
+                  if (doc.type === 'LR') break;
                 }
                 const rowBg = rowIdx % 2 === 0 ? '#fff' : '#f8f9ff';
                 return (
                   <tr key={g.id} style={{ background: rowBg }}>
-                    {/* Invoice No */}
+                    {/* LR Number */}
                     <td style={{ ...styles.td, fontWeight: 700, color: '#1a1a2e' }}>
-                      🧾 {invoiceNo}
+                      {lrNo}
                     </td>
                     {/* Date */}
                     <td style={{ ...styles.td, color: '#555', fontSize: 12 }}>
@@ -538,7 +541,7 @@ export function DocumentBundler({ onBundleSaved }: Props) {
                           ) : isUploading ? (
                             <span style={styles.uploadingCell}>⏳</span>
                           ) : (
-                            <label style={styles.addCell} title={col.isOther ? `Upload dummy image (${col.header})` : `Upload ${col.header}`}>
+                            <label style={styles.addCell} title={`Upload ${col.header}`}>
                               <input
                                 type="file"
                                 accept="image/*,application/pdf"
@@ -555,6 +558,17 @@ export function DocumentBundler({ onBundleSaved }: Props) {
                         </td>
                       );
                     })}
+                    {/* View Documents button */}
+                    <td style={{ ...styles.td, textAlign: 'center' }}>
+                      <button
+                        style={styles.viewBtn}
+                        onClick={() => setViewAllGroup(g)}
+                        disabled={docs.length === 0}
+                        title="View all documents for this trip"
+                      >
+                        👁️ View
+                      </button>
+                    </td>
                     {/* Send button */}
                     <td style={{ ...styles.td, textAlign: 'center' }}>
                       <button
@@ -590,6 +604,15 @@ export function DocumentBundler({ onBundleSaved }: Props) {
           docs={viewSlot.docs}
           header={viewSlot.header}
           onClose={() => setViewSlot(null)}
+        />
+      )}
+
+      {/* View all documents modal */}
+      {viewAllGroup && (
+        <ImagePreviewModal
+          docs={viewAllGroup.documents ?? []}
+          header={`All documents — ${viewAllGroup.vehicleNo} · ${viewAllGroup.date}`}
+          onClose={() => setViewAllGroup(null)}
         />
       )}
     </div>
@@ -686,6 +709,17 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     fontSize: 13,
     boxShadow: '0 1px 4px rgba(67,97,238,0.25)',
+    whiteSpace: 'nowrap',
+  },
+  viewBtn: {
+    padding: '6px 12px',
+    background: '#fff',
+    color: '#4361ee',
+    border: '1.5px solid #4361ee',
+    borderRadius: 6,
+    cursor: 'pointer',
+    fontWeight: 600,
+    fontSize: 13,
     whiteSpace: 'nowrap',
   },
 };
