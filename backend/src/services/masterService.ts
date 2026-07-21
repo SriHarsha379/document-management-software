@@ -315,6 +315,8 @@ export interface PartyCreateInput {
   contactPerson?: string | null;
   phone?:         string | null;
   email?:         string | null;
+  isBillToParty?: boolean;
+  isShipToParty?: boolean;
   gstNo?:         string | null;
   address?:       string | null;
 }
@@ -329,6 +331,9 @@ function validateParty(data: PartyCreateInput): void {
   assertRequired(data.name, 'name');
   assertEmail(data.email, 'email');
   assertPhone(data.phone, 'phone');
+  if (data.isBillToParty === false && data.isShipToParty === false) {
+    throw new ValidationError('At least one party role must be selected');
+  }
 }
 
 export async function createParty(companyId: string, data: PartyCreateInput) {
@@ -347,6 +352,8 @@ export async function createParty(companyId: string, data: PartyCreateInput) {
         contactPerson: optStr(data.contactPerson),
         phone:         optStr(data.phone),
         email:         optStr(data.email),
+        isBillToParty: data.isBillToParty ?? true,
+        isShipToParty: data.isShipToParty ?? true,
         gstNo:         optStr(data.gstNo),
         address:       optStr(data.address),
       },
@@ -392,6 +399,12 @@ export async function updateParty(id: string, companyId: string, data: PartyUpda
   if (data.code !== undefined) assertCode(data.code!, 'code');
   if (data.email !== undefined) assertEmail(data.email, 'email');
   if (data.phone !== undefined) assertPhone(data.phone, 'phone');
+  const current = await getParty(id, companyId);
+  const nextBillTo = data.isBillToParty ?? current.isBillToParty;
+  const nextShipTo = data.isShipToParty ?? current.isShipToParty;
+  if (nextBillTo === false && nextShipTo === false) {
+    throw new ValidationError('At least one party role must be selected');
+  }
   try {
     return await db.party.update({
       where: { id },
@@ -401,6 +414,8 @@ export async function updateParty(id: string, companyId: string, data: PartyUpda
         contactPerson: data.contactPerson !== undefined ? optStr(data.contactPerson) : undefined,
         phone:         data.phone   !== undefined ? optStr(data.phone)   : undefined,
         email:         data.email   !== undefined ? optStr(data.email)   : undefined,
+        isBillToParty: data.isBillToParty,
+        isShipToParty: data.isShipToParty,
         gstNo:         data.gstNo   !== undefined ? optStr(data.gstNo)   : undefined,
         address:       data.address !== undefined ? optStr(data.address) : undefined,
         isActive:      data.isActive,
@@ -419,9 +434,14 @@ export async function deactivateParty(id: string, companyId: string) {
   return db.party.update({ where: { id }, data: { isActive: false } });
 }
 
-export async function partyDropdown(companyId: string) {
+export async function partyDropdown(companyId: string, usage?: 'billTo' | 'shipTo') {
   const rows = await db.party.findMany({
-    where: { companyId, isActive: true },
+    where: {
+      companyId,
+      isActive: true,
+      ...(usage === 'billTo' ? { isBillToParty: true } : {}),
+      ...(usage === 'shipTo' ? { isShipToParty: true } : {}),
+    },
     orderBy: { name: 'asc' },
     select: { id: true, code: true, name: true, phone: true, email: true },
   });

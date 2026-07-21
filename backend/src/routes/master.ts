@@ -222,7 +222,9 @@ router.delete('/officers/:id', writeLimiter, ...canManage, async (req: Request, 
 
 router.get('/parties/dropdown', readLimiter, ...canRead, async (req: Request, res: Response): Promise<void> => {
   try {
-    res.json(await partyDropdown(req.user!.companyId));
+    const q = req.query as Record<string, string | undefined>;
+    const usage = q['usage'] === 'billTo' || q['usage'] === 'shipTo' ? q['usage'] : undefined;
+    res.json(await partyDropdown(req.user!.companyId, usage));
   } catch (err) { handleMasterError(err, res, 'GET parties/dropdown'); }
 });
 

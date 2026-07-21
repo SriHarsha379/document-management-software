@@ -964,6 +964,7 @@ async function resolveLrRecipientSuggestions(lrId: string, companyId: string) {
           where: {
             companyId,
             isActive: true,
+            isBillToParty: true,
             email: { not: null },
             name: { contains: lr.billToParty.trim() },
           },
@@ -975,6 +976,7 @@ async function resolveLrRecipientSuggestions(lrId: string, companyId: string) {
           where: {
             companyId,
             isActive: true,
+            isShipToParty: true,
             email: { not: null },
             name: { contains: lr.shipToParty.trim() },
           },

@@ -579,6 +579,8 @@ model Party {
   contactPerson String?
   phone         String?
   email         String?
+  isBillToParty Boolean  @default(true)
+  isShipToParty Boolean  @default(true)
   gstNo         String?
   address       String?
   isActive      Boolean  @default(true)
