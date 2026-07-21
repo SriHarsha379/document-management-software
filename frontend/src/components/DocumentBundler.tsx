@@ -3,6 +3,7 @@ import type {
   DocumentGroup, DocumentType, RecipientType, DispatchChannel, Bundle, DispatchResult,
 } from '../types';
 import { documentsApi, bundlesApi, dispatchApi } from '../services/api';
+import { ImagePreviewModal } from './ImagePreviewModal';
 
 interface Props {
   onBundleSaved?: (bundle: Bundle) => void;
@@ -42,17 +43,16 @@ type TableColumn = {
   checkType: DocumentType;
   uploadType: DocumentType;
   color: string;
-  isOther?: boolean;
 };
 
 const TABLE_COLUMNS: TableColumn[] = [
-  { key: 'INVOICE', header: 'Tax Invoice',           checkType: 'INVOICE',         uploadType: 'INVOICE',         color: TYPE_COLORS.INVOICE },
-  { key: 'LR',      header: 'Lorry Receipt',         checkType: 'LR',              uploadType: 'LR',              color: TYPE_COLORS.LR },
+  { key: 'INVOICE',         header: 'Tax Invoice',           checkType: 'INVOICE',         uploadType: 'INVOICE',         color: TYPE_COLORS.INVOICE },
+  { key: 'LR',             header: 'Lorry Receipt',         checkType: 'LR',              uploadType: 'LR',              color: TYPE_COLORS.LR },
   { key: 'WEIGHMENT_PARTY', header: 'Party Weighment Slip', checkType: 'WEIGHMENT_PARTY', uploadType: 'WEIGHMENT_PARTY', color: TYPE_COLORS.WEIGHMENT_PARTY },
   { key: 'WEIGHMENT_SITE',  header: 'Site Weighment Slip',  checkType: 'WEIGHMENT_SITE',  uploadType: 'WEIGHMENT_SITE',  color: TYPE_COLORS.WEIGHMENT_SITE },
-  { key: 'TOLL',    header: 'Tollgate',              checkType: 'TOLL',            uploadType: 'TOLL',            color: TYPE_COLORS.TOLL },
-  { key: 'OTHER_1', header: 'Other 1 (Add)',         checkType: 'EWAYBILL',        uploadType: 'EWAYBILL',        color: TYPE_COLORS.EWAYBILL, isOther: true },
-  { key: 'OTHER_2', header: 'Other 2 (Add)',         checkType: 'RECEIVING',       uploadType: 'RECEIVING',       color: TYPE_COLORS.RECEIVING, isOther: true },
+  { key: 'TOLL',            header: 'Tollgate',              checkType: 'TOLL',            uploadType: 'TOLL',            color: TYPE_COLORS.TOLL },
+  { key: 'OTHER_1',         header: 'E-Way Bill',            checkType: 'EWAYBILL',        uploadType: 'EWAYBILL',        color: TYPE_COLORS.EWAYBILL },
+  { key: 'OTHER_2',         header: 'Receiving Copy',        checkType: 'RECEIVING',       uploadType: 'RECEIVING',       color: TYPE_COLORS.RECEIVING },
 ];
 
 const CHANNEL_INFO: Record<DispatchChannel, { icon: string; label: string; placeholder: string }> = {
@@ -279,72 +279,6 @@ function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
   );
 }
 
-// ── ImagePreviewModal ──────────────────────────────────────────────────────────
-
-interface ImagePreviewModalProps {
-  docs: import('../types').Document[];
-  header: string;
-  onClose: () => void;
-}
-
-function ImagePreviewModal({ docs, header, onClose }: ImagePreviewModalProps) {
-  const [current, setCurrent] = useState(0);
-  const doc = docs[Math.min(current, docs.length - 1)];
-
-  if (!doc) return null;
-
-  const url = `/uploads/${doc.filePath}`;
-  const isPdf = doc.mimeType === 'application/pdf';
-
-  return (
-    <div style={iv.backdrop} onClick={onClose}>
-      <div style={iv.modal} onClick={(e) => e.stopPropagation()}>
-        <div style={iv.header}>
-          <span style={iv.title}>🔍 {header}</span>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={iv.openBtn}
-              title="Open in new tab"
-            >
-              ↗ Open
-            </a>
-            <button style={iv.closeBtn} onClick={onClose}>✕</button>
-          </div>
-        </div>
-        <div style={iv.body}>
-          {isPdf ? (
-            <iframe src={url} style={iv.iframe} title={doc.originalFilename} />
-          ) : (
-            <img src={url} alt={doc.originalFilename} style={iv.img} />
-          )}
-        </div>
-        {docs.length > 1 && (
-          <div style={iv.nav}>
-            <button
-              style={iv.navBtn}
-              disabled={current === 0}
-              onClick={() => setCurrent((c) => c - 1)}
-            >
-              ‹ Prev
-            </button>
-            <span style={iv.navLabel}>{current + 1} / {docs.length}</span>
-            <button
-              style={iv.navBtn}
-              disabled={current === docs.length - 1}
-              onClick={() => setCurrent((c) => c + 1)}
-            >
-              Next ›
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ── DocumentBundler ────────────────────────────────────────────────────────────
 
 export function DocumentBundler({ onBundleSaved }: Props) {
@@ -359,6 +293,9 @@ export function DocumentBundler({ onBundleSaved }: Props) {
 
   // The slot being previewed in the ImagePreviewModal (null = closed)
   const [viewSlot, setViewSlot] = useState<{ docs: import('../types').Document[]; header: string } | null>(null);
+
+  // The group for which all documents are being viewed (null = closed)
+  const [viewAllGroup, setViewAllGroup] = useState<DocumentGroup | null>(null);
 
   const refreshGroups = useCallback(() => {
     documentsApi.listGroups()
@@ -457,7 +394,7 @@ export function DocumentBundler({ onBundleSaved }: Props) {
           <table style={styles.table}>
             <thead>
               <tr>
-                <th style={{ ...styles.th, ...styles.thFixed, minWidth: 140 }}>Invoice No.</th>
+                <th style={{ ...styles.th, ...styles.thFixed, minWidth: 140 }}>LR Number</th>
                 <th style={{ ...styles.th, ...styles.thFixed, minWidth: 90 }}>Date</th>
                 {TABLE_COLUMNS.map((col) => (
                   <th key={col.key} style={{ ...styles.th, minWidth: 120 }}>
@@ -466,26 +403,27 @@ export function DocumentBundler({ onBundleSaved }: Props) {
                     </span>
                   </th>
                 ))}
-                <th style={{ ...styles.th, minWidth: 90 }}>Actions</th>
+                <th style={{ ...styles.th, minWidth: 90 }}>View Documents</th>
+                <th style={{ ...styles.th, minWidth: 90 }}>Send</th>
               </tr>
             </thead>
             <tbody>
               {groups.map((g, rowIdx) => {
                 const docs = g.documents ?? [];
                 const docTypeSet = new Set(docs.map((d) => d.type));
-                let invoiceNo = '—';
+                let lrNo = '—';
                 for (const doc of docs) {
-                  const currentInvoiceNo = doc.extractedData?.invoiceNo?.trim();
-                  if (!currentInvoiceNo) continue;
-                  invoiceNo = currentInvoiceNo;
-                  if (doc.type === 'INVOICE') break;
+                  const currentLrNo = doc.extractedData?.lrNo?.trim();
+                  if (!currentLrNo) continue;
+                  lrNo = currentLrNo;
+                  if (doc.type === 'LR') break;
                 }
                 const rowBg = rowIdx % 2 === 0 ? '#fff' : '#f8f9ff';
                 return (
                   <tr key={g.id} style={{ background: rowBg }}>
-                    {/* Invoice No */}
+                    {/* LR Number */}
                     <td style={{ ...styles.td, fontWeight: 700, color: '#1a1a2e' }}>
-                      🧾 {invoiceNo}
+                      {lrNo}
                     </td>
                     {/* Date */}
                     <td style={{ ...styles.td, color: '#555', fontSize: 12 }}>
@@ -538,7 +476,7 @@ export function DocumentBundler({ onBundleSaved }: Props) {
                           ) : isUploading ? (
                             <span style={styles.uploadingCell}>⏳</span>
                           ) : (
-                            <label style={styles.addCell} title={col.isOther ? `Upload dummy image (${col.header})` : `Upload ${col.header}`}>
+                            <label style={styles.addCell} title={`Upload ${col.header}`}>
                               <input
                                 type="file"
                                 accept="image/*,application/pdf"
@@ -555,6 +493,17 @@ export function DocumentBundler({ onBundleSaved }: Props) {
                         </td>
                       );
                     })}
+                    {/* View Documents button */}
+                    <td style={{ ...styles.td, textAlign: 'center' }}>
+                      <button
+                        style={styles.viewBtn}
+                        onClick={() => setViewAllGroup(g)}
+                        disabled={docs.length === 0}
+                        title="View all documents for this trip"
+                      >
+                        👁️ View
+                      </button>
+                    </td>
                     {/* Send button */}
                     <td style={{ ...styles.td, textAlign: 'center' }}>
                       <button
@@ -590,6 +539,15 @@ export function DocumentBundler({ onBundleSaved }: Props) {
           docs={viewSlot.docs}
           header={viewSlot.header}
           onClose={() => setViewSlot(null)}
+        />
+      )}
+
+      {/* View all documents modal */}
+      {viewAllGroup && (
+        <ImagePreviewModal
+          docs={viewAllGroup.documents ?? []}
+          header={`All documents — ${viewAllGroup.vehicleNo} · ${viewAllGroup.date}`}
+          onClose={() => setViewAllGroup(null)}
         />
       )}
     </div>
@@ -688,6 +646,17 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: '0 1px 4px rgba(67,97,238,0.25)',
     whiteSpace: 'nowrap',
   },
+  viewBtn: {
+    padding: '6px 12px',
+    background: '#fff',
+    color: '#4361ee',
+    border: '1.5px solid #4361ee',
+    borderRadius: 6,
+    cursor: 'pointer',
+    fontWeight: 600,
+    fontSize: 13,
+    whiteSpace: 'nowrap',
+  },
 };
 
 // QuickSendModal styles
@@ -737,55 +706,4 @@ const qs: Record<string, React.CSSProperties> = {
     boxShadow: '0 2px 8px rgba(67,97,238,0.3)',
   },
   sendBtnDisabled: { background: '#9ca3af', cursor: 'not-allowed', boxShadow: 'none' },
-};
-
-// ImagePreviewModal styles
-const iv: Record<string, React.CSSProperties> = {
-  backdrop: {
-    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    zIndex: 1100, padding: 16,
-  },
-  modal: {
-    background: '#fff', borderRadius: 14, boxShadow: '0 8px 48px rgba(0,0,0,0.35)',
-    width: '100%', maxWidth: 860, maxHeight: '92vh',
-    display: 'flex', flexDirection: 'column', overflow: 'hidden',
-  },
-  header: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    padding: '14px 18px', borderBottom: '1px solid #e0e0f0', flexShrink: 0,
-  },
-  title: { fontSize: 15, fontWeight: 700, color: '#1a1a2e', margin: 0 },
-  openBtn: {
-    padding: '5px 12px', background: '#4361ee', color: '#fff',
-    borderRadius: 6, fontSize: 12, fontWeight: 700, textDecoration: 'none',
-    display: 'inline-flex', alignItems: 'center',
-  },
-  closeBtn: {
-    background: 'none', border: 'none', cursor: 'pointer',
-    fontSize: 20, color: '#9ca3af', lineHeight: 1, padding: 0,
-  },
-  body: {
-    flex: 1, overflow: 'auto', display: 'flex',
-    alignItems: 'center', justifyContent: 'center',
-    padding: 16, background: '#f0f0f5', minHeight: 0,
-  },
-  img: {
-    maxWidth: '100%', maxHeight: '70vh',
-    objectFit: 'contain', borderRadius: 6,
-    boxShadow: '0 2px 12px rgba(0,0,0,0.15)',
-  },
-  iframe: {
-    width: '100%', height: '70vh',
-    border: 'none', borderRadius: 6,
-  },
-  nav: {
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    gap: 12, padding: '10px 18px', borderTop: '1px solid #e0e0f0', flexShrink: 0,
-  },
-  navBtn: {
-    padding: '5px 14px', border: '1.5px solid #d0d0e0', borderRadius: 6,
-    background: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#4361ee',
-  },
-  navLabel: { fontSize: 13, color: '#555' },
 };

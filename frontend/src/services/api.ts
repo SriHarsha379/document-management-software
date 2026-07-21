@@ -166,6 +166,8 @@ import type { SearchResponse } from '../types';
 import type { Lr, PaginatedLrs, LrSummary } from '../types';
 import type { LrDocumentCategory } from '../types';
 
+export const ACCOUNTANT_ROLE = 'Accountant';
+
 // ── LR API ────────────────────────────────────────────────────────────────────
 
 export type LrCreatePayload = Omit<Lr, 'id' | 'serialNo' | 'createdAt' | 'updatedAt' | 'company' | 'branch'>;
@@ -587,6 +589,8 @@ export interface Party {
   contactPerson: string | null;
   phone: string | null;
   email: string | null;
+  isBillToParty: boolean;
+  isShipToParty: boolean;
   gstNo: string | null;
   address: string | null;
   isActive: boolean;
@@ -601,7 +605,51 @@ export interface PartyCreateInput {
   contactPerson?: string;
   phone?: string;
   email?: string;
+  isBillToParty?: boolean;
+  isShipToParty?: boolean;
   gstNo?: string;
+  address?: string;
+}
+
+export interface Officer {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  role: string | null;
+  isActive: boolean;
+  companyId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OfficerCreateInput {
+  name: string;
+  phone?: string;
+  email?: string;
+  role?: string;
+}
+
+export interface Transporter {
+  id: string;
+  code: string;
+  name: string;
+  contactName: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  isActive: boolean;
+  companyId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TransporterCreateInput {
+  code: string;
+  name: string;
+  contactName?: string;
+  phone?: string;
+  email?: string;
   address?: string;
 }
 
@@ -610,9 +658,19 @@ export interface PaginatedParties {
   pagination: { total: number; page: number; limit: number; pages: number };
 }
 
+export interface PaginatedOfficers {
+  items: Officer[];
+  pagination: { total: number; page: number; limit: number; pages: number };
+}
+
+export interface PaginatedTransporters {
+  items: Transporter[];
+  pagination: { total: number; page: number; limit: number; pages: number };
+}
+
 export const masterApi = {
-  partiesDropdown: async (): Promise<PartyDropdownItem[]> => {
-    const res = await api.get<PartyDropdownItem[]>('/master/parties/dropdown');
+  partiesDropdown: async (usage?: 'billTo' | 'shipTo'): Promise<PartyDropdownItem[]> => {
+    const res = await api.get<PartyDropdownItem[]>('/master/parties/dropdown', { params: usage ? { usage } : undefined });
     return res.data;
   },
 
@@ -626,8 +684,28 @@ export const masterApi = {
     return res.data;
   },
 
+  listOfficers: async (params?: { page?: number; limit?: number; search?: string; includeInactive?: boolean }): Promise<PaginatedOfficers> => {
+    const res = await api.get<PaginatedOfficers>('/master/officers', { params });
+    return res.data;
+  },
+
+  listTransporters: async (params?: { page?: number; limit?: number; search?: string; includeInactive?: boolean }): Promise<PaginatedTransporters> => {
+    const res = await api.get<PaginatedTransporters>('/master/transporters', { params });
+    return res.data;
+  },
+
   createParty: async (data: PartyCreateInput): Promise<Party> => {
     const res = await api.post<Party>('/master/parties', data);
+    return res.data;
+  },
+
+  createOfficer: async (data: OfficerCreateInput): Promise<Officer> => {
+    const res = await api.post<Officer>('/master/officers', data);
+    return res.data;
+  },
+
+  createTransporter: async (data: TransporterCreateInput): Promise<Transporter> => {
+    const res = await api.post<Transporter>('/master/transporters', data);
     return res.data;
   },
 

@@ -24,12 +24,12 @@ export function DispatchModal({ bundle, onClose, onSent }: Props) {
   // Saved contacts for WhatsApp auto-fill
   const [contacts, setContacts] = useState<ContactItem[]>([]);
   const [contactsLoading, setContactsLoading] = useState(false);
+  const [contactSearch, setContactSearch] = useState('');
 
   const recipientType: RecipientType = bundle.recipientType;
 
-  // Load saved contacts when channel switches to WHATSAPP
+  // Load saved contacts from master data
   useEffect(() => {
-    if (channel !== 'WHATSAPP') return;
     setContactsLoading(true);
     const load = async () => {
       try {
@@ -39,6 +39,9 @@ export function DispatchModal({ bundle, onClose, onSent }: Props) {
         } else if (recipientType === 'TRANSPORTER') {
           const rows: TransporterDropdownItem[] = await masterApi.transportersDropdown();
           setContacts(rows.map((r) => ({ id: r.id, label: r.label, phone: r.phone, email: r.email })));
+        } else if (recipientType === 'ACCOUNTS') {
+          const officersResult = await masterApi.listOfficers({ page: 1, limit: 200, includeInactive: false });
+          setContacts(officersResult.items.map((r) => ({ id: r.id, label: r.role ? `${r.name} (${r.role})` : r.name, phone: r.phone, email: r.email })));
         } else {
           setContacts([]);
         }
@@ -75,8 +78,13 @@ export function DispatchModal({ bundle, onClose, onSent }: Props) {
   const info = CHANNEL_INFO[channel];
   const isEmailAccepted = channel === 'EMAIL' && result?.success;
 
-  // Contacts with a saved phone number
-  const phoneContacts = contacts.filter((c) => c.phone);
+  const filteredContacts = contacts.filter((c) => {
+    const q = contactSearch.trim().toLowerCase();
+    if (!q) return true;
+    return [c.label, c.email ?? '', c.phone ?? ''].join(' ').toLowerCase().includes(q);
+  });
+
+  const channelContacts = filteredContacts.filter((c) => channel === 'EMAIL' ? !!c.email : !!c.phone);
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }} onClick={onClose}>
@@ -105,37 +113,44 @@ export function DispatchModal({ bundle, onClose, onSent }: Props) {
               </div>
             </div>
 
-            {/* Saved contacts picker — shown only for WhatsApp when contacts exist */}
-            {channel === 'WHATSAPP' && (
-              <div style={section}>
-                <label style={sLabel}>💾 Pick from saved contacts</label>
-                {contactsLoading && <p style={{ fontSize: 13, color: '#888', margin: 0 }}>Loading contacts…</p>}
-                {!contactsLoading && phoneContacts.length === 0 && (
-                  <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>
-                    No saved phone numbers found for {recipientType} in Master Data.
-                  </p>
-                )}
-                {!contactsLoading && phoneContacts.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {phoneContacts.map((c) => (
+            <div style={section}>
+              <label style={sLabel}>💾 Pick from master data</label>
+              <input
+                style={sInput}
+                value={contactSearch}
+                onChange={(e) => setContactSearch(e.target.value)}
+                placeholder="Search contact..."
+              />
+              {contactsLoading && <p style={{ fontSize: 13, color: '#888', margin: '8px 0 0' }}>Loading contacts…</p>}
+              {!contactsLoading && channelContacts.length === 0 && (
+                <p style={{ fontSize: 12, color: '#9ca3af', margin: '8px 0 0' }}>
+                  No saved {channel === 'EMAIL' ? 'emails' : 'phone numbers'} found for {recipientType}.
+                </p>
+              )}
+              {!contactsLoading && channelContacts.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8, maxHeight: 180, overflowY: 'auto' }}>
+                  {channelContacts.map((c) => {
+                    const address = channel === 'EMAIL' ? c.email! : c.phone!;
+                    const selected = recipient === address;
+                    return (
                       <button
                         key={c.id}
-                        onClick={() => setRecipient(c.phone!)}
+                        onClick={() => setRecipient(address)}
                         style={{
                           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                          padding: '8px 12px', border: `1.5px solid ${recipient === c.phone ? '#4361ee' : '#e0e0f0'}`,
-                          borderRadius: 8, background: recipient === c.phone ? '#eef0ff' : '#f8f9ff',
+                          padding: '8px 12px', border: `1.5px solid ${selected ? '#4361ee' : '#e0e0f0'}`,
+                          borderRadius: 8, background: selected ? '#eef0ff' : '#f8f9ff',
                           cursor: 'pointer', fontSize: 13, textAlign: 'left', gap: 8,
                         }}
                       >
                         <span style={{ fontWeight: 600, color: '#1a1a2e' }}>{c.label}</span>
-                        <span style={{ color: '#4361ee', fontFamily: 'monospace', fontSize: 12 }}>{c.phone}</span>
+                        <span style={{ color: '#4361ee', fontFamily: 'monospace', fontSize: 12 }}>{address}</span>
                       </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
             <div style={section}>
               <label style={sLabel}>{info.icon} Recipient {info.label}</label>

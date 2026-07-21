@@ -97,11 +97,6 @@ function parseExtractedFields(parsed: Record<string, unknown>, documentType: Doc
   if (WEIGHMENT_TYPES.includes(documentType)) {
     return restrictToWeighmentFields(normalized);
   }
-  // principalCompany is only meaningful on invoices; strip it from LR documents
-  // to prevent the transporter header from being misidentified as the principal company.
-  if (documentType === 'LR') {
-    normalized.principalCompany = undefined;
-  }
   return normalized;
 }
 
@@ -145,7 +140,8 @@ STEP 2 — Extract fields according to the identified document type using the ru
 - shipToParty: The "SHIP TO PARTY" company name (delivery address party)
 - approvedDestination: Approved destination / sanctioned destination — look for labels like "Approved Destination"
 - deliveryDestination: Delivered destination / destination city / "To Destination" city or location
-- branchName: The locality/area from the sender's header address block, normalized to UPPERCASE (e.g. "DRONAGIRI"). Look for the locality token before the city/district in the "From" address. Also check "From Destination" label.
+- principalCompany: The principal/client company name on the LR — the company whose goods are being transported. Look first for an explicit label such as "Principal Company:", "Principal:", or "Company:". If no label is present, extract the most prominent company name from the document header (the consignor/sender company at the top of the document). This is the client company, NOT the transport/carrier company. Return the full name exactly as printed (e.g. "MY HOME INDUSTRIES PRIVATE LIMITED"). Return null if no company name can be identified.
+- branchName: The branch of the principal/issuing company on the LR. Look first for an explicit "Branch:" label anywhere in the document header area; use the value that follows the label, normalized to UPPERCASE, and strip the word "BRANCH" from the end if present (e.g. "Dronagiri Branch" → "DRONAGIRI"). If no explicit "Branch:" label exists, extract the most specific locality or area name from the company/consignor header address block, normalized to UPPERCASE (e.g. "DRONAGIRI" from an address like "Dronagiri, Navi Mumbai"). Do not use a generic city or district name when a more specific locality is present. Always return a bare locality name without the word "BRANCH". Return null if no branch or locality can be identified.
 - source: The source city/location from the sender's header address block, normalized to UPPERCASE (e.g. "NAVI MUMBAI"). Prefer the city token immediately following locality in the same address line.
 - workingCenter: Working center / working centre name
 - depotPlantCode: Depot code / plant code / depot-plant code

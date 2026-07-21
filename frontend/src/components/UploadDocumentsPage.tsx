@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Document, DocumentGroup, DocumentType, Lr, LrDocumentCategory } from '../types';
-import { documentsApi, lrApi } from '../services/api';
+import { documentsApi, lrApi, masterApi } from '../services/api';
 import { useCurrentUser, PERM } from '../contexts/UserContext';
 import { DocumentExtractionSummary } from './DocumentExtractionSummary';
+import { formatOfficerLabel } from '../utils/masterData';
 
 const PAGE_SIZE = 10;
 
@@ -406,9 +407,47 @@ function SendEmailModal({
   const [ccInput, setCcInput] = useState('');
   const [bccInput, setBccInput] = useState('');
   const [suggestions, setSuggestions] = useState<Array<{ type: string; label: string; value: string; sourceName: string }>>([]);
+  const [masterSearch, setMasterSearch] = useState('');
+  const [masterEmails, setMasterEmails] = useState<Array<{ id: string; label: string; email: string }>>([]);
+  const [masterLoading, setMasterLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [documentCount, setDocumentCount] = useState(0);
+
+  useEffect(() => {
+    let ignore = false;
+    const loadMaster = async () => {
+      setMasterLoading(true);
+      try {
+        const [parties, officers, transporters] = await Promise.all([
+          masterApi.listParties({ page: 1, limit: 200, includeInactive: false }),
+          masterApi.listOfficers({ page: 1, limit: 200, includeInactive: false }),
+          masterApi.listTransporters({ page: 1, limit: 200, includeInactive: false }),
+        ]);
+
+        if (ignore) return;
+        const rows = [
+          ...parties.items
+            .filter((p) => !!p.email)
+            .map((p) => ({ id: `party:${p.id}`, label: `${p.name} (Party)`, email: p.email! })),
+          ...officers.items
+            .filter((o) => !!o.email)
+            .map((o) => ({ id: `officer:${o.id}`, label: formatOfficerLabel(o.name, o.role), email: o.email! })),
+          ...transporters.items
+            .filter((t) => !!t.email)
+            .map((t) => ({ id: `transporter:${t.id}`, label: `${t.name} (Transporter)`, email: t.email! })),
+        ].sort((a, b) => a.label.localeCompare(b.label));
+        setMasterEmails(rows);
+      } catch {
+        if (!ignore) setMasterEmails([]);
+      } finally {
+        if (!ignore) setMasterLoading(false);
+      }
+    };
+
+    void loadMaster();
+    return () => { ignore = true; };
+  }, []);
 
   useEffect(() => {
     let ignore = false;
@@ -429,6 +468,18 @@ function SendEmailModal({
     void load();
     return () => { ignore = true; };
   }, [lr.id, onError]);
+
+  const filteredMasterEmails = masterEmails.filter((item) => {
+    const q = masterSearch.trim().toLowerCase();
+    if (!q) return true;
+    return `${item.label} ${item.email}`.toLowerCase().includes(q);
+  });
+
+  const appendToField = (setter: (value: string) => void, current: string, value: string) => {
+    const items = parseEmailInput(current);
+    const next = Array.from(new Set([...items, value]));
+    setter(next.join(', '));
+  };
 
   const handleSend = async () => {
     setSending(true);
@@ -469,6 +520,33 @@ function SendEmailModal({
               </div>
             </div>
           )}
+
+          <div style={infoBox}>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>Master data recipients</div>
+            <input
+              value={masterSearch}
+              onChange={(e) => setMasterSearch(e.target.value)}
+              placeholder="Search name or email"
+              style={{ ...textArea, minHeight: 38, resize: 'none' }}
+            />
+            {masterLoading && <div style={{ marginTop: 8, fontSize: 12, color: '#9ca3af' }}>Loading master data…</div>}
+            {!masterLoading && filteredMasterEmails.length === 0 && (
+              <div style={{ marginTop: 8, fontSize: 12, color: '#9ca3af' }}>No matching master emails.</div>
+            )}
+            {!masterLoading && filteredMasterEmails.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10, maxHeight: 170, overflowY: 'auto' }}>
+                {filteredMasterEmails.map((item) => (
+                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button style={tagBtn} onClick={() => appendToField(setToInput, toInput, item.email)}>To</button>
+                    <button style={tagBtn} onClick={() => appendToField(setCcInput, ccInput, item.email)}>CC</button>
+                    <button style={tagBtn} onClick={() => appendToField(setBccInput, bccInput, item.email)}>BCC</button>
+                    <span style={{ fontSize: 12, color: '#374151' }}>{item.label}</span>
+                    <span style={{ fontSize: 12, color: '#6366f1', fontFamily: 'monospace' }}>{item.email}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           <label style={fieldWrap}>
             <span style={fieldLabel}>To</span>
@@ -590,6 +668,17 @@ const secondaryBtn: CSSProperties = {
   padding: '8px 12px',
   fontSize: 12,
   fontWeight: 700,
+  cursor: 'pointer',
+};
+
+const tagBtn: CSSProperties = {
+  border: '1px solid #c7d2fe',
+  background: '#eef2ff',
+  color: '#4338ca',
+  borderRadius: 999,
+  fontSize: 11,
+  fontWeight: 700,
+  padding: '3px 8px',
   cursor: 'pointer',
 };
 
