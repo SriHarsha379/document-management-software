@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import type { Document, DocumentType, DocumentStatus, DocumentGroup } from '../types';
 import { documentsApi } from '../services/api';
 import { useCurrentUser, PERM } from '../contexts/UserContext';
+import { ImagePreviewModal } from './ImagePreviewModal';
 
 interface Props {
   onSelect: (doc: Document) => void;
@@ -39,6 +40,7 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
   const [groupLoadingId, setGroupLoadingId] = useState<string | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<DocumentGroup | null>(null);
   const [groupError, setGroupError] = useState<string | null>(null);
+  const [viewDoc, setViewDoc] = useState<{ docs: Document[]; header: string } | null>(null);
 
   const LIMIT = 15;
 
@@ -217,14 +219,12 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
                         )}
                       </td>
                       <td style={td} onClick={(e) => e.stopPropagation()}>
-                        <a
-                          href={`/uploads/${doc.filePath}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ color: '#4361ee', fontSize: 12, fontWeight: 600, textDecoration: 'none', padding: '2px 8px', border: '1px solid #c0c8ff', borderRadius: 6, whiteSpace: 'nowrap' }}
+                        <button
+                          style={btnView}
+                          onClick={() => setViewDoc({ docs: [doc], header: doc.originalFilename })}
                         >
                           👁 View
-                        </a>
+                        </button>
                       </td>
                       <td style={td}>
                         <button
@@ -286,14 +286,12 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
                     <div style={{ fontWeight: 700, color: '#1a1a2e' }}>{linkedDoc.type}</div>
                     <div style={{ fontSize: 12, color: '#4b5563' }}>{linkedDoc.originalFilename}</div>
                   </div>
-                  <a
-                    href={`/uploads/${linkedDoc.filePath}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
                     style={groupDocLink}
+                    onClick={() => setViewDoc({ docs: [linkedDoc], header: linkedDoc.originalFilename })}
                   >
                     👁 View
-                  </a>
+                  </button>
                 </div>
               ))}
               {(selectedGroup.documents ?? []).length === 0 && (
@@ -302,6 +300,14 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
             </div>
           </div>
         </div>
+      )}
+
+      {viewDoc && (
+        <ImagePreviewModal
+          docs={viewDoc.docs}
+          header={viewDoc.header}
+          onClose={() => setViewDoc(null)}
+        />
       )}
     </div>
   );
@@ -360,6 +366,12 @@ const groupDocRow: React.CSSProperties = {
   border: '1px solid #eef2ff', borderRadius: 8, padding: '10px 12px', marginBottom: 8,
 };
 const groupDocLink: React.CSSProperties = {
-  color: '#4361ee', fontSize: 12, fontWeight: 700, textDecoration: 'none',
+  color: '#4361ee', fontSize: 12, fontWeight: 700,
   border: '1px solid #c0c8ff', borderRadius: 6, padding: '4px 10px',
+  background: '#fff', cursor: 'pointer',
+};
+const btnView: React.CSSProperties = {
+  color: '#4361ee', fontSize: 12, fontWeight: 600,
+  border: '1px solid #c0c8ff', borderRadius: 6, padding: '2px 8px',
+  background: '#fff', cursor: 'pointer', whiteSpace: 'nowrap',
 };
