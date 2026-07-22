@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import type {
   DocumentGroup, DocumentType, RecipientType, DispatchChannel, Bundle, DispatchResult,
 } from '../types';
-import { documentsApi, bundlesApi, dispatchApi } from '../services/api';
+import { documentsApi, bundlesApi, dispatchApi, masterApi } from '../services/api';
+import type { OfficerDropdownItem, PartyDropdownItem, TransporterDropdownItem } from '../services/api';
 import { ImagePreviewModal } from './ImagePreviewModal';
 
 interface Props {
@@ -60,6 +61,113 @@ const CHANNEL_INFO: Record<DispatchChannel, { icon: string; label: string; place
   WHATSAPP: { icon: '💬', label: 'WhatsApp', placeholder: '+919876543210' },
 };
 
+// ── ContactSelect ──────────────────────────────────────────────────────────────
+// Searchable dropdown over a flat list of contacts for the Send modal.
+
+type ContactOption = { id: string; label: string; email: string | null; phone: string | null };
+
+function ContactSelect({
+  options, loading, value, onChange, placeholder,
+}: {
+  options: ContactOption[];
+  loading: boolean;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const wrapRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) setSearch('');
+  }, [open]);
+
+  useEffect(() => {
+    const handle = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, []);
+
+  const filtered = options.filter((o) =>
+    !search || o.label.toLowerCase().includes(search.toLowerCase()) ||
+    (o.email ?? '').toLowerCase().includes(search.toLowerCase()),
+  );
+  const selected = options.find((o) => o.id === value);
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', marginBottom: 8 }}>
+      <div
+        style={{
+          border: '1.5px solid #d0d0e0', borderRadius: 8, padding: '10px 12px',
+          background: '#fff', cursor: loading ? 'wait' : 'pointer',
+          fontSize: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          color: selected ? '#1a1a2e' : '#9ca3af',
+        }}
+        onClick={() => { if (!loading) setOpen((s) => !s); }}
+      >
+        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {loading ? 'Loading…' : (selected ? selected.label : placeholder)}
+        </span>
+        <span style={{ fontSize: 9, color: '#9ca3af', flexShrink: 0, marginLeft: 6 }}>▼</span>
+      </div>
+
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 300,
+          background: '#fff', border: '1.5px solid #d0d0e0', borderRadius: 8,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.12)', marginTop: 2,
+          maxHeight: 240, overflow: 'hidden', display: 'flex', flexDirection: 'column',
+        }}>
+          <div style={{ padding: '6px 8px', borderBottom: '1px solid #f0f0f8', flexShrink: 0 }}>
+            <input
+              autoFocus
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search…"
+              style={{
+                width: '100%', border: '1px solid #e0e0f0', borderRadius: 5,
+                padding: '4px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box',
+              }}
+            />
+          </div>
+          <div style={{ overflowY: 'auto', flex: 1 }}>
+            <div
+              style={{ padding: '7px 12px', fontSize: 13, cursor: 'pointer', color: '#6b7280' }}
+              onClick={() => { onChange(''); setOpen(false); }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#f5f6ff'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = ''; }}
+            >
+              — Select contact —
+            </div>
+            {filtered.map((o) => (
+              <div
+                key={o.id}
+                style={{
+                  padding: '7px 12px', fontSize: 13, cursor: 'pointer',
+                  background: value === o.id ? '#eef0ff' : 'transparent', color: '#1a1a2e',
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = value === o.id ? '#e0e6ff' : '#f5f6ff'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = value === o.id ? '#eef0ff' : 'transparent'; }}
+                onClick={() => { onChange(o.id); setOpen(false); }}
+              >
+                <div style={{ fontWeight: 600 }}>{o.label}</div>
+                {o.email && <div style={{ fontSize: 11, color: '#6b7280' }}>{o.email}</div>}
+              </div>
+            ))}
+            {filtered.length === 0 && (
+              <div style={{ padding: '10px 12px', fontSize: 12, color: '#9ca3af' }}>No contacts found</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── QuickSendModal ─────────────────────────────────────────────────────────────
 // Opens when the user clicks "Send" on a table row. Handles recipient-type
 // selection, channel selection, address entry, and the full
@@ -74,10 +182,73 @@ interface QuickSendModalProps {
 function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
   const [recipientType, setRecipientType] = useState<RecipientType | ''>('');
   const [channel, setChannel] = useState<DispatchChannel>('EMAIL');
+  const [selectedContactId, setSelectedContactId] = useState('');
   const [recipient, setRecipient] = useState('');
   const [ccRecipient, setCcRecipient] = useState('');
   const [step, setStep] = useState<'setup' | 'sending' | 'done'>('setup');
   const [result, setResult] = useState<DispatchResult | null>(null);
+  const [contactWarning, setContactWarning] = useState<string | null>(null);
+
+  // Contact dropdown options per recipient type
+  const [accountants, setAccountants] = useState<ContactOption[]>([]);
+  const [parties, setParties] = useState<ContactOption[]>([]);
+  const [transporters, setTransporters] = useState<ContactOption[]>([]);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [contactsError, setContactsError] = useState(false);
+
+  // Load contacts once when the modal opens
+  useEffect(() => {
+    setContactsLoading(true);
+    setContactsError(false);
+    Promise.all([
+      masterApi.officersDropdown('Accountant'),
+      masterApi.partiesDropdown(),
+      masterApi.transportersDropdown(),
+    ]).then(([officers, pts, trns]: [OfficerDropdownItem[], PartyDropdownItem[], TransporterDropdownItem[]]) => {
+      setAccountants(officers.map((o) => ({ id: o.id, label: o.label, email: o.email, phone: o.phone })));
+      setParties(pts.map((p) => ({ id: p.id, label: p.label, email: p.email, phone: p.phone })));
+      setTransporters(trns.map((t) => ({ id: t.id, label: t.label, email: t.email, phone: t.phone })));
+    }).catch(() => setContactsError(true)).finally(() => setContactsLoading(false));
+  }, []);
+
+  // Reset contact selection and auto-fill when recipient type or channel changes
+  useEffect(() => {
+    setSelectedContactId('');
+    setRecipient('');
+    setContactWarning(null);
+  }, [recipientType, channel]);
+
+  // Auto-fill recipient when a contact is selected
+  const handleContactSelect = (contactId: string) => {
+    setSelectedContactId(contactId);
+    setContactWarning(null);
+    const options = recipientType === 'ACCOUNTS' ? accountants
+      : recipientType === 'PARTY' ? parties
+      : recipientType === 'TRANSPORTER' ? transporters
+      : [];
+    const contact = options.find((o) => o.id === contactId);
+    if (!contact) { setRecipient(''); return; }
+    if (channel === 'EMAIL') {
+      if (!contact.email) {
+        setContactWarning(`${contact.label} has no email address on record. Please enter it manually.`);
+        setRecipient('');
+      } else {
+        setRecipient(contact.email);
+      }
+    } else {
+      if (!contact.phone) {
+        setContactWarning(`${contact.label} has no phone number on record. Please enter it manually.`);
+        setRecipient('');
+      } else {
+        setRecipient(contact.phone);
+      }
+    }
+  };
+
+  const currentOptions = recipientType === 'ACCOUNTS' ? accountants
+    : recipientType === 'PARTY' ? parties
+    : recipientType === 'TRANSPORTER' ? transporters
+    : [];
 
   const handleSend = async () => {
     if (!recipientType || !recipient.trim()) return;
@@ -151,6 +322,38 @@ function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
               </div>
             </div>
 
+            {/* Contact picker (shown once recipient type is selected) */}
+            {recipientType && (
+              <div style={qs.section}>
+                <label style={qs.sLabel}>
+                  {recipientType === 'ACCOUNTS' ? '📊 Select Accountant'
+                    : recipientType === 'PARTY' ? '🤝 Select Party'
+                    : '🚛 Select Transporter'}
+                </label>
+                {contactsError && (
+                  <div style={{ fontSize: 12, color: '#b45309', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 6, padding: '5px 9px', marginBottom: 6 }}>
+                    ⚠️ Could not load contacts. You can still type the address manually below.
+                  </div>
+                )}
+                <ContactSelect
+                  options={currentOptions}
+                  loading={contactsLoading}
+                  value={selectedContactId}
+                  onChange={handleContactSelect}
+                  placeholder={
+                    recipientType === 'ACCOUNTS' ? 'Choose an accountant…'
+                    : recipientType === 'PARTY' ? 'Choose a party…'
+                    : 'Choose a transporter…'
+                  }
+                />
+                {contactWarning && (
+                  <div style={{ fontSize: 12, color: '#b45309', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 6, padding: '5px 9px', marginTop: 4 }}>
+                    ⚠️ {contactWarning}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Channel */}
             <div style={qs.section}>
               <label style={qs.sLabel}>Send via</label>
@@ -176,7 +379,6 @@ function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
                 value={recipient}
                 onChange={(e) => setRecipient(e.target.value)}
                 placeholder={info.placeholder}
-                autoFocus
               />
             </div>
 
@@ -281,12 +483,17 @@ function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
 
 // ── DocumentBundler ────────────────────────────────────────────────────────────
 
+const GROUPS_PAGE_SIZE = 25;
+
 export function DocumentBundler({ onBundleSaved }: Props) {
   const [groups, setGroups] = useState<DocumentGroup[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [operationError, setOperationError] = useState<string | null>(null);
   const [uploadingSlot, setUploadingSlot] = useState<{ groupId: string; type: DocumentType } | null>(null);
   const [deletingSlot, setDeletingSlot] = useState<{ groupId: string; type: DocumentType } | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalGroups, setTotalGroups] = useState(0);
 
   // The group for which the QuickSendModal is open (null = closed)
   const [sendGroup, setSendGroup] = useState<DocumentGroup | null>(null);
@@ -297,19 +504,30 @@ export function DocumentBundler({ onBundleSaved }: Props) {
   // The group for which all documents are being viewed (null = closed)
   const [viewAllGroup, setViewAllGroup] = useState<DocumentGroup | null>(null);
 
-  const refreshGroups = useCallback(() => {
-    documentsApi.listGroups()
-      .then((g) => setGroups(g))
-      .catch(() => {/* ignore */});
-  }, []);
-
-  useEffect(() => {
+  const loadGroups = useCallback((pg: number) => {
     setGroupsLoading(true);
-    documentsApi.listGroups()
-      .then((g) => setGroups(g))
+    documentsApi.listGroups({ page: pg, limit: GROUPS_PAGE_SIZE })
+      .then(({ groups: g, pagination }) => {
+        setGroups(g);
+        setTotalPages(pagination.pages || 1);
+        setTotalGroups(pagination.total);
+        setPage(pg);
+      })
       .catch(() => setGroups([]))
       .finally(() => setGroupsLoading(false));
   }, []);
+
+  const refreshGroups = useCallback(() => {
+    documentsApi.listGroups({ page, limit: GROUPS_PAGE_SIZE })
+      .then(({ groups: g, pagination }) => {
+        setGroups(g);
+        setTotalPages(pagination.pages || 1);
+        setTotalGroups(pagination.total);
+      })
+      .catch(() => {/* ignore */});
+  }, [page]);
+
+  useEffect(() => { loadGroups(1); }, [loadGroups]);
 
   const handleAddDoc = useCallback(async (groupId: string, type: DocumentType, file: File) => {
     setUploadingSlot({ groupId, type });
@@ -533,6 +751,30 @@ export function DocumentBundler({ onBundleSaved }: Props) {
         />
       )}
 
+      {/* Pagination */}
+      {!groupsLoading && totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 16 }}>
+          <button
+            style={styles.pageBtn}
+            onClick={() => loadGroups(page - 1)}
+            disabled={page <= 1}
+          >
+            ← Prev
+          </button>
+          <span style={{ fontSize: 13, color: '#555' }}>
+            Page {page} of {totalPages}
+            {totalGroups > 0 && <span style={{ color: '#9ca3af' }}> · {totalGroups} groups</span>}
+          </span>
+          <button
+            style={styles.pageBtn}
+            onClick={() => loadGroups(page + 1)}
+            disabled={page >= totalPages}
+          >
+            Next →
+          </button>
+        </div>
+      )}
+
       {/* Image preview modal */}
       {viewSlot && (
         <ImagePreviewModal
@@ -656,6 +898,16 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     fontSize: 13,
     whiteSpace: 'nowrap',
+  },
+  pageBtn: {
+    padding: '6px 14px',
+    background: '#eef0ff',
+    border: '1px solid #c0c8ff',
+    borderRadius: 6,
+    cursor: 'pointer',
+    fontSize: 13,
+    color: '#4361ee',
+    fontWeight: 500,
   },
 };
 

@@ -298,13 +298,19 @@ export async function deactivateOfficer(id: string, companyId: string) {
   return db.officer.update({ where: { id }, data: { isActive: false } });
 }
 
-export async function officerDropdown(companyId: string) {
+export async function officerDropdown(companyId: string, role?: string) {
   const rows = await db.officer.findMany({
-    where: { companyId, isActive: true },
+    where: { companyId, isActive: true, ...(role ? { role } : {}) },
     orderBy: { name: 'asc' },
-    select: { id: true, name: true, role: true },
+    select: { id: true, name: true, role: true, email: true, phone: true },
   });
-  return rows.map((r) => ({ id: r.id, label: r.role ? `${r.name} (${r.role})` : r.name, name: r.name }));
+  return rows.map((r) => ({
+    id:    r.id,
+    label: r.role ? `${r.name} (${r.role})` : r.name,
+    name:  r.name,
+    email: r.email ?? null,
+    phone: r.phone ?? null,
+  }));
 }
 
 // ── Party ─────────────────────────────────────────────────────────────────────

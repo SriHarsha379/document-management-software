@@ -283,29 +283,44 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 // GET /api/documents/groups
 // List all document groups.
 // ──────────────────────────────────────────────────────────────────────────────
-router.get('/groups', async (_req: Request, res: Response): Promise<void> => {
+const parsePositiveInt = (value: unknown, defaultVal: number, max?: number): number => {
+  const n = parseInt(String(value ?? defaultVal), 10);
+  const clamped = Math.max(1, isNaN(n) ? defaultVal : n);
+  return max !== undefined ? Math.min(max, clamped) : clamped;
+};
+
+router.get('/groups', async (req: Request, res: Response): Promise<void> => {
   try {
-    const groups = await prisma.documentGroup.findMany({
-      include: {
-        documents: {
-          select: {
-            id: true,
-            type: true,
-            status: true,
-            originalFilename: true,
-            mimeType: true,
-            rawFilePath: true,
-            uploadedAt: true,
-            updatedAt: true,
-            groupId: true,
-            sourceDocumentId: true,
-            pageNumber: true,
-            extractedData: { select: { invoiceNo: true } },
+    const page  = parsePositiveInt(req.query['page'],  1);
+    const limit = parsePositiveInt(req.query['limit'], 25, 100);
+    const skip  = (page - 1) * limit;
+
+    const [total, groups] = await Promise.all([
+      prisma.documentGroup.count(),
+      prisma.documentGroup.findMany({
+        include: {
+          documents: {
+            select: {
+              id: true,
+              type: true,
+              status: true,
+              originalFilename: true,
+              mimeType: true,
+              rawFilePath: true,
+              uploadedAt: true,
+              updatedAt: true,
+              groupId: true,
+              sourceDocumentId: true,
+              pageNumber: true,
+              extractedData: { select: { invoiceNo: true } },
+            },
           },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+    ]);
 
     res.json({
       groups: groups.map((group) => ({
@@ -318,6 +333,7 @@ router.get('/groups', async (_req: Request, res: Response): Promise<void> => {
           };
         }),
       })),
+      pagination: { total, page, limit, pages: Math.ceil(total / limit) },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch groups';
