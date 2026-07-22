@@ -53,6 +53,7 @@ export function MasterParties({ canManage = false }: { canManage?: boolean }) {
   const [form, setForm] = useState<CreateForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300);
@@ -173,6 +174,24 @@ export function MasterParties({ canManage = false }: { canManage?: boolean }) {
     }
   };
 
+  const handleDelete = async (key: string) => {
+    if (!window.confirm('Are you sure you want to delete this record?')) return;
+    setDeletingKey(key);
+    try {
+      const [type, id] = key.split(':');
+      if (type === 'party') await masterApi.deleteParty(id);
+      else if (type === 'officer') await masterApi.deleteOfficer(id);
+      else if (type === 'transporter') await masterApi.deleteTransporter(id);
+      else throw new Error(`Unknown record type: ${type}`);
+      await load();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete record.';
+      setError(msg);
+    } finally {
+      setDeletingKey(null);
+    }
+  };
+
   return (
     <div style={container}>
       <h2 style={title}>🗂️ Master Data</h2>
@@ -249,8 +268,18 @@ export function MasterParties({ canManage = false }: { canManage?: boolean }) {
                   <div style={{ fontWeight: 700, color: '#1a1a2e' }}>{c.name}</div>
                   <div style={meta}>{[c.contactPerson, c.phone, c.email].filter(Boolean).join(' · ') || 'No contact details'}</div>
                 </div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                   {c.roles.map((role) => <span key={role} style={chip}>{role}</span>)}
+                  {canManage && (
+                    <button
+                      style={btnDelete}
+                      title="Delete"
+                      disabled={deletingKey === c.key}
+                      onClick={() => { void handleDelete(c.key); }}
+                    >
+                      {deletingKey === c.key ? '…' : '🗑️'}
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -294,4 +323,8 @@ const meta: React.CSSProperties = { fontSize: 12, color: '#6b7280', marginTop: 2
 const chip: React.CSSProperties = {
   fontSize: 11, fontWeight: 700, background: '#ebf4ff', color: '#2b6cb0',
   borderRadius: 999, padding: '3px 8px',
+};
+const btnDelete: React.CSSProperties = {
+  padding: '3px 8px', borderRadius: 6, border: '1px solid #fc8181', cursor: 'pointer',
+  background: '#fff5f5', color: '#c53030', fontSize: 13, lineHeight: 1,
 };

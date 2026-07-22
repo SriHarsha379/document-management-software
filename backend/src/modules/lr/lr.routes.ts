@@ -59,7 +59,7 @@ const DOCUMENT_TYPE_CATEGORY_KEYS = Object.keys(DOCUMENT_TYPE_CATEGORY_MAP) as A
 
 const readLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 120,
+  max: 300,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests. Please slow down.' },

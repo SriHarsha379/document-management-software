@@ -47,7 +47,7 @@ const router = Router();
 // ── Rate limiters ──────────────────────────────────────────────────────────────
 
 const readLimiter = rateLimit({
-  windowMs: 60 * 1000, max: 120,
+  windowMs: 60 * 1000, max: 300,
   standardHeaders: true, legacyHeaders: false,
   message: { error: 'Too many requests. Please slow down.' },
 });

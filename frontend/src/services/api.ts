@@ -717,6 +717,14 @@ export const masterApi = {
   deleteParty: async (id: string): Promise<void> => {
     await api.delete(`/master/parties/${id}`);
   },
+
+  deleteOfficer: async (id: string): Promise<void> => {
+    await api.delete(`/master/officers/${id}`);
+  },
+
+  deleteTransporter: async (id: string): Promise<void> => {
+    await api.delete(`/master/transporters/${id}`);
+  },
 };
 
 export const adminCustomerPortalApi = {
