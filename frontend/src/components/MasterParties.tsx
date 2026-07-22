@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ACCOUNTANT_ROLE, masterApi } from '../services/api';
 import { getOfficerRoleLabel } from '../utils/masterData';
 
@@ -35,7 +35,7 @@ const EMPTY_FORM: CreateForm = {
   isTransporter: false,
 };
 
-const LIMIT = 200;
+const PAGE_SIZE = 50;
 
 function generateCode(prefix: string, name: string): string {
   const slug = name.toUpperCase().replace(/[^A-Z0-9]+/g, '').slice(0, 8) || prefix;
@@ -54,20 +54,23 @@ export function MasterParties({ canManage = false }: { canManage?: boolean }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
 
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 300);
     return () => clearTimeout(t);
   }, [search]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (pg: number) => {
     setLoading(true);
     setError(null);
     try {
       const [parties, officers, transporters] = await Promise.all([
-        masterApi.listParties({ page: 1, limit: LIMIT, search: debouncedSearch || undefined }),
-        masterApi.listOfficers({ page: 1, limit: LIMIT, search: debouncedSearch || undefined }),
-        masterApi.listTransporters({ page: 1, limit: LIMIT, search: debouncedSearch || undefined }),
+        masterApi.listParties({ page: pg, limit: PAGE_SIZE, search: debouncedSearch || undefined }),
+        masterApi.listOfficers({ page: pg, limit: PAGE_SIZE, search: debouncedSearch || undefined }),
+        masterApi.listTransporters({ page: pg, limit: PAGE_SIZE, search: debouncedSearch || undefined }),
       ]);
 
       const rows: MasterContact[] = [
@@ -101,6 +104,19 @@ export function MasterParties({ canManage = false }: { canManage?: boolean }) {
       ].sort((a, b) => a.name.localeCompare(b.name));
 
       setContacts(rows);
+
+      const maxPages = Math.max(
+        parties.pagination.pages,
+        officers.pagination.pages,
+        transporters.pagination.pages,
+        1,
+      );
+      const total =
+        parties.pagination.total +
+        officers.pagination.total +
+        transporters.pagination.total;
+      setTotalPages(maxPages);
+      setTotalCount(total);
     } catch {
       setError('Failed to load master data.');
       setContacts([]);
@@ -109,7 +125,7 @@ export function MasterParties({ canManage = false }: { canManage?: boolean }) {
     }
   }, [debouncedSearch]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(page); }, [load, page]);
 
   const handleCreate = async () => {
     const hasRole = form.isAccountant || form.isParty || form.isTransporter;
@@ -165,7 +181,7 @@ export function MasterParties({ canManage = false }: { canManage?: boolean }) {
       await Promise.all(tasks);
       setForm(EMPTY_FORM);
       setShowCreate(false);
-      await load();
+      await load(page);
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { error?: string } } };
       setSaveError(axiosErr?.response?.data?.error ?? 'Failed to create master data record.');
@@ -183,7 +199,7 @@ export function MasterParties({ canManage = false }: { canManage?: boolean }) {
       else if (type === 'officer') await masterApi.deleteOfficer(id);
       else if (type === 'transporter') await masterApi.deleteTransporter(id);
       else throw new Error(`Unknown record type: ${type}`);
-      await load();
+      await load(page);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to delete record.';
       setError(msg);
@@ -286,6 +302,29 @@ export function MasterParties({ canManage = false }: { canManage?: boolean }) {
           </div>
         )}
       </div>
+
+      {!loading && totalPages > 1 && (
+        <div style={paginationBar}>
+          <button
+            style={pageBtn}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+          >
+            ← Prev
+          </button>
+          <span style={{ fontSize: 13, color: '#555' }}>
+            Page {page} of {totalPages}
+            {totalCount > 0 && <span style={{ color: '#9ca3af' }}> · {totalCount} total</span>}
+          </span>
+          <button
+            style={pageBtn}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+          >
+            Next →
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -327,4 +366,11 @@ const chip: React.CSSProperties = {
 const btnDelete: React.CSSProperties = {
   padding: '3px 8px', borderRadius: 6, border: '1px solid #fc8181', cursor: 'pointer',
   background: '#fff5f5', color: '#c53030', fontSize: 13, lineHeight: 1,
+};
+const paginationBar: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 4, marginBottom: 16,
+};
+const pageBtn: React.CSSProperties = {
+  padding: '6px 14px', background: '#eef0ff', border: '1px solid #c0c8ff',
+  borderRadius: 6, cursor: 'pointer', fontSize: 13, color: '#4361ee', fontWeight: 500,
 };

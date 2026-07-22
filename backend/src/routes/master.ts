@@ -179,7 +179,8 @@ router.delete('/transporters/:id', writeLimiter, ...canManage, async (req: Reque
 
 router.get('/officers/dropdown', readLimiter, ...canRead, async (req: Request, res: Response): Promise<void> => {
   try {
-    res.json(await officerDropdown(req.user!.companyId));
+    const q = req.query as Record<string, string | undefined>;
+    res.json(await officerDropdown(req.user!.companyId, q['role'] || undefined));
   } catch (err) { handleMasterError(err, res, 'GET officers/dropdown'); }
 });
 

@@ -104,9 +104,9 @@ export const documentsApi = {
     return res.data.group;
   },
 
-  listGroups: async (): Promise<DocumentGroup[]> => {
-    const res = await api.get<{ groups: DocumentGroup[] }>('/documents/groups');
-    return res.data.groups;
+  listGroups: async (params?: { page?: number; limit?: number }): Promise<{ groups: DocumentGroup[]; pagination: { total: number; page: number; limit: number; pages: number } }> => {
+    const res = await api.get<{ groups: DocumentGroup[]; pagination: { total: number; page: number; limit: number; pages: number } }>('/documents/groups', { params });
+    return res.data;
   },
 
   delete: async (id: string): Promise<void> => {
@@ -573,6 +573,14 @@ export interface PartyDropdownItem {
   email: string | null;
 }
 
+export interface OfficerDropdownItem {
+  id: string;
+  label: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+}
+
 export interface TransporterDropdownItem {
   id: string;
   label: string;
@@ -671,6 +679,11 @@ export interface PaginatedTransporters {
 export const masterApi = {
   partiesDropdown: async (usage?: 'billTo' | 'shipTo'): Promise<PartyDropdownItem[]> => {
     const res = await api.get<PartyDropdownItem[]>('/master/parties/dropdown', { params: usage ? { usage } : undefined });
+    return res.data;
+  },
+
+  officersDropdown: async (role?: string): Promise<OfficerDropdownItem[]> => {
+    const res = await api.get<OfficerDropdownItem[]>('/master/officers/dropdown', { params: role ? { role } : undefined });
     return res.data;
   },
 
