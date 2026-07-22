@@ -224,7 +224,8 @@ function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
     setContactWarning(null);
     const options = recipientType === 'ACCOUNTS' ? accountants
       : recipientType === 'PARTY' ? parties
-      : transporters;
+      : recipientType === 'TRANSPORTER' ? transporters
+      : [];
     const contact = options.find((o) => o.id === contactId);
     if (!contact) { setRecipient(''); return; }
     if (channel === 'EMAIL') {

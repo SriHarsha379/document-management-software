@@ -283,13 +283,14 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 // GET /api/documents/groups
 // List all document groups.
 // ──────────────────────────────────────────────────────────────────────────────
+const parsePositiveInt = (value: unknown, defaultVal: number, max?: number): number => {
+  const n = parseInt(String(value ?? defaultVal), 10);
+  const clamped = Math.max(1, isNaN(n) ? defaultVal : n);
+  return max !== undefined ? Math.min(max, clamped) : clamped;
+};
+
 router.get('/groups', async (req: Request, res: Response): Promise<void> => {
   try {
-    const parsePositiveInt = (value: unknown, defaultVal: number, max?: number): number => {
-      const n = parseInt(String(value ?? defaultVal), 10);
-      const clamped = Math.max(1, isNaN(n) ? defaultVal : n);
-      return max !== undefined ? Math.min(max, clamped) : clamped;
-    };
     const page  = parsePositiveInt(req.query['page'],  1);
     const limit = parsePositiveInt(req.query['limit'], 25, 100);
     const skip  = (page - 1) * limit;

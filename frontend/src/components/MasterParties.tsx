@@ -106,6 +106,9 @@ export function MasterParties({ canManage = false }: { canManage?: boolean }) {
 
       setContacts(rows);
 
+      // Each entity type is paginated independently; use the largest page count so
+      // the user can navigate to pages that exist in at least one category.
+      // On high pages, some categories may show no entries — that is expected.
       const maxPages = Math.max(
         parties.pagination.pages,
         officers.pagination.pages,
