@@ -83,7 +83,6 @@ router.use(requireAuth);
 
 router.get(
   '/branches',
-  readLimiter,
   requirePermission('lr.read'),
   async (req: Request, res: Response): Promise<void> => {
     try {
@@ -108,7 +107,6 @@ router.get(
 
 router.get(
   '/summary',
-  readLimiter,
   requirePermission('lr.read'),
   async (req: Request, res: Response): Promise<void> => {
     try {
@@ -123,7 +121,6 @@ router.get(
 
 router.get(
   '/:id/documents',
-  readLimiter,
   requirePermission('lr.read'),
   async (req: Request, res: Response): Promise<void> => {
     try {
@@ -318,7 +315,6 @@ router.post(
 
 router.get(
   '/filter-values',
-  readLimiter,
   requirePermission('lr.read'),
   async (req: Request, res: Response): Promise<void> => {
     try {
@@ -362,7 +358,6 @@ router.post(
 
 router.get(
   '/',
-  readLimiter,
   requirePermission('lr.read'),
   async (req: Request, res: Response): Promise<void> => {
     try {
