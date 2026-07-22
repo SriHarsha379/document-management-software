@@ -153,7 +153,12 @@ export async function listTransporters(
   const limit = clampMasterLimit(opts.limit);
 
   const where = buildMasterWhere(companyId, opts.includeInactive, opts.search
-    ? { OR: [{ name: { contains: opts.search } }, { code: { contains: opts.search } }] }
+    ? { OR: [
+        { name:  { contains: opts.search } },
+        { code:  { contains: opts.search } },
+        { email: { contains: opts.search } },
+        { phone: { contains: opts.search } },
+      ] }
     : undefined);
 
   const [items, total] = await Promise.all([
@@ -260,7 +265,11 @@ export async function listOfficers(
   const limit = clampMasterLimit(opts.limit);
 
   const where = buildMasterWhere(companyId, opts.includeInactive, opts.search
-    ? { name: { contains: opts.search } }
+    ? { OR: [
+        { name:  { contains: opts.search } },
+        { email: { contains: opts.search } },
+        { phone: { contains: opts.search } },
+      ] }
     : undefined);
 
   const [items, total] = await Promise.all([
@@ -384,7 +393,13 @@ export async function listParties(
   const limit = clampMasterLimit(opts.limit);
 
   const where = buildMasterWhere(companyId, opts.includeInactive, opts.search
-    ? { OR: [{ name: { contains: opts.search } }, { code: { contains: opts.search } }] }
+    ? { OR: [
+        { name:          { contains: opts.search } },
+        { code:          { contains: opts.search } },
+        { contactPerson: { contains: opts.search } },
+        { email:         { contains: opts.search } },
+        { phone:         { contains: opts.search } },
+      ] }
     : undefined);
 
   const [items, total] = await Promise.all([

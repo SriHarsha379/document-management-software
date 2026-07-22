@@ -228,6 +228,19 @@ describe('listTransporters', () => {
     const where = m.transporter.findMany.mock.calls[0][0].where;
     expect(where).not.toHaveProperty('isActive');
   });
+
+  it('searches by name, code, email and phone when search is provided', async () => {
+    m.transporter.findMany.mockResolvedValue([]);
+    m.transporter.count.mockResolvedValue(0);
+    await listTransporters('co1', { search: 'query' });
+    const where = m.transporter.findMany.mock.calls[0][0].where;
+    expect(where.OR).toEqual(expect.arrayContaining([
+      { name:  { contains: 'query' } },
+      { code:  { contains: 'query' } },
+      { email: { contains: 'query' } },
+      { phone: { contains: 'query' } },
+    ]));
+  });
 });
 
 describe('getTransporter', () => {
@@ -289,6 +302,29 @@ describe('transporterDropdown', () => {
 
 // ── Officer ───────────────────────────────────────────────────────────────────
 
+describe('listOfficers', () => {
+  it('filters by isActive=true by default', async () => {
+    m.officer.findMany.mockResolvedValue([]);
+    m.officer.count.mockResolvedValue(0);
+    await listOfficers('co1', {});
+    expect(m.officer.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ isActive: true }) }),
+    );
+  });
+
+  it('searches by name, email and phone when search is provided', async () => {
+    m.officer.findMany.mockResolvedValue([]);
+    m.officer.count.mockResolvedValue(0);
+    await listOfficers('co1', { search: 'query' });
+    const where = m.officer.findMany.mock.calls[0][0].where;
+    expect(where.OR).toEqual(expect.arrayContaining([
+      { name:  { contains: 'query' } },
+      { email: { contains: 'query' } },
+      { phone: { contains: 'query' } },
+    ]));
+  });
+});
+
 describe('createOfficer', () => {
   it('creates officer', async () => {
     m.officer.create.mockResolvedValue({ id: 'o1' });
@@ -327,6 +363,31 @@ describe('officerDropdown', () => {
 });
 
 // ── Party ─────────────────────────────────────────────────────────────────────
+
+describe('listParties', () => {
+  it('filters by isActive=true by default', async () => {
+    m.party.findMany.mockResolvedValue([]);
+    m.party.count.mockResolvedValue(0);
+    await listParties('co1', {});
+    expect(m.party.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ isActive: true }) }),
+    );
+  });
+
+  it('searches by name, code, contactPerson, email and phone when search is provided', async () => {
+    m.party.findMany.mockResolvedValue([]);
+    m.party.count.mockResolvedValue(0);
+    await listParties('co1', { search: 'query' });
+    const where = m.party.findMany.mock.calls[0][0].where;
+    expect(where.OR).toEqual(expect.arrayContaining([
+      { name:          { contains: 'query' } },
+      { code:          { contains: 'query' } },
+      { contactPerson: { contains: 'query' } },
+      { email:         { contains: 'query' } },
+      { phone:         { contains: 'query' } },
+    ]));
+  });
+});
 
 describe('createParty', () => {
   it('creates party with uppercased code', async () => {
