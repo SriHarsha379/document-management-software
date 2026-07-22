@@ -169,20 +169,18 @@ export function UploadDocumentsPage() {
                 {SLOT_CONFIG.map((slot) => (
                   <th key={slot.type} style={th}>{slot.label}</th>
                 ))}
-                <th style={th}>View Documents</th>
-                <th style={th}>Send</th>
               </tr>
             </thead>
             <tbody>
               {loading && rows.length === 0 ? (
                 <tr>
-                  <td colSpan={SLOT_CONFIG.length + 4} style={{ ...td, textAlign: 'center', padding: 28, color: '#6b7280' }}>
+                  <td colSpan={SLOT_CONFIG.length + 2} style={{ ...td, textAlign: 'center', padding: 28, color: '#6b7280' }}>
                     Loading records...
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={SLOT_CONFIG.length + 4} style={{ ...td, textAlign: 'center', padding: 28, color: '#6b7280' }}>
+                  <td colSpan={SLOT_CONFIG.length + 2} style={{ ...td, textAlign: 'center', padding: 28, color: '#6b7280' }}>
                     No LR records found.
                   </td>
                 </tr>
@@ -223,20 +221,6 @@ export function UploadDocumentsPage() {
                       </td>
                     );
                   })}
-                  <td style={td}>
-                    <button style={secondaryBtn} onClick={() => setModal({ type: 'documents', lr })}>
-                      View
-                    </button>
-                  </td>
-                  <td style={td}>
-                    <button
-                      style={primaryBtn}
-                      disabled={!canSend}
-                      onClick={() => setModal({ type: 'send', lr })}
-                    >
-                      Send
-                    </button>
-                  </td>
                 </tr>
               ))}
             </tbody>
