@@ -414,6 +414,9 @@ function SendEmailModal({
   const [sending, setSending] = useState(false);
   const [documentCount, setDocumentCount] = useState(0);
 
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
+
   useEffect(() => {
     let ignore = false;
     const loadMaster = async () => {
@@ -460,14 +463,14 @@ function SendEmailModal({
         setToInput(result.recipientSuggestions.suggestedTo.join(', '));
         setDocumentCount(result.documents.length);
       } catch (err) {
-        if (!ignore) onError(err instanceof Error ? err.message : 'Failed to load email details');
+        if (!ignore) onErrorRef.current(err instanceof Error ? err.message : 'Failed to load email details');
       } finally {
         if (!ignore) setLoading(false);
       }
     };
     void load();
     return () => { ignore = true; };
-  }, [lr.id, onError]);
+  }, [lr.id]);
 
   const filteredMasterEmails = masterEmails.filter((item) => {
     const q = masterSearch.trim().toLowerCase();
