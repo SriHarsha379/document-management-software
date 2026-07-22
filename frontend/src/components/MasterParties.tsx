@@ -59,7 +59,8 @@ export function MasterParties({ canManage = false }: { canManage?: boolean }) {
   const [totalCount, setTotalCount] = useState(0);
 
   useEffect(() => {
-    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 300);
+    setPage(1);
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
     return () => clearTimeout(t);
   }, [search]);
 

@@ -187,16 +187,19 @@ function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
   const [ccRecipient, setCcRecipient] = useState('');
   const [step, setStep] = useState<'setup' | 'sending' | 'done'>('setup');
   const [result, setResult] = useState<DispatchResult | null>(null);
+  const [contactWarning, setContactWarning] = useState<string | null>(null);
 
   // Contact dropdown options per recipient type
   const [accountants, setAccountants] = useState<ContactOption[]>([]);
   const [parties, setParties] = useState<ContactOption[]>([]);
   const [transporters, setTransporters] = useState<ContactOption[]>([]);
   const [contactsLoading, setContactsLoading] = useState(false);
+  const [contactsError, setContactsError] = useState(false);
 
   // Load contacts once when the modal opens
   useEffect(() => {
     setContactsLoading(true);
+    setContactsError(false);
     Promise.all([
       masterApi.officersDropdown('Accountant'),
       masterApi.partiesDropdown(),
@@ -205,25 +208,40 @@ function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
       setAccountants(officers.map((o) => ({ id: o.id, label: o.label, email: o.email, phone: o.phone })));
       setParties(pts.map((p) => ({ id: p.id, label: p.label, email: p.email, phone: p.phone })));
       setTransporters(trns.map((t) => ({ id: t.id, label: t.label, email: t.email, phone: t.phone })));
-    }).catch(() => {/* ignore – user can type manually */}).finally(() => setContactsLoading(false));
+    }).catch(() => setContactsError(true)).finally(() => setContactsLoading(false));
   }, []);
 
   // Reset contact selection and auto-fill when recipient type or channel changes
   useEffect(() => {
     setSelectedContactId('');
     setRecipient('');
+    setContactWarning(null);
   }, [recipientType, channel]);
 
   // Auto-fill recipient when a contact is selected
   const handleContactSelect = (contactId: string) => {
     setSelectedContactId(contactId);
+    setContactWarning(null);
     const options = recipientType === 'ACCOUNTS' ? accountants
       : recipientType === 'PARTY' ? parties
       : transporters;
     const contact = options.find((o) => o.id === contactId);
     if (!contact) { setRecipient(''); return; }
-    if (channel === 'EMAIL') setRecipient(contact.email ?? '');
-    else setRecipient(contact.phone ?? '');
+    if (channel === 'EMAIL') {
+      if (!contact.email) {
+        setContactWarning(`${contact.label} has no email address on record. Please enter it manually.`);
+        setRecipient('');
+      } else {
+        setRecipient(contact.email);
+      }
+    } else {
+      if (!contact.phone) {
+        setContactWarning(`${contact.label} has no phone number on record. Please enter it manually.`);
+        setRecipient('');
+      } else {
+        setRecipient(contact.phone);
+      }
+    }
   };
 
   const currentOptions = recipientType === 'ACCOUNTS' ? accountants
@@ -311,6 +329,11 @@ function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
                     : recipientType === 'PARTY' ? '🤝 Select Party'
                     : '🚛 Select Transporter'}
                 </label>
+                {contactsError && (
+                  <div style={{ fontSize: 12, color: '#b45309', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 6, padding: '5px 9px', marginBottom: 6 }}>
+                    ⚠️ Could not load contacts. You can still type the address manually below.
+                  </div>
+                )}
                 <ContactSelect
                   options={currentOptions}
                   loading={contactsLoading}
@@ -322,6 +345,11 @@ function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
                     : 'Choose a transporter…'
                   }
                 />
+                {contactWarning && (
+                  <div style={{ fontSize: 12, color: '#b45309', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 6, padding: '5px 9px', marginTop: 4 }}>
+                    ⚠️ {contactWarning}
+                  </div>
+                )}
               </div>
             )}
 

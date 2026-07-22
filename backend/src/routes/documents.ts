@@ -285,8 +285,13 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 // ──────────────────────────────────────────────────────────────────────────────
 router.get('/groups', async (req: Request, res: Response): Promise<void> => {
   try {
-    const page  = Math.max(1, parseInt(String(req.query['page']  ?? '1'),  10) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(String(req.query['limit'] ?? '25'), 10) || 25));
+    const parsePositiveInt = (value: unknown, defaultVal: number, max?: number): number => {
+      const n = parseInt(String(value ?? defaultVal), 10);
+      const clamped = Math.max(1, isNaN(n) ? defaultVal : n);
+      return max !== undefined ? Math.min(max, clamped) : clamped;
+    };
+    const page  = parsePositiveInt(req.query['page'],  1);
+    const limit = parsePositiveInt(req.query['limit'], 25, 100);
     const skip  = (page - 1) * limit;
 
     const [total, groups] = await Promise.all([
