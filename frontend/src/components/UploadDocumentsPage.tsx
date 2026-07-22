@@ -415,7 +415,9 @@ function SendEmailModal({
   const [documentCount, setDocumentCount] = useState(0);
 
   const onErrorRef = useRef(onError);
-  onErrorRef.current = onError;
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
 
   useEffect(() => {
     let ignore = false;
