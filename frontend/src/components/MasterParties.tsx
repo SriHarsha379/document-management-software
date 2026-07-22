@@ -182,9 +182,11 @@ export function MasterParties({ canManage = false }: { canManage?: boolean }) {
       if (type === 'party') await masterApi.deleteParty(id);
       else if (type === 'officer') await masterApi.deleteOfficer(id);
       else if (type === 'transporter') await masterApi.deleteTransporter(id);
+      else throw new Error(`Unknown record type: ${type}`);
       await load();
-    } catch {
-      setError('Failed to delete record.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete record.';
+      setError(msg);
     } finally {
       setDeletingKey(null);
     }
