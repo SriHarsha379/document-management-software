@@ -1,9 +1,13 @@
 import React, { useState } from 'react';
 import type { Document, DocumentType, ReviewPayload } from '../types';
 import { documentsApi } from '../services/api';
+import { ImagePreviewModal } from './ImagePreviewModal';
+import { DOCUMENT_TYPE_LABELS, PREVIEW_TYPE_ORDER } from '../constants/documentTypeLabels';
 
 interface Props {
   document: Document;
+  /** All documents from the current upload session, used for the preview carousel. */
+  allDocs?: Document[];
   onSaved: (doc: Document) => void;
   onCancel: () => void;
 }
@@ -34,7 +38,15 @@ const CONFIDENCE_COLOR = (c: number | null) => {
   return '#ef4444';
 };
 
-export function OCRReview({ document, onSaved, onCancel }: Props) {
+function sortDocsByType(docs: Document[]): Document[] {
+  return [...docs].sort((a, b) => {
+    const ai = PREVIEW_TYPE_ORDER.indexOf(a.type);
+    const bi = PREVIEW_TYPE_ORDER.indexOf(b.type);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+}
+
+export function OCRReview({ document, allDocs, onSaved, onCancel }: Props) {
   const ed = document.extractedData;
 
   const [form, setForm] = useState<ReviewPayload>({
@@ -59,6 +71,19 @@ export function OCRReview({ document, onSaved, onCancel }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [showTypeOverride, setShowTypeOverride] = useState(false);
 
+  // ── Preview carousel state ──────────────────────────────────────────────────
+  const previewDocs: Document[] = sortDocsByType(
+    allDocs && allDocs.length > 0 ? allDocs : [document],
+  );
+  const defaultPreviewIdx = Math.max(0, previewDocs.findIndex((d) => d.id === document.id));
+  const [previewIdx, setPreviewIdx] = useState(defaultPreviewIdx);
+  const [showModal, setShowModal] = useState(false);
+
+  const clampedIdx = previewDocs.length > 0 ? Math.max(0, Math.min(previewIdx, previewDocs.length - 1)) : 0;
+  const previewDoc = previewDocs[clampedIdx] ?? document;
+  const previewUrl = previewDoc.mimeType.startsWith('image/') ? `/uploads/${previewDoc.filePath}` : null;
+  const previewIsPdf = previewDoc.mimeType === 'application/pdf';
+
   const handleChange = (field: keyof ReviewPayload, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
@@ -81,7 +106,6 @@ export function OCRReview({ document, onSaved, onCancel }: Props) {
   const confidence = ed?.confidence ?? null;
   const classificationConfidence = ed?.classificationConfidence ?? confidence;
   const ocrConfidence = ed?.ocrConfidence ?? confidence;
-  const imageUrl = document.mimeType.startsWith('image/') ? `/uploads/${document.filePath}` : null;
   const processingNotes = ed?.processingNotes ?? [];
   const validationIssues = ed?.validationIssues ?? [];
 
@@ -113,12 +137,94 @@ export function OCRReview({ document, onSaved, onCancel }: Props) {
       </div>
 
       <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        {/* Preview */}
-        {imageUrl && (
-          <div style={{ flex: '0 0 280px', background: '#fff', borderRadius: 12, border: '1px solid #e0e0f0', padding: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-            <img src={imageUrl} alt="Document" style={{ width: '100%', borderRadius: 8, objectFit: 'contain', maxHeight: 480 }} />
+        {/* ── Preview carousel ───────────────────────────────────────────────── */}
+        <div style={{ flex: '0 0 280px', background: '#fff', borderRadius: 12, border: '1px solid #e0e0f0', padding: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* Position label */}
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#4361ee', textAlign: 'center', padding: '4px 0' }}>
+            {DOCUMENT_TYPE_LABELS[previewDoc.type]}{' '}
+            <span style={{ color: '#6b7280', fontWeight: 500 }}>{clampedIdx + 1} of {previewDocs.length}</span>
           </div>
-        )}
+
+          {/* Image / PDF preview — clickable */}
+          <div
+            title="Click to view full size"
+            style={{ cursor: 'pointer', borderRadius: 8, overflow: 'hidden', border: '1px solid #e0e0f0', position: 'relative', background: '#f0f0f5', minHeight: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            onClick={() => setShowModal(true)}
+          >
+            {previewUrl ? (
+              <img
+                src={previewUrl}
+                alt={previewDoc.originalFilename}
+                style={{ width: '100%', objectFit: 'contain', maxHeight: 400, display: 'block' }}
+              />
+            ) : previewIsPdf ? (
+              <div style={{ textAlign: 'center', padding: 24, color: '#6b7280' }}>
+                <div style={{ fontSize: 40, marginBottom: 8 }}>📄</div>
+                <div style={{ fontSize: 12, fontWeight: 600 }}>PDF Document</div>
+                <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>Click to view</div>
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: 24, color: '#6b7280' }}>
+                <div style={{ fontSize: 40, marginBottom: 8 }}>📎</div>
+                <div style={{ fontSize: 12 }}>{previewDoc.originalFilename}</div>
+              </div>
+            )}
+            {/* Zoom hint overlay */}
+            <div style={{ position: 'absolute', bottom: 6, right: 6, background: 'rgba(0,0,0,0.45)', color: '#fff', borderRadius: 5, fontSize: 10, padding: '2px 6px', pointerEvents: 'none' }}>
+              🔍 Click to enlarge
+            </div>
+          </div>
+
+          {/* Prev / Next navigation */}
+          {previewDocs.length > 1 && (
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+              <button
+                style={navBtn}
+                disabled={clampedIdx === 0}
+                onClick={() => setPreviewIdx((i) => Math.max(0, i - 1))}
+              >
+                ‹ Prev
+              </button>
+              <button
+                style={navBtn}
+                disabled={clampedIdx === previewDocs.length - 1}
+                onClick={() => setPreviewIdx((i) => Math.min(previewDocs.length - 1, i + 1))}
+              >
+                Next ›
+              </button>
+            </div>
+          )}
+
+          {/* Thumbnail strip for 2–8 docs */}
+          {previewDocs.length > 1 && previewDocs.length <= 8 && (
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'center', marginTop: 2 }}>
+              {previewDocs.map((d, idx) => {
+                const thumbUrl = d.mimeType.startsWith('image/') ? `/uploads/${d.filePath}` : null;
+                const isActive = idx === clampedIdx;
+                return (
+                  <div
+                    key={d.id}
+                    onClick={() => setPreviewIdx(idx)}
+                    title={DOCUMENT_TYPE_LABELS[d.type]}
+                    style={{
+                      width: 40, height: 40, borderRadius: 5, overflow: 'hidden',
+                      cursor: 'pointer', flexShrink: 0,
+                      border: isActive ? '2px solid #4361ee' : '2px solid #e0e0f0',
+                      background: '#f0f0f5',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    {thumbUrl ? (
+                      <img src={thumbUrl} alt={d.originalFilename} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <span style={{ fontSize: 16 }}>📄</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {/* Form */}
         <div style={{ flex: '1 1 400px', background: '#fff', borderRadius: 12, border: '1px solid #e0e0f0', padding: '20px 24px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
@@ -176,7 +282,6 @@ export function OCRReview({ document, onSaved, onCancel }: Props) {
             <Field label="Vehicle Number ✱" value={form.vehicleNo ?? ''} onChange={(v) => handleChange('vehicleNo', v)} placeholder="e.g. MH12AB1234" highlight={!form.vehicleNo} />
             <Field label="Date (YYYY-MM-DD) ✱" value={form.date ?? ''} onChange={(v) => handleChange('date', v)} placeholder="YYYY-MM-DD" highlight={!form.date} />
             <Field label="Quantity" value={form.quantity ?? ''} onChange={(v) => handleChange('quantity', v)} placeholder="e.g. 10 MT" />
-            <Field label="Toll Amount" value={form.tollAmount ?? ''} onChange={(v) => handleChange('tollAmount', v)} />
             {form.documentType === 'LR' && (
               <>
                 <Field label="Driver Name" value={form.driverName ?? ''} onChange={(v) => handleChange('driverName', v)} placeholder="e.g. MADHU" />
@@ -244,6 +349,16 @@ export function OCRReview({ document, onSaved, onCancel }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Full-screen image viewer */}
+      {showModal && (
+        <ImagePreviewModal
+          docs={previewDocs}
+          header={`${DOCUMENT_TYPE_LABELS[previewDoc.type]} – ${previewDoc.originalFilename}`}
+          initialIndex={clampedIdx}
+          onClose={() => setShowModal(false)}
+        />
+      )}
     </div>
   );
 }
@@ -264,6 +379,10 @@ function Field({ label, value, onChange, placeholder, highlight }: {
   );
 }
 
+const navBtn: React.CSSProperties = {
+  flex: 1, padding: '5px 10px', border: '1.5px solid #d0d0e0', borderRadius: 6,
+  background: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: '#4361ee',
+};
 const fieldGroup: React.CSSProperties = { marginBottom: 14 };
 const labelStyle: React.CSSProperties = { display: 'block', fontSize: 11, fontWeight: 700, color: '#555', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' };
 const inputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px', border: '1.5px solid #d0d0e0', borderRadius: 7, fontSize: 14, boxSizing: 'border-box', outline: 'none', fontFamily: 'inherit', color: '#1a1a2e', transition: 'border-color 0.15s, box-shadow 0.15s' };

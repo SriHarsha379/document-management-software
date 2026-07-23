@@ -177,12 +177,9 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
     if (ed.partyNames?.[0])   extracted.billToParty         = ed.partyNames[0];
     if (ed.partyNames?.[1])   extracted.shipToParty         = ed.partyNames[1];
 
-    // Toll amount: accept common currency formats (e.g. "₹200", "₹ 200.50").
-    // Extract the first valid decimal number from the string.
-    if (ed.tollAmount) {
-      const match = ed.tollAmount.match(/(\d+(?:\.\d+)?)/);
-      if (match) extracted.tollCharges = match[1];
-    }
+    // Note: toll charges are intentionally NOT auto-populated from OCR because
+    // a single OCR document may represent only one of multiple toll receipts.
+    // Toll charges should be entered manually after summing all toll receipts.
 
     // Auto-fill high-confidence Branch
     if (branchResult.confidence >= OCR_CONFIDENCE_THRESHOLD && branchResult.id) {

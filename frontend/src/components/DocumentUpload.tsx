@@ -300,6 +300,7 @@ export function DocumentUpload({ onDocumentReady }: Props) {
         <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e0e0f0', padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
           <OCRReview
             document={activeReviewDoc}
+            allDocs={processedDocs}
             onSaved={(savedDoc) => {
               setProcessedDocs((prev) => prev.map((doc) => doc.id === savedDoc.id ? savedDoc : doc));
               setReviewNotice(`✅ ${savedDoc.originalFilename} saved successfully.`);

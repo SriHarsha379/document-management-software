@@ -1,15 +1,19 @@
 import React, { useState } from 'react';
 import type { Document } from '../types';
+import { DOCUMENT_TYPE_LABELS } from '../constants/documentTypeLabels';
 
 interface ImagePreviewModalProps {
   docs: Document[];
   header: string;
   onClose: () => void;
+  /** Zero-based index to open the viewer at. Defaults to 0. */
+  initialIndex?: number;
 }
 
-export function ImagePreviewModal({ docs, header, onClose }: ImagePreviewModalProps) {
-  const [current, setCurrent] = useState(0);
-  const doc = docs[Math.min(current, docs.length - 1)];
+export function ImagePreviewModal({ docs, header, onClose, initialIndex = 0 }: ImagePreviewModalProps) {
+  const safeInitial = docs.length > 0 ? Math.max(0, Math.min(initialIndex, docs.length - 1)) : 0;
+  const [current, setCurrent] = useState(safeInitial);
+  const doc = docs.length > 0 ? docs[Math.min(current, docs.length - 1)] : undefined;
 
   if (!doc) return null;
 
@@ -50,7 +54,9 @@ export function ImagePreviewModal({ docs, header, onClose }: ImagePreviewModalPr
             >
               ‹ Prev
             </button>
-            <span style={iv.navLabel}>{current + 1} / {docs.length}</span>
+            <span style={iv.navLabel}>
+              {DOCUMENT_TYPE_LABELS[doc.type]} {current + 1} of {docs.length}
+            </span>
             <button
               style={iv.navBtn}
               disabled={current === docs.length - 1}
