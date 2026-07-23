@@ -188,16 +188,24 @@ export function UploadDocumentsPage() {
                   <td style={{ ...td, fontWeight: 700 }}>{lr.lrNo}</td>
                   <td style={td}>{lr.lrDate ?? lr.date ?? '—'}</td>
                   {SLOT_CONFIG.map((slot) => {
-                    const docs = getRowDocuments(lr).filter((document) => matchesSlot(document, slot.type));
-                    const uniqueSourceCount = new Set(docs.map((d) => d.sourceDocumentId ?? d.id)).size;
+                    const lrDocs = (lr.uploadedDocuments ?? []).filter((document) => matchesSlot(document, slot.type));
+                    const lrSourceCount = new Set(lrDocs.map((d) => d.sourceDocumentId ?? d.id)).size;
+                    const allDocs = getRowDocuments(lr).filter((document) => matchesSlot(document, slot.type));
+                    const groupSourceCount = new Set(allDocs.map((d) => d.sourceDocumentId ?? d.id)).size;
+                    const groupExtra = groupSourceCount - lrSourceCount;
                     const inputKey = `${lr.id}-${slot.type}`;
                     const busy = uploadingKey === `${lr.id}:${slot.type}`;
                     return (
                       <td key={slot.type} style={{ ...td, minWidth: 150 }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
-                          <span style={uniqueSourceCount > 0 ? presentBadge : missingBadge}>
-                            {uniqueSourceCount > 0 ? `${uniqueSourceCount} uploaded` : 'Not uploaded'}
+                          <span style={lrSourceCount > 0 ? presentBadge : missingBadge}>
+                            {lrSourceCount > 0 ? `${lrSourceCount} uploaded` : 'Not uploaded'}
                           </span>
+                          {groupExtra > 0 && (
+                            <span style={groupHint} title="Additional documents uploaded for the same vehicle &amp; date">
+                              +{groupExtra} in group
+                            </span>
+                          )}
                           {canUpload && (
                             <>
                               <input
@@ -212,7 +220,7 @@ export function UploadDocumentsPage() {
                                 disabled={busy}
                                 onClick={() => inputRefs.current[inputKey]?.click()}
                               >
-                                {busy ? 'Uploading…' : docs.length > 0 ? 'Add More' : 'Upload'}
+                                {busy ? 'Uploading…' : lrDocs.length > 0 ? 'Add More' : 'Upload'}
                               </button>
                             </>
                           )}
@@ -699,6 +707,17 @@ const missingBadge: CSSProperties = {
   padding: '3px 8px',
   fontSize: 11,
   fontWeight: 700,
+};
+
+const groupHint: CSSProperties = {
+  display: 'inline-block',
+  background: '#eff6ff',
+  color: '#3b82f6',
+  borderRadius: 999,
+  padding: '2px 7px',
+  fontSize: 10,
+  fontWeight: 600,
+  cursor: 'default',
 };
 
 const successAlert: CSSProperties = {
