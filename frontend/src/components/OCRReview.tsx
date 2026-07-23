@@ -75,12 +75,12 @@ export function OCRReview({ document, allDocs, onSaved, onCancel }: Props) {
   const previewDocs: Document[] = sortDocsByType(
     allDocs && allDocs.length > 0 ? allDocs : [document],
   );
-  const defaultPreviewIdx = previewDocs.findIndex((d) => d.id === document.id);
-  const [previewIdx, setPreviewIdx] = useState(defaultPreviewIdx >= 0 ? defaultPreviewIdx : 0);
+  const defaultPreviewIdx = Math.max(0, previewDocs.findIndex((d) => d.id === document.id));
+  const [previewIdx, setPreviewIdx] = useState(defaultPreviewIdx);
   const [showModal, setShowModal] = useState(false);
 
-  const clampedIdx = Math.max(0, Math.min(previewIdx, previewDocs.length - 1));
-  const previewDoc = previewDocs[clampedIdx]!;
+  const clampedIdx = previewDocs.length > 0 ? Math.max(0, Math.min(previewIdx, previewDocs.length - 1)) : 0;
+  const previewDoc = previewDocs[clampedIdx] ?? document;
   const previewUrl = previewDoc.mimeType.startsWith('image/') ? `/uploads/${previewDoc.filePath}` : null;
   const previewIsPdf = previewDoc.mimeType === 'application/pdf';
 

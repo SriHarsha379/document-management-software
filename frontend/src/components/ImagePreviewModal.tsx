@@ -11,8 +11,9 @@ interface ImagePreviewModalProps {
 }
 
 export function ImagePreviewModal({ docs, header, onClose, initialIndex = 0 }: ImagePreviewModalProps) {
-  const [current, setCurrent] = useState(Math.max(0, Math.min(initialIndex, docs.length - 1)));
-  const doc = docs[Math.min(current, docs.length - 1)];
+  const safeInitial = docs.length > 0 ? Math.max(0, Math.min(initialIndex, docs.length - 1)) : 0;
+  const [current, setCurrent] = useState(safeInitial);
+  const doc = docs.length > 0 ? docs[Math.min(current, docs.length - 1)] : undefined;
 
   if (!doc) return null;
 
