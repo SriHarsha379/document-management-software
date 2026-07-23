@@ -142,6 +142,7 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
   const [manualBranchEdit, setManualBranchEdit] = useState(false);
   /** Becomes true once OCR extraction has been applied (prevents double-application). */
   const [ocrApplied, setOcrApplied] = useState(false);
+  const inDateValue = toStr(lr.date ?? lr.lrDate);
 
   useEffect(() => {
     lrApi.branches()
@@ -290,13 +291,9 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
             </div>
           )}
 
-          <Section title="Basic Info">
+          <Section title="Table Fields">
             <Row>
-              <Field label="LR No ✱"      value={form.lrNo}    onChange={(v) => set('lrNo', v)}  highlight={lowConfidenceFields.has('lrNo')} />
-              <Field label="LR Date"       value={form.lrDate}  onChange={(v) => set('lrDate', v)} placeholder="YYYY-MM-DD" highlight={lowConfidenceFields.has('lrDate')} />
-            </Row>
-            <Row>
-              {/* Branch — auto-detected when confidence is high; dropdown otherwise */}
+              <Field label="Principal Company" value={form.principalCompany} onChange={(v) => set('principalCompany', v)} highlight={lowConfidenceFields.has('principalCompany')} />
               {ocrDocument && branchConfidence >= OCR_CONFIDENCE_THRESHOLD && !manualBranchEdit ? (
                 <AutoDetectedField
                   label="Branch"
@@ -314,72 +311,70 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
                   highlight={lowConfidenceFields.has('branchId')}
                 />
               )}
+            </Row>
+            <Row>
+              <Field label="Working Center" value={form.workingCenter} onChange={(v) => set('workingCenter', v)} />
+              <Field label="Depot / Plant Code" value={form.depotPlantCode} onChange={(v) => set('depotPlantCode', v)} />
+            </Row>
+            <Row>
+              <Field label="LR Date" value={form.lrDate} onChange={(v) => set('lrDate', v)} placeholder="YYYY-MM-DD" highlight={lowConfidenceFields.has('lrDate')} />
+              <Field label="LR Number ✱" value={form.lrNo} onChange={(v) => set('lrNo', v)} highlight={lowConfidenceFields.has('lrNo')} />
+            </Row>
+            <Row>
+              <Field label="In Date" value={inDateValue} readOnly />
+              <Field label="Invoice Number" value={form.companyInvoiceNo} onChange={(v) => set('companyInvoiceNo', v)} highlight={lowConfidenceFields.has('companyInvoiceNo')} />
+            </Row>
+            <Row>
+              <Field label="E-Way Bill Date" value={form.ewayBillDate} onChange={(v) => set('ewayBillDate', v)} placeholder="YYYY-MM-DD" />
+              <Field label="E-Way Bill Number" value={form.companyEwayBillNo} onChange={(v) => set('companyEwayBillNo', v)} />
+            </Row>
+            <Row>
+              <Field label="Loading Slip Number" value={form.loadingSlipNo} onChange={(v) => set('loadingSlipNo', v)} />
+              <Field label="Bill To" value={form.billToParty} onChange={(v) => set('billToParty', v)} highlight={lowConfidenceFields.has('billToParty')} />
+            </Row>
+            <Row>
+              <Field label="Ship To" value={form.shipToParty} onChange={(v) => set('shipToParty', v)} highlight={lowConfidenceFields.has('shipToParty')} />
+              <Field label="Approved Destination" value={form.approvedDestination} onChange={(v) => set('approvedDestination', v)} />
+            </Row>
+            <Row>
+              <Field label="Delivered Destination" value={form.deliveryDestination} onChange={(v) => set('deliveryDestination', v)} />
+              <Field label="Order Number" value={form.orderNo} onChange={(v) => set('orderNo', v)} />
+            </Row>
+            <Row>
+              <Field label="Quantity (Bags)" value={form.quantityInBags} onChange={(v) => set('quantityInBags', v)} type="number" highlight={lowConfidenceFields.has('quantityInBags')} />
+              <Field label="Quantity (MT)" value={form.quantityInMt} onChange={(v) => set('quantityInMt', v)} type="number" highlight={lowConfidenceFields.has('quantityInMt')} />
+            </Row>
+            <Row>
+              <Field label="Product" value={form.productName} onChange={(v) => set('productName', v)} />
+              <Field label="Vehicle Number" value={form.vehicleNo} onChange={(v) => set('vehicleNo', v)} highlight={lowConfidenceFields.has('vehicleNo')} />
+            </Row>
+            <Row>
+              <Field label="Transport Code" value={form.tptCode} onChange={(v) => set('tptCode', v)} highlight={lowConfidenceFields.has('tptCode')} />
+              <Field label="Driver Name" value={form.driverName} onChange={(v) => set('driverName', v)} highlight={lowConfidenceFields.has('driverName')} />
+            </Row>
+            <Row>
+              <Field label="Driver Cell Number" value={form.driverCellNo} onChange={(v) => set('driverCellNo', v)} />
+              <div />
+            </Row>
+          </Section>
 
-              {/* Source — plain text input */}
+          <Section title="Additional Details">
+            <Row>
               <Field
                 label="Source"
                 value={form.source}
                 onChange={(v) => set('source', v)}
                 highlight={lowConfidenceFields.has('source')}
               />
-            </Row>
-            <Row>
-              <Field label="Principal Company" value={form.principalCompany} onChange={(v) => set('principalCompany', v)} highlight={lowConfidenceFields.has('principalCompany')} />
-              <Field label="Loading Slip No"   value={form.loadingSlipNo}    onChange={(v) => set('loadingSlipNo', v)} />
-            </Row>
-          </Section>
-
-          <Section title="Invoice / E-Way Bill">
-            <Row>
               <Field label="Invoice Date" value={form.companyInvoiceDate} onChange={(v) => set('companyInvoiceDate', v)} placeholder="YYYY-MM-DD" />
-              <Field label="Invoice No"   value={form.companyInvoiceNo}   onChange={(v) => set('companyInvoiceNo', v)} highlight={lowConfidenceFields.has('companyInvoiceNo')} />
-            </Row>
-            <Row>
-              <Field label="E-Way Bill No"   value={form.companyEwayBillNo} onChange={(v) => set('companyEwayBillNo', v)} />
-              <Field label="E-Way Bill Date" value={form.ewayBillDate}       onChange={(v) => set('ewayBillDate', v)} placeholder="YYYY-MM-DD" />
-            </Row>
-          </Section>
-
-          <Section title="Parties &amp; Destination">
-            <Row>
-              <Field label="Bill To Party"  value={form.billToParty}  onChange={(v) => set('billToParty', v)}  highlight={lowConfidenceFields.has('billToParty')} />
-              <Field label="Ship To Party"  value={form.shipToParty}  onChange={(v) => set('shipToParty', v)}  highlight={lowConfidenceFields.has('shipToParty')} />
-            </Row>
-            <Row>
-              <Field label="Approved Destination"  value={form.approvedDestination}  onChange={(v) => set('approvedDestination', v)} />
-              <Field label="Delivered Destination" value={form.deliveryDestination}   onChange={(v) => set('deliveryDestination', v)} />
             </Row>
             <Row>
               <Field label="Order Type" value={form.orderType} onChange={(v) => set('orderType', v)} highlight={lowConfidenceFields.has('orderType')} />
-              <Field label="Order No"   value={form.orderNo}   onChange={(v) => set('orderNo', v)} />
-            </Row>
-          </Section>
-
-          <Section title="Location">
-            <Row>
-              <Field label="Working Center"    value={form.workingCenter}  onChange={(v) => set('workingCenter', v)} />
-              <Field label="Depot / Plant Code" value={form.depotPlantCode} onChange={(v) => set('depotPlantCode', v)} />
-            </Row>
-          </Section>
-
-          <Section title="Transport">
-            <Row>
-              <Field label="TPT"             value={form.tpt}             onChange={(v) => set('tpt', v)} />
-              <Field label="TPT Code"        value={form.tptCode}         onChange={(v) => set('tptCode', v)} highlight={lowConfidenceFields.has('tptCode')} />
+              <Field label="TPT" value={form.tpt} onChange={(v) => set('tpt', v)} />
             </Row>
             <Row>
-              <Field label="Transporter"     value={form.transporterName} onChange={(v) => set('transporterName', v)} />
-              <Field label="Vehicle No"      value={form.vehicleNo}       onChange={(v) => set('vehicleNo', v)} highlight={lowConfidenceFields.has('vehicleNo')} />
-            </Row>
-          </Section>
-
-          <Section title="Product &amp; Quantity">
-            <Row>
-              <Field label="Product Name"  value={form.productName}    onChange={(v) => set('productName', v)} />
-              <Field label="Qty (Bags)"    value={form.quantityInBags} onChange={(v) => set('quantityInBags', v)} type="number" highlight={lowConfidenceFields.has('quantityInBags')} />
-            </Row>
-            <Row>
-              <Field label="Qty (MT)"      value={form.quantityInMt}   onChange={(v) => set('quantityInMt', v)} type="number" highlight={lowConfidenceFields.has('quantityInMt')} />
+              <Field label="Transporter" value={form.transporterName} onChange={(v) => set('transporterName', v)} />
+              <div />
             </Row>
           </Section>
 
@@ -411,12 +406,6 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
             </Row>
           </Section>
 
-          <Section title="Driver">
-            <Row>
-              <Field label="Driver Name"        value={form.driverName}    onChange={(v) => set('driverName', v)}    highlight={lowConfidenceFields.has('driverName')} />
-              <Field label="Driver Cell Number" value={form.driverCellNo}  onChange={(v) => set('driverCellNo', v)} />
-            </Row>
-          </Section>
         </div>
 
         {error && <p style={m.error}>{error}</p>}
@@ -642,4 +631,3 @@ const m: Record<string, React.CSSProperties> = {
     cursor: 'pointer', fontSize: 13, padding: '4px 7px', color: '#666', flexShrink: 0,
   },
 };
-
