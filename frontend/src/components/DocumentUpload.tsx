@@ -17,6 +17,7 @@ export function DocumentUpload({ onDocumentReady }: Props) {
   const [fileProgress, setFileProgress] = useState<{ current: number; total: number } | null>(null);
   const [ocrProgress, setOcrProgress] = useState<{ current: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reviewNotice, setReviewNotice] = useState<string | null>(null);
   const [processedDocs, setProcessedDocs] = useState<Document[]>([]);
   const [activeReviewId, setActiveReviewId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -55,7 +56,7 @@ export function DocumentUpload({ onDocumentReady }: Props) {
     if (files.length === 0) return;
     const allProcessed: Document[] = [];
     try {
-      setError(null); setUploading(true); setProgress('uploading');
+      setError(null); setReviewNotice(null); setUploading(true); setProgress('uploading');
 
       // Upload all files sequentially, collecting documents
       const allDocs: Document[] = [];
@@ -106,6 +107,7 @@ export function DocumentUpload({ onDocumentReady }: Props) {
 
   const reset = () => {
     setFiles([]); setError(null); setProgress('idle');
+    setReviewNotice(null);
     setFileProgress(null); setOcrProgress(null);
     setProcessedDocs([]); setActiveReviewId(null);
     if (inputRef.current) inputRef.current.value = '';
@@ -239,21 +241,29 @@ export function DocumentUpload({ onDocumentReady }: Props) {
               <span style={{ fontSize: 12, fontWeight: 700, color: '#4338ca', background: '#eef2ff', borderRadius: 999, padding: '6px 10px' }}>
                 {processedDocs.length} extracted document{processedDocs.length === 1 ? '' : 's'}
               </span>
-              <button
-                type="button"
-                onClick={reset}
-                style={{
-                  border: 'none', borderRadius: 9, background: '#22c55e', color: '#fff',
-                  padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                  boxShadow: '0 2px 8px rgba(34,197,94,0.3)', transition: 'background 0.15s',
-                }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#16a34a'; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#22c55e'; }}
-              >
-                💾 Save & Done
-              </button>
+              {!activeReviewDoc && (
+                <button
+                  type="button"
+                  onClick={reset}
+                  style={{
+                    border: 'none', borderRadius: 9, background: '#22c55e', color: '#fff',
+                    padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(34,197,94,0.3)', transition: 'background 0.15s',
+                  }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#16a34a'; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#22c55e'; }}
+                >
+                  ✅ Done
+                </button>
+              )}
             </div>
           </div>
+
+          {reviewNotice && (
+            <div style={{ marginBottom: 12, padding: '8px 12px', background: '#ecfdf5', border: '1px solid #86efac', borderRadius: 8, fontSize: 13, color: '#166534' }}>
+              {reviewNotice}
+            </div>
+          )}
 
           <div style={{ display: 'grid', gap: 12 }}>
             {processedDocs.map((doc) => (
@@ -269,7 +279,10 @@ export function DocumentUpload({ onDocumentReady }: Props) {
                     </span>
                     <button
                       type="button"
-                      onClick={() => setActiveReviewId((current) => current === doc.id ? null : doc.id)}
+                      onClick={() => {
+                        setReviewNotice(null);
+                        setActiveReviewId((current) => current === doc.id ? null : doc.id);
+                      }}
                       style={{ border: '1px solid #c7d2fe', borderRadius: 8, background: '#eef2ff', color: '#4338ca', padding: '7px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
                     >
                       {activeReviewId === doc.id ? 'Hide Review' : 'Review Fields'}
@@ -289,7 +302,8 @@ export function DocumentUpload({ onDocumentReady }: Props) {
             document={activeReviewDoc}
             onSaved={(savedDoc) => {
               setProcessedDocs((prev) => prev.map((doc) => doc.id === savedDoc.id ? savedDoc : doc));
-              setActiveReviewId(savedDoc.id);
+              setReviewNotice(`✅ ${savedDoc.originalFilename} saved successfully.`);
+              setActiveReviewId(null);
             }}
             onCancel={() => setActiveReviewId(null)}
           />
