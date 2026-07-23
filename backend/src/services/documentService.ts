@@ -13,6 +13,21 @@ const LOCATION_CONTAINS_TARGET_SCORE = 0.85;
 const LOCATION_CONTAINED_BY_TARGET_SCORE = 0.8;
 const LOCATION_WORDS_MATCH_SCORE = 0.75;
 const LOCATION_MATCH_CONFIDENCE_THRESHOLD = 0.8;
+const DEFAULT_AUTO_CREATED_COMPANY_NAME = 'Default Company';
+const DEFAULT_AUTO_CREATED_BRANCH_NAME = 'Head Office';
+
+function getAutoCreatedCompanyName(fields: {
+  principalCompany?: string | null;
+  billToParty?: string | null;
+  shipToParty?: string | null;
+}): string {
+  return (
+    fields.principalCompany?.trim() ||
+    fields.billToParty?.trim() ||
+    fields.shipToParty?.trim() ||
+    DEFAULT_AUTO_CREATED_COMPANY_NAME
+  );
+}
 
 function mapExtractedRecordToLearnedFields(
   extracted: {
@@ -265,14 +280,15 @@ async function autoCreateLrRecord(
   const lrNo = fields.lrNo.trim().toUpperCase();
 
   // Look up the company (single-tenant default)
-  const company = await prisma.company.findFirst();
+  let company = await prisma.company.findFirst();
   if (!company) {
-    console.warn(
-      '[autoCreateLrRecord] No company found in the database. ' +
-      `LR record for lrNo="${lrNo}" was NOT created. ` +
-      'Please ensure at least one Company is set up in the admin panel.',
+    const companyName = getAutoCreatedCompanyName(fields);
+    console.info(
+      `[autoCreateLrRecord] No company found in the database. Auto-creating company "${companyName}".`,
     );
-    return false;
+    company = await prisma.company.create({
+      data: { name: companyName },
+    });
   }
 
   const companyId = company.id;
@@ -307,18 +323,23 @@ async function autoCreateLrRecord(
     }
   } else {
     // No branchName extracted — fall back to the first branch for this company
-    const fallbackBranch = await prisma.branch.findFirst({
+    let fallbackBranch = await prisma.branch.findFirst({
       where: { companyId },
       orderBy: { createdAt: 'asc' },
       select: { id: true },
     });
     if (!fallbackBranch) {
-      console.warn(
+      console.info(
         '[autoCreateLrRecord] No branch found and no branchName extracted. ' +
-        `LR record for lrNo="${lrNo}" was NOT created. ` +
-        'Please ensure at least one Branch is set up in the admin panel.',
+        `Auto-creating fallback branch "${DEFAULT_AUTO_CREATED_BRANCH_NAME}" for companyId="${companyId}".`,
       );
-      return false;
+      fallbackBranch = await prisma.branch.create({
+        data: {
+          companyId,
+          name: DEFAULT_AUTO_CREATED_BRANCH_NAME,
+        },
+        select: { id: true },
+      });
     }
     branchId = fallbackBranch.id;
   }
