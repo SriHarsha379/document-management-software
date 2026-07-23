@@ -142,7 +142,7 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
   const [manualBranchEdit, setManualBranchEdit] = useState(false);
   /** Becomes true once OCR extraction has been applied (prevents double-application). */
   const [ocrApplied, setOcrApplied] = useState(false);
-  const displayedInDate = toStr(lr.date ?? lr.lrDate);
+  const formattedInDate = toStr(lr.date ?? lr.lrDate);
 
   useEffect(() => {
     lrApi.branches()
@@ -318,10 +318,10 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
             </Row>
             <Row>
               <Field label="LR Date" value={form.lrDate} onChange={(v) => set('lrDate', v)} placeholder="YYYY-MM-DD" highlight={lowConfidenceFields.has('lrDate')} />
-              <Field label="LR Number" value={form.lrNo} onChange={(v) => set('lrNo', v)} placeholder="Required" highlight={lowConfidenceFields.has('lrNo')} />
+              <Field label="LR Number ✱" value={form.lrNo} onChange={(v) => set('lrNo', v)} highlight={lowConfidenceFields.has('lrNo')} />
             </Row>
             <Row>
-              <Field label="In Date" value={displayedInDate} readOnly />
+              <Field label="In Date" value={formattedInDate} readOnly />
               <Field label="Invoice Number" value={form.companyInvoiceNo} onChange={(v) => set('companyInvoiceNo', v)} highlight={lowConfidenceFields.has('companyInvoiceNo')} />
             </Row>
             <Row>
