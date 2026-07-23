@@ -142,7 +142,7 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
   const [manualBranchEdit, setManualBranchEdit] = useState(false);
   /** Becomes true once OCR extraction has been applied (prevents double-application). */
   const [ocrApplied, setOcrApplied] = useState(false);
-  const inDate = toStr(lr.date ?? lr.lrDate);
+  const displayInDate = toStr(lr.date ?? lr.lrDate);
 
   useEffect(() => {
     lrApi.branches()
@@ -313,15 +313,15 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
               )}
             </Row>
             <Row>
-              <Field label="Working Center" value={form.workingCenter} onChange={(v) => set('workingCenter', v)} />
-              <Field label="Depot / Plant Code" value={form.depotPlantCode} onChange={(v) => set('depotPlantCode', v)} />
+              <Field label="Working Center" value={form.workingCenter} onChange={(v) => set('workingCenter', v)} highlight={lowConfidenceFields.has('workingCenter')} />
+              <Field label="Depot / Plant Code" value={form.depotPlantCode} onChange={(v) => set('depotPlantCode', v)} highlight={lowConfidenceFields.has('depotPlantCode')} />
             </Row>
             <Row>
               <Field label="LR Date" value={form.lrDate} onChange={(v) => set('lrDate', v)} placeholder="YYYY-MM-DD" highlight={lowConfidenceFields.has('lrDate')} />
               <Field label="LR Number" value={form.lrNo} onChange={(v) => set('lrNo', v)} highlight={lowConfidenceFields.has('lrNo')} />
             </Row>
             <Row>
-              <Field label="In Date" value={inDate} readOnly />
+              <Field label="In Date" value={displayInDate} readOnly />
               <Field label="Invoice Number" value={form.companyInvoiceNo} onChange={(v) => set('companyInvoiceNo', v)} highlight={lowConfidenceFields.has('companyInvoiceNo')} />
             </Row>
             <Row>
@@ -354,7 +354,7 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
             </Row>
             <Row>
               <Field label="Driver Cell Number" value={form.driverCellNo} onChange={(v) => set('driverCellNo', v)} />
-              <div />
+              <EmptyCell />
             </Row>
           </Section>
 
@@ -374,7 +374,7 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
             </Row>
             <Row>
               <Field label="Transporter" value={form.transporterName} onChange={(v) => set('transporterName', v)} />
-              <div />
+              <EmptyCell />
             </Row>
           </Section>
 
@@ -436,6 +436,10 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Row({ children }: { children: React.ReactNode }) {
   return <div style={m.row}>{children}</div>;
+}
+
+function EmptyCell() {
+  return <div style={m.emptyCell} aria-hidden="true" />;
 }
 
 function Field({
@@ -560,6 +564,7 @@ const m: Record<string, React.CSSProperties> = {
     marginBottom: 8, borderBottom: '1px solid #e8eaff', paddingBottom: 4,
   },
   row: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' },
+  emptyCell: { minHeight: 1 },
   fieldGroup: { marginBottom: 10 },
   label: {
     display: 'block', fontSize: 11, fontWeight: 600, color: '#555',
