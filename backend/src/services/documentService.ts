@@ -16,15 +16,20 @@ const LOCATION_MATCH_CONFIDENCE_THRESHOLD = 0.8;
 const DEFAULT_AUTO_CREATED_COMPANY_NAME = 'Default Company';
 const DEFAULT_AUTO_CREATED_BRANCH_NAME = 'Head Office';
 
+function nonEmptyTrimmed(value?: string | null): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 function getAutoCreatedCompanyName(fields: {
   principalCompany?: string | null;
   billToParty?: string | null;
   shipToParty?: string | null;
 }): string {
   return (
-    fields.principalCompany?.trim() ||
-    fields.billToParty?.trim() ||
-    fields.shipToParty?.trim() ||
+    nonEmptyTrimmed(fields.principalCompany) ||
+    nonEmptyTrimmed(fields.billToParty) ||
+    nonEmptyTrimmed(fields.shipToParty) ||
     DEFAULT_AUTO_CREATED_COMPANY_NAME
   );
 }
