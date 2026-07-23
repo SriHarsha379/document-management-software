@@ -80,7 +80,14 @@ export const documentsApi = {
   },
 
   runOcr: async (documentId: string): Promise<Document> => {
-    const res = await api.post<{ document: Document }>(`/documents/${documentId}/ocr`);
+    // OCR can trigger multiple sequential GPT-4o vision calls on the backend
+    // (up to 4 rotation variants + a hints-guided retry), which routinely
+    // exceeds the default 60s timeout. Give this call much more headroom.
+    const res = await api.post<{ document: Document }>(
+      `/documents/${documentId}/ocr`,
+      undefined,
+      { timeout: 180000 },
+    );
     return res.data.document;
   },
 

@@ -76,16 +76,33 @@ export function DocumentUpload({ onDocumentReady }: Props) {
       setFileProgress(null);
       setUploading(false); setProcessingOcr(true); setProgress('ocr');
 
-      // Run OCR on every document
+      // Run OCR on every document. Catch failures per-document so a single
+      // slow/failed OCR call (e.g. a timeout) doesn't wipe out results for
+      // every other document that succeeded.
+      const ocrErrors: string[] = [];
       for (let i = 0; i < allDocs.length; i++) {
         setOcrProgress({ current: i + 1, total: allDocs.length });
-        const processed = await documentsApi.runOcr(allDocs[i]!.id);
-        allProcessed.push(processed);
+        try {
+          const processed = await documentsApi.runOcr(allDocs[i]!.id);
+          allProcessed.push(processed);
+        } catch (ocrErr) {
+          const msg = ocrErr instanceof Error ? ocrErr.message : String(ocrErr);
+          console.error(`OCR failed for document ${allDocs[i]!.id}`, ocrErr);
+          ocrErrors.push(`"${allDocs[i]!.originalFilename}": ${msg}`);
+        }
       }
 
       setProcessingOcr(false); setProgress('idle');
       setOcrProgress(null);
       setProcessedDocs(allProcessed);
+
+      if (ocrErrors.length > 0) {
+        setError(
+          allProcessed.length > 0
+            ? `${ocrErrors.length} of ${allDocs.length} document(s) failed OCR and are not shown below: ${ocrErrors.join('; ')}`
+            : `OCR failed for all documents: ${ocrErrors.join('; ')}`
+        );
+      }
 
       const reviewDoc =
         allProcessed.find((doc) => doc.status === 'PENDING_REVIEW') ??
