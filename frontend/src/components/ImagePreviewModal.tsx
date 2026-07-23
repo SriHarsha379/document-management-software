@@ -1,14 +1,28 @@
 import React, { useState } from 'react';
-import type { Document } from '../types';
+import type { Document, DocumentType } from '../types';
 
 interface ImagePreviewModalProps {
   docs: Document[];
   header: string;
   onClose: () => void;
+  /** Zero-based index to open the viewer at. Defaults to 0. */
+  initialIndex?: number;
 }
 
-export function ImagePreviewModal({ docs, header, onClose }: ImagePreviewModalProps) {
-  const [current, setCurrent] = useState(0);
+const DOC_TYPE_LABELS: Record<DocumentType, string> = {
+  LR: 'LR',
+  INVOICE: 'Invoice',
+  TOLL: 'Toll Receipt',
+  WEIGHMENT: 'Weighment Slip',
+  WEIGHMENT_PARTY: 'Party Weighment Slip',
+  WEIGHMENT_SITE: 'Site Weighment Slip',
+  EWAYBILL: 'E-Way Bill',
+  RECEIVING: 'Receiving Copy',
+  UNKNOWN: 'Document',
+};
+
+export function ImagePreviewModal({ docs, header, onClose, initialIndex = 0 }: ImagePreviewModalProps) {
+  const [current, setCurrent] = useState(Math.max(0, Math.min(initialIndex, docs.length - 1)));
   const doc = docs[Math.min(current, docs.length - 1)];
 
   if (!doc) return null;
@@ -50,7 +64,9 @@ export function ImagePreviewModal({ docs, header, onClose }: ImagePreviewModalPr
             >
               ‹ Prev
             </button>
-            <span style={iv.navLabel}>{current + 1} / {docs.length}</span>
+            <span style={iv.navLabel}>
+              {DOC_TYPE_LABELS[doc.type]} {current + 1} of {docs.length}
+            </span>
             <button
               style={iv.navBtn}
               disabled={current === docs.length - 1}

@@ -861,7 +861,10 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
   }
 
   if (updatedExtracted?.vehicleNo || updatedExtracted?.lrNo || updatedExtracted?.invoiceNo) {
-    // Auto-create LR record from confirmed reviewed data before linking
+    // Auto-create LR record from confirmed reviewed data before linking.
+    // For LR-type docs: always create the LR.
+    // For INVOICE-type docs with an lrNo: ensure the corresponding LR exists so
+    // the invoice becomes immediately visible in the Documents (LR) table.
     if (updatedDoc?.type === 'LR') {
       await autoCreateLrRecord('LR', {
         lrNo: updatedExtracted.lrNo,
@@ -888,6 +891,33 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
         quantityInBags: updatedExtracted.quantityInBags,
         driverName: updatedExtracted.driverName,
         driverCellNo: updatedExtracted.driverCellNo,
+        branchName: updatedExtracted.branchName,
+        workingCenter: updatedExtracted.workingCenter,
+        depotPlantCode: updatedExtracted.depotPlantCode,
+        source: updatedExtracted.source,
+      });
+    } else if (updatedDoc?.type === 'INVOICE' && updatedExtracted?.lrNo?.trim()) {
+      // Invoice carries an explicit LR number → ensure the LR record exists.
+      await autoCreateLrRecord('LR', {
+        lrNo: updatedExtracted.lrNo,
+        vehicleNo: updatedExtracted.vehicleNo,
+        date: updatedExtracted.date,
+        billToParty: updatedExtracted.billToParty,
+        shipToParty: updatedExtracted.shipToParty,
+        principalCompany: updatedExtracted.principalCompany,
+        companyInvoiceNo: updatedExtracted.companyInvoiceNo,
+        companyInvoiceDate: updatedExtracted.companyInvoiceDate,
+        companyEwayBillNo: updatedExtracted.companyEwayBillNo,
+        ewayBillDate: updatedExtracted.ewayBillDate,
+        approvedDestination: updatedExtracted.approvedDestination,
+        deliveryDestination: updatedExtracted.deliveryDestination,
+        orderNo: updatedExtracted.orderNo,
+        productName: updatedExtracted.productName,
+        transporterName: updatedExtracted.transporterName,
+        orderType: updatedExtracted.orderType,
+        tptCode: updatedExtracted.tptCode,
+        quantityInMt: updatedExtracted.quantityInMt,
+        quantityInBags: updatedExtracted.quantityInBags,
         branchName: updatedExtracted.branchName,
         workingCenter: updatedExtracted.workingCenter,
         depotPlantCode: updatedExtracted.depotPlantCode,
