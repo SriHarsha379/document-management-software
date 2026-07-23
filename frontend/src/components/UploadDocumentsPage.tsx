@@ -71,7 +71,7 @@ export function UploadDocumentsPage() {
     let ignore = false;
     const run = async () => {
       try {
-        const groups = await documentsApi.listGroups();
+      const { groups } = await documentsApi.listGroups();
         if (!ignore) {
           setGroupsByKey(Object.fromEntries(groups.map((group) => [getGroupKey(group.vehicleNo, group.date), group])));
         }
