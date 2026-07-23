@@ -312,7 +312,7 @@ router.get('/groups', async (req: Request, res: Response): Promise<void> => {
               groupId: true,
               sourceDocumentId: true,
               pageNumber: true,
-              extractedData: { select: { invoiceNo: true } },
+              extractedData: { select: { lrNo: true, invoiceNo: true } },
             },
           },
         },
