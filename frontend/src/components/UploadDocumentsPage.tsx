@@ -26,7 +26,6 @@ export function UploadDocumentsPage() {
   const { hasPermission } = useCurrentUser();
   const canUpload = hasPermission(PERM.DOCUMENT_UPLOAD);
   const canDelete = hasPermission(PERM.DOCUMENT_DELETE);
-  const canSend = hasPermission(PERM.COMMUNICATION_SEND);
 
   const [rows, setRows] = useState<Lr[]>([]);
   const [total, setTotal] = useState(0);
@@ -71,7 +70,7 @@ export function UploadDocumentsPage() {
     let ignore = false;
     const run = async () => {
       try {
-      const { groups } = await documentsApi.listGroups();
+        const { groups } = await documentsApi.listGroups();
         if (!ignore) {
           setGroupsByKey(Object.fromEntries(groups.map((group) => [getGroupKey(group.vehicleNo, group.date), group])));
         }
