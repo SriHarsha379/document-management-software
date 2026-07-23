@@ -318,7 +318,7 @@ export function LrEditModal({ lr, onSaved, onCancel, ocrDocument }: Props) {
             </Row>
             <Row>
               <Field label="LR Date" value={form.lrDate} onChange={(v) => set('lrDate', v)} placeholder="YYYY-MM-DD" highlight={lowConfidenceFields.has('lrDate')} />
-              <Field label="LR Number ✱" value={form.lrNo} onChange={(v) => set('lrNo', v)} highlight={lowConfidenceFields.has('lrNo')} />
+              <Field label="LR Number" value={form.lrNo} onChange={(v) => set('lrNo', v)} highlight={lowConfidenceFields.has('lrNo')} />
             </Row>
             <Row>
               <Field label="In Date" value={inDate} readOnly />
