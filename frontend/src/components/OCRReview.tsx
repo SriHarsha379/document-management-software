@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { Document, DocumentType, ReviewPayload } from '../types';
 import { documentsApi } from '../services/api';
 import { ImagePreviewModal } from './ImagePreviewModal';
+import { DOCUMENT_TYPE_LABELS, PREVIEW_TYPE_ORDER } from '../constants/documentTypeLabels';
 
 interface Props {
   document: Document;
@@ -18,9 +19,6 @@ const PARTY_SPLIT_TYPES: DocumentType[] = ['LR', 'INVOICE'];
 /** Types where Weight Info is meaningful */
 const WEIGHT_INFO_TYPES: DocumentType[] = ['TOLL', 'EWAYBILL', 'RECEIVING', 'UNKNOWN'];
 
-/** Display order for the preview carousel. */
-const PREVIEW_TYPE_ORDER: DocumentType[] = ['INVOICE', 'LR', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE', 'WEIGHMENT', 'TOLL', 'EWAYBILL', 'RECEIVING', 'UNKNOWN'];
-
 const TYPE_LABELS: Record<DocumentType, string> = {
   LR: '📦 Lorry Receipt (LR)',
   INVOICE: '🧾 Invoice',
@@ -31,18 +29,6 @@ const TYPE_LABELS: Record<DocumentType, string> = {
   EWAYBILL: '🔖 E-Way Bill',
   RECEIVING: '📬 Receiving Copy',
   UNKNOWN: '❓ Unknown',
-};
-
-const PREVIEW_LABELS: Record<DocumentType, string> = {
-  LR: 'LR',
-  INVOICE: 'Invoice',
-  TOLL: 'Toll Receipt',
-  WEIGHMENT: 'Weighment Slip',
-  WEIGHMENT_PARTY: 'Party Weighment Slip',
-  WEIGHMENT_SITE: 'Site Weighment Slip',
-  EWAYBILL: 'E-Way Bill',
-  RECEIVING: 'Receiving Copy',
-  UNKNOWN: 'Document',
 };
 
 const CONFIDENCE_COLOR = (c: number | null) => {
@@ -155,7 +141,7 @@ export function OCRReview({ document, allDocs, onSaved, onCancel }: Props) {
         <div style={{ flex: '0 0 280px', background: '#fff', borderRadius: 12, border: '1px solid #e0e0f0', padding: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {/* Position label */}
           <div style={{ fontSize: 12, fontWeight: 700, color: '#4361ee', textAlign: 'center', padding: '4px 0' }}>
-            {PREVIEW_LABELS[previewDoc.type]}{' '}
+            {DOCUMENT_TYPE_LABELS[previewDoc.type]}{' '}
             <span style={{ color: '#6b7280', fontWeight: 500 }}>{clampedIdx + 1} of {previewDocs.length}</span>
           </div>
 
@@ -219,7 +205,7 @@ export function OCRReview({ document, allDocs, onSaved, onCancel }: Props) {
                   <div
                     key={d.id}
                     onClick={() => setPreviewIdx(idx)}
-                    title={PREVIEW_LABELS[d.type]}
+                    title={DOCUMENT_TYPE_LABELS[d.type]}
                     style={{
                       width: 40, height: 40, borderRadius: 5, overflow: 'hidden',
                       cursor: 'pointer', flexShrink: 0,
@@ -368,7 +354,7 @@ export function OCRReview({ document, allDocs, onSaved, onCancel }: Props) {
       {showModal && (
         <ImagePreviewModal
           docs={previewDocs}
-          header={`${PREVIEW_LABELS[previewDoc.type]} – ${previewDoc.originalFilename}`}
+          header={`${DOCUMENT_TYPE_LABELS[previewDoc.type]} – ${previewDoc.originalFilename}`}
           initialIndex={clampedIdx}
           onClose={() => setShowModal(false)}
         />
