@@ -208,7 +208,7 @@ router.post('/:id/ocr', async (req: Request, res: Response): Promise<void> => {
       message: 'OCR processing complete',
       document: formatDocument(updated),
     });
-  } } catch (err) {
+  } catch (err) {
   console.error('OCR ERROR:', err);
 
   const message = err instanceof Error ? err.stack ?? err.message : String(err);
