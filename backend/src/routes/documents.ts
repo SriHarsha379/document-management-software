@@ -208,10 +208,15 @@ router.post('/:id/ocr', async (req: Request, res: Response): Promise<void> => {
       message: 'OCR processing complete',
       document: formatDocument(updated),
     });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'OCR processing failed';
-    res.status(500).json({ error: message });
-  }
+  } } catch (err) {
+  console.error('OCR ERROR:', err);
+
+  const message = err instanceof Error ? err.stack ?? err.message : String(err);
+
+  res.status(500).json({
+    error: message,
+  });
+}
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
