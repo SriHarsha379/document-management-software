@@ -1,6 +1,6 @@
 import axios from 'axios';
 import type {
-  Document, PaginatedDocuments, ReviewPayload, DocumentType, DocumentStatus, DocumentGroup,
+  Document, PaginatedDocuments, ReviewPayload, DocumentType, DocumentStatus, DocumentGroup, LrDocumentCategory,
   Bundle, PaginatedBundles, BundlePreview, RecipientType, BundleStatus,
 } from '../types';
 import { authService } from './authService';
@@ -68,11 +68,12 @@ export interface UploadResponse {
 }
 
 export const documentsApi = {
-  upload: async (file: File, opts?: { type?: DocumentType; groupId?: string }): Promise<UploadResponse> => {
+  upload: async (file: File, opts?: { type?: DocumentType; groupId?: string; lrDocumentCategory?: LrDocumentCategory }): Promise<UploadResponse> => {
     const formData = new FormData();
     formData.append('file', file);
     if (opts?.type) formData.append('type', opts.type);
     if (opts?.groupId) formData.append('groupId', opts.groupId);
+    if (opts?.lrDocumentCategory) formData.append('lrDocumentCategory', opts.lrDocumentCategory);
     const res = await api.post<UploadResponse>('/documents/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
@@ -171,7 +172,6 @@ export const bundlesApi = {
 
 import type { SearchResponse } from '../types';
 import type { Lr, PaginatedLrs, LrSummary } from '../types';
-import type { LrDocumentCategory } from '../types';
 
 export const ACCOUNTANT_ROLE = 'Accountant';
 

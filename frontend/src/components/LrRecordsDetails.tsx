@@ -8,6 +8,10 @@ import { LrEditModal } from './LrEditModal';
 
 const PAGE_SIZE = 25;
 
+// Keep these more granular filters available in code, but keep the dashboard
+// filter panel focused on the core operational fields.
+const SHOW_SECONDARY_FILTERS = false;
+
 type SortDir = 'asc' | 'desc';
 
 interface Filters {
@@ -435,49 +439,53 @@ export function LrRecordsDetails({ refreshTrigger = 0 }: { refreshTrigger?: numb
             />
           </div>
 
-          {/* Vehicle Number */}
-          <div>
-            <div style={sFilterLabel}>Vehicle Number</div>
-            <SearchableSelect
-              value={pendingFilters.vehicleNo}
-              onChange={(v) => setPendingFilters((f) => ({ ...f, vehicleNo: v }))}
-              options={vehicleNos}
-              placeholder="All Vehicles"
-            />
-          </div>
+          {SHOW_SECONDARY_FILTERS && (
+            <>
+              {/* Vehicle Number */}
+              <div>
+                <div style={sFilterLabel}>Vehicle Number</div>
+                <SearchableSelect
+                  value={pendingFilters.vehicleNo}
+                  onChange={(v) => setPendingFilters((f) => ({ ...f, vehicleNo: v }))}
+                  options={vehicleNos}
+                  placeholder="All Vehicles"
+                />
+              </div>
 
-          {/* Driver Name */}
-          <div>
-            <div style={sFilterLabel}>Driver Name</div>
-            <SearchableSelect
-              value={pendingFilters.driverName}
-              onChange={(v) => setPendingFilters((f) => ({ ...f, driverName: v }))}
-              options={driverNames}
-              placeholder="All Drivers"
-            />
-          </div>
+              {/* Driver Name */}
+              <div>
+                <div style={sFilterLabel}>Driver Name</div>
+                <SearchableSelect
+                  value={pendingFilters.driverName}
+                  onChange={(v) => setPendingFilters((f) => ({ ...f, driverName: v }))}
+                  options={driverNames}
+                  placeholder="All Drivers"
+                />
+              </div>
 
-          {/* Product */}
-          <div>
-            <div style={sFilterLabel}>Product</div>
-            <SearchableSelect
-              value={pendingFilters.productName}
-              onChange={(v) => setPendingFilters((f) => ({ ...f, productName: v }))}
-              options={productNames}
-              placeholder="All Products"
-            />
-          </div>
+              {/* Product */}
+              <div>
+                <div style={sFilterLabel}>Product</div>
+                <SearchableSelect
+                  value={pendingFilters.productName}
+                  onChange={(v) => setPendingFilters((f) => ({ ...f, productName: v }))}
+                  options={productNames}
+                  placeholder="All Products"
+                />
+              </div>
 
-          {/* Transport Code */}
-          <div>
-            <div style={sFilterLabel}>Transport Code</div>
-            <SearchableSelect
-              value={pendingFilters.tptCode}
-              onChange={(v) => setPendingFilters((f) => ({ ...f, tptCode: v }))}
-              options={tptCodes}
-              placeholder="All Transporters"
-            />
-          </div>
+              {/* Transport Code */}
+              <div>
+                <div style={sFilterLabel}>Transport Code</div>
+                <SearchableSelect
+                  value={pendingFilters.tptCode}
+                  onChange={(v) => setPendingFilters((f) => ({ ...f, tptCode: v }))}
+                  options={tptCodes}
+                  placeholder="All Transporters"
+                />
+              </div>
+            </>
+          )}
         </div>
 
         {/* Filter action buttons */}
@@ -494,7 +502,15 @@ export function LrRecordsDetails({ refreshTrigger = 0 }: { refreshTrigger?: numb
       {error && <div style={sErrorBox}>⚠️ {error}</div>}
 
       {/* ── Table ──────────────────────────────────────────────────── */}
-      <div style={{ overflowX: 'auto', border: '1px solid #e0e0f0', borderRadius: 8, position: 'relative' }}>
+      <div
+        style={{
+          maxHeight: '60vh',
+          overflow: 'auto',
+          border: '1px solid #e0e0f0',
+          borderRadius: 8,
+          position: 'relative',
+        }}
+      >
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 'max-content' }}>
           <thead>
             <tr>
@@ -760,4 +776,3 @@ const sPageBtn: React.CSSProperties = {
   padding: '5px 12px', background: '#eef0ff', border: '1px solid #c0c8ff',
   borderRadius: 6, cursor: 'pointer', fontSize: 12, color: '#4361ee', fontWeight: 500,
 };
-

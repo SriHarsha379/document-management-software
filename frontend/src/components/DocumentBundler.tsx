@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type {
-  DocumentGroup, DocumentType, RecipientType, DispatchChannel, Bundle, DispatchResult,
+  DocumentGroup, DocumentType, LrDocumentCategory, RecipientType, DispatchChannel, Bundle, DispatchResult,
 } from '../types';
 import { documentsApi, bundlesApi, dispatchApi, masterApi } from '../services/api';
 import type { OfficerDropdownItem, PartyDropdownItem, TransporterDropdownItem } from '../services/api';
@@ -39,11 +39,12 @@ const TYPE_COLORS: Record<DocumentType, string> = {
 };
 
 type TableColumn = {
-  key: 'INVOICE' | 'LR' | 'WEIGHMENT_PARTY' | 'WEIGHMENT_SITE' | 'TOLL' | 'OTHER_1' | 'OTHER_2';
+  key: 'INVOICE' | 'LR' | 'WEIGHMENT_PARTY' | 'WEIGHMENT_SITE' | 'TOLL' | 'OTHER_1' | 'OTHER_2' | 'ADDITIONAL_1' | 'ADDITIONAL_2';
   header: string;
   checkType: DocumentType;
   uploadType: DocumentType;
   color: string;
+  lrDocumentCategory?: LrDocumentCategory;
 };
 
 const TABLE_COLUMNS: TableColumn[] = [
@@ -54,6 +55,8 @@ const TABLE_COLUMNS: TableColumn[] = [
   { key: 'TOLL',            header: 'Tollgate',              checkType: 'TOLL',            uploadType: 'TOLL',            color: TYPE_COLORS.TOLL },
   { key: 'OTHER_1',         header: 'E-Way Bill',            checkType: 'EWAYBILL',        uploadType: 'EWAYBILL',        color: TYPE_COLORS.EWAYBILL },
   { key: 'OTHER_2',         header: 'Receiving Copy',        checkType: 'RECEIVING',       uploadType: 'RECEIVING',       color: TYPE_COLORS.RECEIVING },
+  { key: 'ADDITIONAL_1',    header: 'Additional Document 1', checkType: 'UNKNOWN',         uploadType: 'UNKNOWN',         color: '#64748b', lrDocumentCategory: 'ADDITIONAL_ATTACHMENT_1' },
+  { key: 'ADDITIONAL_2',    header: 'Additional Document 2', checkType: 'UNKNOWN',         uploadType: 'UNKNOWN',         color: '#475569', lrDocumentCategory: 'ADDITIONAL_ATTACHMENT_2' },
 ];
 
 const CHANNEL_INFO: Record<DispatchChannel, { icon: string; label: string; placeholder: string }> = {
@@ -71,8 +74,8 @@ function ContactSelect({
 }: {
   options: ContactOption[];
   loading: boolean;
-  value: string;
-  onChange: (v: string) => void;
+  value: string[];
+  onChange: (v: string[]) => void;
   placeholder: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -95,7 +98,13 @@ function ContactSelect({
     !search || o.label.toLowerCase().includes(search.toLowerCase()) ||
     (o.email ?? '').toLowerCase().includes(search.toLowerCase()),
   );
-  const selected = options.find((o) => o.id === value);
+  const selected = options.filter((o) => value.includes(o.id));
+
+  const toggleContact = (contactId: string) => {
+    onChange(value.includes(contactId)
+      ? value.filter((id) => id !== contactId)
+      : [...value, contactId]);
+  };
 
   return (
     <div ref={wrapRef} style={{ position: 'relative', marginBottom: 8 }}>
@@ -104,12 +113,12 @@ function ContactSelect({
           border: '1.5px solid #d0d0e0', borderRadius: 8, padding: '10px 12px',
           background: '#fff', cursor: loading ? 'wait' : 'pointer',
           fontSize: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          color: selected ? '#1a1a2e' : '#9ca3af',
+          color: selected.length > 0 ? '#1a1a2e' : '#9ca3af',
         }}
         onClick={() => { if (!loading) setOpen((s) => !s); }}
       >
         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {loading ? 'Loading…' : (selected ? selected.label : placeholder)}
+          {loading ? 'Loading…' : (selected.length > 0 ? `${selected.length} contact${selected.length === 1 ? '' : 's'} selected` : placeholder)}
         </span>
         <span style={{ fontSize: 9, color: '#9ca3af', flexShrink: 0, marginLeft: 6 }}>▼</span>
       </div>
@@ -137,7 +146,7 @@ function ContactSelect({
           <div style={{ overflowY: 'auto', flex: 1 }}>
             <div
               style={{ padding: '7px 12px', fontSize: 13, cursor: 'pointer', color: '#6b7280' }}
-              onClick={() => { onChange(''); setOpen(false); }}
+              onClick={() => { onChange([]); setOpen(false); }}
               onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#f5f6ff'; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = ''; }}
             >
@@ -148,13 +157,13 @@ function ContactSelect({
                 key={o.id}
                 style={{
                   padding: '7px 12px', fontSize: 13, cursor: 'pointer',
-                  background: value === o.id ? '#eef0ff' : 'transparent', color: '#1a1a2e',
+                  background: value.includes(o.id) ? '#eef0ff' : 'transparent', color: '#1a1a2e',
                 }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = value === o.id ? '#e0e6ff' : '#f5f6ff'; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = value === o.id ? '#eef0ff' : 'transparent'; }}
-                onClick={() => { onChange(o.id); setOpen(false); }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = value.includes(o.id) ? '#e0e6ff' : '#f5f6ff'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = value.includes(o.id) ? '#eef0ff' : 'transparent'; }}
+                onClick={() => toggleContact(o.id)}
               >
-                <div style={{ fontWeight: 600 }}>{o.label}</div>
+                <div style={{ fontWeight: 600 }}>{value.includes(o.id) ? '✓ ' : ''}{o.label}</div>
                 {o.email && <div style={{ fontSize: 11, color: '#6b7280' }}>{o.email}</div>}
               </div>
             ))}
@@ -182,7 +191,7 @@ interface QuickSendModalProps {
 function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
   const [recipientType, setRecipientType] = useState<RecipientType | ''>('');
   const [channel, setChannel] = useState<DispatchChannel>('EMAIL');
-  const [selectedContactId, setSelectedContactId] = useState('');
+  const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
   const [recipient, setRecipient] = useState('');
   const [ccRecipient, setCcRecipient] = useState('');
   const [step, setStep] = useState<'setup' | 'sending' | 'done'>('setup');
@@ -213,36 +222,29 @@ function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
 
   // Reset contact selection and auto-fill when recipient type or channel changes
   useEffect(() => {
-    setSelectedContactId('');
+    setSelectedContactIds([]);
     setRecipient('');
     setContactWarning(null);
   }, [recipientType, channel]);
 
   // Auto-fill recipient when a contact is selected
-  const handleContactSelect = (contactId: string) => {
-    setSelectedContactId(contactId);
+  const handleContactSelect = (contactIds: string[]) => {
+    setSelectedContactIds(contactIds);
     setContactWarning(null);
     const options = recipientType === 'ACCOUNTS' ? accountants
       : recipientType === 'PARTY' ? parties
       : recipientType === 'TRANSPORTER' ? transporters
       : [];
-    const contact = options.find((o) => o.id === contactId);
-    if (!contact) { setRecipient(''); return; }
-    if (channel === 'EMAIL') {
-      if (!contact.email) {
-        setContactWarning(`${contact.label} has no email address on record. Please enter it manually.`);
-        setRecipient('');
-      } else {
-        setRecipient(contact.email);
-      }
-    } else {
-      if (!contact.phone) {
-        setContactWarning(`${contact.label} has no phone number on record. Please enter it manually.`);
-        setRecipient('');
-      } else {
-        setRecipient(contact.phone);
-      }
+    const selectedContacts = options.filter((o) => contactIds.includes(o.id));
+    const addressKey = channel === 'EMAIL' ? 'email' : 'phone';
+    const missingContacts = selectedContacts.filter((contact) => !contact[addressKey]);
+    if (missingContacts.length > 0) {
+      setContactWarning(`${missingContacts.map((contact) => contact.label).join(', ')} ${missingContacts.length === 1 ? 'has' : 'have'} no ${channel === 'EMAIL' ? 'email address' : 'phone number'} on record.`);
     }
+    setRecipient(selectedContacts
+      .map((contact) => contact[addressKey])
+      .filter((address): address is string => Boolean(address))
+      .join(', '));
   };
 
   const currentOptions = recipientType === 'ACCOUNTS' ? accountants
@@ -258,7 +260,12 @@ function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
       const preview = await bundlesApi.preview(group.id, recipientType);
       const autoSelectedDocIds = preview.autoSelectedDocuments.map((d) => d.documentId);
       const otherDocIds = (group.documents ?? [])
-        .filter((d) => d.type === 'EWAYBILL' || d.type === 'RECEIVING')
+        .filter((d) => (
+          d.type === 'EWAYBILL' ||
+          d.type === 'RECEIVING' ||
+          d.lrDocumentCategory === 'ADDITIONAL_ATTACHMENT_1' ||
+          d.lrDocumentCategory === 'ADDITIONAL_ATTACHMENT_2'
+        ))
         .map((d) => d.id);
       const docIds = Array.from(new Set([...autoSelectedDocIds, ...otherDocIds]));
 
@@ -338,7 +345,7 @@ function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
                 <ContactSelect
                   options={currentOptions}
                   loading={contactsLoading}
-                  value={selectedContactId}
+                  value={selectedContactIds}
                   onChange={handleContactSelect}
                   placeholder={
                     recipientType === 'ACCOUNTS' ? 'Choose an accountant…'
@@ -372,10 +379,10 @@ function QuickSendModal({ group, onClose, onSent }: QuickSendModalProps) {
 
             {/* Recipient address */}
             <div style={qs.section}>
-              <label style={qs.sLabel}>{info.icon} Recipient {info.label}</label>
+              <label style={qs.sLabel}>{info.icon} Recipient {info.label} <span style={{ fontWeight: 400 }}>(multiple addresses separated by commas)</span></label>
               <input
                 style={qs.input}
-                type={channel === 'EMAIL' ? 'email' : 'tel'}
+                type="text"
                 value={recipient}
                 onChange={(e) => setRecipient(e.target.value)}
                 placeholder={info.placeholder}
@@ -489,8 +496,8 @@ export function DocumentBundler({ onBundleSaved }: Props) {
   const [groups, setGroups] = useState<DocumentGroup[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [operationError, setOperationError] = useState<string | null>(null);
-  const [uploadingSlot, setUploadingSlot] = useState<{ groupId: string; type: DocumentType } | null>(null);
-  const [deletingSlot, setDeletingSlot] = useState<{ groupId: string; type: DocumentType } | null>(null);
+  const [uploadingSlot, setUploadingSlot] = useState<{ groupId: string; key: TableColumn['key'] } | null>(null);
+  const [deletingSlot, setDeletingSlot] = useState<{ groupId: string; key: TableColumn['key'] } | null>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalGroups, setTotalGroups] = useState(0);
@@ -529,11 +536,15 @@ export function DocumentBundler({ onBundleSaved }: Props) {
 
   useEffect(() => { loadGroups(1); }, [loadGroups]);
 
-  const handleAddDoc = useCallback(async (groupId: string, type: DocumentType, file: File) => {
-    setUploadingSlot({ groupId, type });
+  const handleAddDoc = useCallback(async (groupId: string, col: TableColumn, file: File) => {
+    setUploadingSlot({ groupId, key: col.key });
     setOperationError(null);
     try {
-      await documentsApi.upload(file, { type, groupId });
+      await documentsApi.upload(file, {
+        type: col.uploadType,
+        groupId,
+        lrDocumentCategory: col.lrDocumentCategory,
+      });
       refreshGroups();
     } catch (err) {
       setOperationError(err instanceof Error ? err.message : 'Upload failed');
@@ -542,26 +553,27 @@ export function DocumentBundler({ onBundleSaved }: Props) {
     }
   }, [refreshGroups]);
 
-  const handleViewDocs = useCallback((group: DocumentGroup, col: TableColumn) => {
-    const docsInSlot = (group.documents ?? []).filter((doc) => (
-      col.key === 'WEIGHMENT_PARTY'
+  const getDocumentsInSlot = useCallback((group: DocumentGroup, col: TableColumn) => (
+    (group.documents ?? []).filter((doc) => {
+      if (col.lrDocumentCategory) return doc.lrDocumentCategory === col.lrDocumentCategory;
+      return col.key === 'WEIGHMENT_PARTY'
         ? doc.type === 'WEIGHMENT_PARTY' || doc.type === 'WEIGHMENT'
-        : doc.type === col.checkType
-    ));
+        : doc.type === col.checkType;
+    })
+  ), []);
+
+  const handleViewDocs = useCallback((group: DocumentGroup, col: TableColumn) => {
+    const docsInSlot = getDocumentsInSlot(group, col);
     if (docsInSlot.length === 0) return;
     setViewSlot({ docs: docsInSlot, header: col.header });
-  }, []);
+  }, [getDocumentsInSlot]);
 
   const handleDeleteDocs = useCallback(async (group: DocumentGroup, col: TableColumn) => {
-    const docsInSlot = (group.documents ?? []).filter((doc) => (
-      col.key === 'WEIGHMENT_PARTY'
-        ? doc.type === 'WEIGHMENT_PARTY' || doc.type === 'WEIGHMENT'
-        : doc.type === col.checkType
-    ));
+    const docsInSlot = getDocumentsInSlot(group, col);
 
     if (docsInSlot.length === 0) return;
 
-    setDeletingSlot({ groupId: group.id, type: col.uploadType });
+    setDeletingSlot({ groupId: group.id, key: col.key });
     setOperationError(null);
 
     try {
@@ -584,7 +596,7 @@ export function DocumentBundler({ onBundleSaved }: Props) {
     } finally {
       setDeletingSlot(null);
     }
-  }, [refreshGroups]);
+  }, [getDocumentsInSlot, refreshGroups]);
 
   return (
     <div style={styles.container}>
@@ -592,7 +604,7 @@ export function DocumentBundler({ onBundleSaved }: Props) {
       <p style={styles.subtitle}>
         Each row is a vehicle trip. Click{' '}
         <strong>📤 Send</strong> to bundle and dispatch documents via Email or WhatsApp.
-        {' '}“Other 1/2” are quick dummy upload slots (no OCR required).
+        {' '}Use Additional Document 1/2 for client-requested attachments.
       </p>
 
       {operationError && (
@@ -628,7 +640,6 @@ export function DocumentBundler({ onBundleSaved }: Props) {
             <tbody>
               {groups.map((g, rowIdx) => {
                 const docs = g.documents ?? [];
-                const docTypeSet = new Set(docs.map((d) => d.type));
                 let lrNo = '—';
                 for (const doc of docs) {
                   const currentLrNo = doc.extractedData?.lrNo?.trim();
@@ -649,13 +660,11 @@ export function DocumentBundler({ onBundleSaved }: Props) {
                     </td>
                     {/* Doc type cells */}
                     {TABLE_COLUMNS.map((col) => {
-                      const exists =
-                        docTypeSet.has(col.checkType) ||
-                        (col.key === 'WEIGHMENT_PARTY' && docTypeSet.has('WEIGHMENT'));
+                      const exists = getDocumentsInSlot(g, col).length > 0;
                       const isUploading =
-                        uploadingSlot?.groupId === g.id && uploadingSlot?.type === col.uploadType;
+                        uploadingSlot?.groupId === g.id && uploadingSlot?.key === col.key;
                       const isDeleting =
-                        deletingSlot?.groupId === g.id && deletingSlot?.type === col.uploadType;
+                        deletingSlot?.groupId === g.id && deletingSlot?.key === col.key;
                       return (
                         <td key={col.key} style={{ ...styles.td, textAlign: 'center' }}>
                           {isDeleting ? (
@@ -701,7 +710,7 @@ export function DocumentBundler({ onBundleSaved }: Props) {
                                 style={{ display: 'none' }}
                                 onChange={(e) => {
                                   const f = e.target.files?.[0];
-                                  if (f) void handleAddDoc(g.id, col.uploadType, f);
+                                  if (f) void handleAddDoc(g.id, col, f);
                                   e.target.value = '';
                                 }}
                               />

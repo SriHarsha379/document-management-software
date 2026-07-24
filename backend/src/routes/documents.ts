@@ -4,12 +4,18 @@ import { upload } from '../middleware/upload.js';
 import { processDocumentOcr } from '../services/ocrService.js';
 import { getOcrMetrics, prisma, saveOcrResults, saveReviewedData } from '../services/documentService.js';
 import type { DocumentType, ReviewPayload } from '../types/index.js';
+import { LrDocumentCategory } from '@prisma/client';
 import { getPdfPageCount, splitPdfToPageImages, MAX_PDF_PAGES } from '../services/pdfSplitService.js';
 
 const VALID_DOCUMENT_TYPES: DocumentType[] = [
   'LR', 'INVOICE', 'TOLL', 'WEIGHMENT', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE',
   'EWAYBILL', 'RECEIVING', 'UNKNOWN',
 ];
+
+const VALID_LR_DOCUMENT_CATEGORIES = new Set<LrDocumentCategory>([
+  LrDocumentCategory.ADDITIONAL_ATTACHMENT_1,
+  LrDocumentCategory.ADDITIONAL_ATTACHMENT_2,
+]);
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR ?? './uploads';
 
@@ -40,6 +46,10 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
 
     const rawType = req.body['type'] as string | undefined;
     const groupId = req.body['groupId'] as string | undefined;
+    const rawLrDocumentCategory = req.body['lrDocumentCategory'] as string | undefined;
+    const lrDocumentCategory = rawLrDocumentCategory && VALID_LR_DOCUMENT_CATEGORIES.has(rawLrDocumentCategory as LrDocumentCategory)
+      ? rawLrDocumentCategory as LrDocumentCategory
+      : undefined;
 
     const docType: DocumentType =
       rawType && VALID_DOCUMENT_TYPES.includes(rawType as DocumentType)
@@ -115,6 +125,7 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
                 sourceDocumentId: sourceDoc.id,
                 pageNumber: pf.pageNumber,
                 ...(groupId ? { groupId } : {}),
+                ...(lrDocumentCategory ? { lrDocumentCategory } : {}),
               },
             }),
           ),
@@ -143,6 +154,7 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
         rawFilePath: req.file.path,
         mimeType: req.file.mimetype,
         ...(groupId ? { groupId } : {}),
+        ...(lrDocumentCategory ? { lrDocumentCategory } : {}),
       },
     });
 
@@ -310,6 +322,7 @@ router.get('/groups', async (req: Request, res: Response): Promise<void> => {
               uploadedAt: true,
               updatedAt: true,
               groupId: true,
+              lrDocumentCategory: true,
               sourceDocumentId: true,
               pageNumber: true,
               extractedData: { select: { lrNo: true, invoiceNo: true } },
@@ -500,8 +513,9 @@ function formatUploadedDocument(doc: {
   mimeType: string;
   uploadedAt: Date;
   groupId: string | null;
-  sourceDocumentId?: string | null;
-  pageNumber?: number | null;
+    sourceDocumentId?: string | null;
+    pageNumber?: number | null;
+    lrDocumentCategory?: string | null;
 }) {
   return {
     id: doc.id,
@@ -513,6 +527,7 @@ function formatUploadedDocument(doc: {
     groupId: doc.groupId,
     sourceDocumentId: doc.sourceDocumentId ?? null,
     pageNumber: doc.pageNumber ?? null,
+    lrDocumentCategory: doc.lrDocumentCategory ?? null,
   };
 }
 
@@ -570,6 +585,7 @@ function formatDocument(doc: PrismaDocumentWithRelations | null) {
     filePath: path.basename(doc.rawFilePath),
     sourceDocumentId: (doc as Record<string, unknown>).sourceDocumentId ?? null,
     pageNumber: (doc as Record<string, unknown>).pageNumber ?? null,
+    lrDocumentCategory: (doc as Record<string, unknown>).lrDocumentCategory ?? null,
   };
 
   if (doc.extractedData) {

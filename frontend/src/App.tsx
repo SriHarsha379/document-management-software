@@ -13,6 +13,11 @@ import { AdminLogin } from './components/AdminLogin';
 import { UploadDocumentsPage as LrDocumentsTablePage } from './components/UploadDocumentsPage';
 import { authService } from './services/authService';
 import { UserProvider, useCurrentUser, PERM } from './contexts/UserContext';
+
+// Keep the customer-portal implementation available, but do not expose it in
+// the admin UI until this workflow is ready to be used.
+const CUSTOMER_PORTAL_ACCESS_ENABLED = false;
+
 type View = 'dashboard' | 'documents' | 'upload' | 'bundle' | 'search' | 'dispatch' | 'drivers' | 'customers' | 'master';
 
 const HASH_VIEWS: View[] = ['dashboard', 'documents', 'upload', 'bundle', 'search', 'dispatch', 'drivers', 'customers', 'master'];
@@ -20,6 +25,7 @@ const HASH_VIEWS: View[] = ['dashboard', 'documents', 'upload', 'bundle', 'searc
 function viewFromHash(): View {
   const raw = window.location.hash.replace('#', '');
   if (raw === 'list') return 'documents';
+  if (raw === 'customers' && !CUSTOMER_PORTAL_ACCESS_ENABLED) return 'dashboard';
   const candidate = raw as View;
   return HASH_VIEWS.includes(candidate) ? candidate : 'dashboard';
 }
@@ -67,9 +73,12 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
       (view === 'bundle'    && !canBundle) ||
       (view === 'dispatch'  && !canDispatch) ||
       (view === 'drivers'   && !canManageUsers) ||
-      (view === 'customers' && !canManageUsers) ||
+      (view === 'customers' && (!canManageUsers || !CUSTOMER_PORTAL_ACCESS_ENABLED)) ||
       (view === 'master'    && !canReadMaster);
-    if (inaccessible) setViewState('dashboard');
+    if (inaccessible) {
+      window.location.hash = 'dashboard';
+      setViewState('dashboard');
+    }
   }, []);
 
   const setView = (v: View) => {
@@ -91,7 +100,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
     { view: 'search',     icon: '🔍', label: 'Search',       permitted: true },
     { view: 'dispatch',   icon: '📤', label: 'Dispatch',     permitted: canDispatch },
     { view: 'drivers',    icon: '🚛', label: 'Drivers',      permitted: canManageUsers },
-    { view: 'customers',  icon: '🏢', label: 'Customers',    permitted: canManageUsers },
+    { view: 'customers',  icon: '🏢', label: 'Customers',    permitted: canManageUsers && CUSTOMER_PORTAL_ACCESS_ENABLED },
     { view: 'master',     icon: '🗂️', label: 'Master Data',  permitted: canReadMaster },
   ];
   const navItems: NavItem[] = allNavItems.filter((n) => n.permitted);
@@ -193,7 +202,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
             {view === 'search' && <SmartSearch />}
             {view === 'dispatch' && canDispatch && <DispatchHistory />}
             {view === 'drivers' && canManageUsers && <AdminDriverAccess />}
-            {view === 'customers' && canManageUsers && <AdminCustomerPortalAccess />}
+            {view === 'customers' && canManageUsers && CUSTOMER_PORTAL_ACCESS_ENABLED && <AdminCustomerPortalAccess />}
             {view === 'master' && canReadMaster && <MasterParties canManage={canManageMaster} />}
           </div>
         </main>

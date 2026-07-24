@@ -9,6 +9,8 @@ interface Props {
   /** All documents from the current upload session, used for the preview carousel. */
   allDocs?: Document[];
   onSaved: (doc: Document) => void;
+  /** Switch the active review form when a different page is selected. */
+  onSelectDocument?: (doc: Document) => void;
   onCancel: () => void;
 }
 
@@ -46,7 +48,7 @@ function sortDocsByType(docs: Document[]): Document[] {
   });
 }
 
-export function OCRReview({ document, allDocs, onSaved, onCancel }: Props) {
+export function OCRReview({ document, allDocs, onSaved, onSelectDocument, onCancel }: Props) {
   const ed = document.extractedData;
 
   const [form, setForm] = useState<ReviewPayload>({
@@ -83,6 +85,14 @@ export function OCRReview({ document, allDocs, onSaved, onCancel }: Props) {
   const previewDoc = previewDocs[clampedIdx] ?? document;
   const previewUrl = previewDoc.mimeType.startsWith('image/') ? `/uploads/${previewDoc.filePath}` : null;
   const previewIsPdf = previewDoc.mimeType === 'application/pdf';
+
+  const selectPreviewDocument = (index: number) => {
+    const nextIndex = Math.max(0, Math.min(index, previewDocs.length - 1));
+    const nextDocument = previewDocs[nextIndex];
+    if (!nextDocument) return;
+    setPreviewIdx(nextIndex);
+    if (nextDocument.id !== document.id) onSelectDocument?.(nextDocument);
+  };
 
   const handleChange = (field: keyof ReviewPayload, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -181,14 +191,14 @@ export function OCRReview({ document, allDocs, onSaved, onCancel }: Props) {
               <button
                 style={navBtn}
                 disabled={clampedIdx === 0}
-                onClick={() => setPreviewIdx((i) => Math.max(0, i - 1))}
+                onClick={() => selectPreviewDocument(clampedIdx - 1)}
               >
                 ‹ Prev
               </button>
               <button
                 style={navBtn}
                 disabled={clampedIdx === previewDocs.length - 1}
-                onClick={() => setPreviewIdx((i) => Math.min(previewDocs.length - 1, i + 1))}
+                onClick={() => selectPreviewDocument(clampedIdx + 1)}
               >
                 Next ›
               </button>
@@ -204,7 +214,7 @@ export function OCRReview({ document, allDocs, onSaved, onCancel }: Props) {
                 return (
                   <div
                     key={d.id}
-                    onClick={() => setPreviewIdx(idx)}
+                    onClick={() => selectPreviewDocument(idx)}
                     title={DOCUMENT_TYPE_LABELS[d.type]}
                     style={{
                       width: 40, height: 40, borderRadius: 5, overflow: 'hidden',
@@ -337,7 +347,7 @@ export function OCRReview({ document, allDocs, onSaved, onCancel }: Props) {
               onClick={() => { void handleSave(); }}
               disabled={saving}
             >
-              {saving ? '💾 Saving…' : '✅ Save & Confirm'}
+              {saving ? '💾 Saving…' : '✅ Save & Review Next'}
             </button>
             <button
               style={{ padding: '11px 16px', background: '#f0f0f8', color: '#444', border: '1px solid #e0e0f0', borderRadius: 9, cursor: 'pointer', fontSize: 14 }}

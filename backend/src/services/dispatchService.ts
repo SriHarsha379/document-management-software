@@ -123,9 +123,16 @@ async function sendEmail(opts: {
       : undefined,
   };
 
-  if (smtp.rejected.includes(opts.recipient) || smtp.accepted.length === 0) {
+  const requestedRecipients = opts.recipient.split(',').map((recipient) => recipient.trim().toLowerCase()).filter(Boolean);
+  const acceptedRecipients = new Set(smtp.accepted.map((recipient) => recipient.toLowerCase()));
+  const rejectedRecipients = new Set(smtp.rejected.map((recipient) => recipient.toLowerCase()));
+  const undeliveredRecipients = requestedRecipients.filter(
+    (recipient) => rejectedRecipients.has(recipient) || !acceptedRecipients.has(recipient),
+  );
+
+  if (undeliveredRecipients.length > 0) {
     throw new Error(
-      `SMTP did not accept the primary recipient. accepted=${smtp.accepted.join(',') || '-'} ` +
+      `SMTP did not accept: ${undeliveredRecipients.join(', ')}. accepted=${smtp.accepted.join(',') || '-'} ` +
       `rejected=${smtp.rejected.join(',') || '-'} response=${smtp.response ?? '-'}`
     );
   }

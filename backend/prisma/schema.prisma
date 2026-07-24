@@ -39,18 +39,19 @@ model Branch {
 }
 
 model User {
-  id               String             @id @default(uuid())
-  email            String             @unique
-  passwordHash     String
-  name             String
-  companyId        String
-  isActive         Boolean            @default(true)
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
-  userBranchAccess UserBranchAccess[]
-  userRoles        UserRole[]
-  userSourceAccess UserSourceAccess[]
-  company          Company            @relation(fields: [companyId], references: [id])
+  id                String             @id @default(uuid())
+  email             String             @unique
+  passwordHash      String
+  name              String
+  companyId         String
+  isActive          Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  userBranchAccess  UserBranchAccess[]
+  userRoles         UserRole[]
+  userSourceAccess  UserSourceAccess[]
+  uploadedDocuments Document[]         @relation("DocumentUploader")
+  company           Company            @relation(fields: [companyId], references: [id])
 
   @@map("users")
 }
@@ -170,6 +171,7 @@ model Lr {
   depotPlantCode      String?
   source              String               @default("INTERNAL")
   documentLinks       DocumentLinkRecord[]
+  uploadedDocuments   Document[]
   branch              Branch               @relation(fields: [branchId], references: [id])
   company             Company              @relation(fields: [companyId], references: [id])
 
@@ -196,26 +198,34 @@ model DocumentGroup {
 }
 
 model Document {
-  id               String               @id @default(uuid())
-  type             DocumentType
-  status           DocumentStatus       @default(PENDING_REVIEW)
-  originalFilename String
-  rawFilePath      String
-  mimeType         String
-  uploadedAt       DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
-  groupId          String?
-  sourceDocumentId String?
-  pageNumber       Int?
-  bundleItems      BundleItem[]
-  documentLinks    DocumentLinkRecord[]
-  group            DocumentGroup?       @relation(fields: [groupId], references: [id])
-  extractedData    ExtractedData?
+  id                 String               @id @default(uuid())
+  type               DocumentType
+  status             DocumentStatus       @default(PENDING_REVIEW)
+  originalFilename   String
+  rawFilePath        String
+  mimeType           String
+  uploadedAt         DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  groupId            String?
+  lrId               String?
+  lrDocumentCategory LrDocumentCategory?
+  uploadedById       String?
+  sourceDocumentId   String?
+  pageNumber         Int?
+  bundleItems        BundleItem[]
+  documentLinks      DocumentLinkRecord[]
+  group              DocumentGroup?       @relation(fields: [groupId], references: [id])
+  lr                 Lr?                  @relation(fields: [lrId], references: [id], onDelete: Cascade)
+  uploadedBy         User?                @relation("DocumentUploader", fields: [uploadedById], references: [id])
+  extractedData      ExtractedData?
 
   @@index([type])
   @@index([status])
   @@index([uploadedAt])
   @@index([sourceDocumentId])
+  @@index([lrId])
+  @@index([lrDocumentCategory])
+  @@index([uploadedById])
   @@map("documents")
 }
 
@@ -425,6 +435,8 @@ model Party {
   contactPerson          String?
   phone                  String?
   email                  String?
+  isBillToParty          Boolean                @default(true)
+  isShipToParty          Boolean                @default(true)
   gstNo                  String?
   address                String?
   isActive               Boolean                @default(true)
@@ -611,6 +623,17 @@ enum DocumentStatus {
   PENDING_REVIEW
   REVIEWED
   SAVED
+}
+
+enum LrDocumentCategory {
+  LR_GENERATED
+  ACKNOWLEDGED_INVOICE
+  ACKNOWLEDGED_LR_COPY
+  DEPOT_PLANT_WEIGHMENT_SLIP
+  SITE_WEIGHMENT_SLIP
+  TOLL_RECEIPT
+  ADDITIONAL_ATTACHMENT_1
+  ADDITIONAL_ATTACHMENT_2
 }
 
 enum RecipientType {

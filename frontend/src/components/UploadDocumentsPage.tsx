@@ -193,17 +193,22 @@ export function UploadDocumentsPage() {
                     const allDocs = getRowDocuments(lr).filter((document) => matchesSlot(document, slot.type));
                     const groupSourceCount = new Set(allDocs.map((d) => d.sourceDocumentId ?? d.id)).size;
                     const groupExtra = groupSourceCount - lrSourceCount;
+                    // Documents uploaded through the OCR inbox are attached to
+                    // the LR's vehicle/date group. They are just as available
+                    // as documents uploaded directly from this table, so count
+                    // them in the visible upload status as well.
+                    const uploadedSourceCount = groupSourceCount;
                     const inputKey = `${lr.id}-${slot.type}`;
                     const busy = uploadingKey === `${lr.id}:${slot.type}`;
                     return (
                       <td key={slot.type} style={{ ...td, minWidth: 150 }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
-                          <span style={lrSourceCount > 0 ? presentBadge : missingBadge}>
-                            {lrSourceCount > 0 ? `${lrSourceCount} uploaded` : 'Not uploaded'}
+                          <span style={uploadedSourceCount > 0 ? presentBadge : missingBadge}>
+                            {uploadedSourceCount > 0 ? `${uploadedSourceCount} uploaded` : 'Not uploaded'}
                           </span>
                           {groupExtra > 0 && (
-                            <span style={groupHint} title="Additional documents uploaded for the same vehicle &amp; date">
-                              +{groupExtra} in group
+                            <span style={groupHint} title="Uploaded through the OCR inbox and matched by vehicle and date">
+                              Matched from group
                             </span>
                           )}
                           {canUpload && (

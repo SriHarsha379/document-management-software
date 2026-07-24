@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { Document } from '../types';
 import { documentsApi } from '../services/api';
 import { OCRReview } from './OCRReview';
@@ -7,6 +7,12 @@ import { DocumentExtractionSummary, getDocumentSummaryTitle } from './DocumentEx
 interface Props { onDocumentReady?: (doc: Document) => void; }
 
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'];
+const UPLOAD_REVIEW_SESSION_KEY = 'dms.uploadReviewSession';
+
+type StoredUploadReviewSession = {
+  documentIds: string[];
+  activeReviewId: string | null;
+};
 
 export function DocumentUpload({ onDocumentReady }: Props) {
   const [files, setFiles] = useState<File[]>([]);
@@ -20,7 +26,83 @@ export function DocumentUpload({ onDocumentReady }: Props) {
   const [reviewNotice, setReviewNotice] = useState<string | null>(null);
   const [processedDocs, setProcessedDocs] = useState<Document[]>([]);
   const [activeReviewId, setActiveReviewId] = useState<string | null>(null);
+  const [sessionRestored, setSessionRestored] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // The OCR results are persisted on the server, but this page's current review
+  // queue used to exist only in React state. Keep the IDs locally and reload the
+  // full documents after a browser refresh so an in-progress review is never lost.
+  useEffect(() => {
+    const restoreReviewSession = async () => {
+      let stored: StoredUploadReviewSession | null = null;
+      try {
+        const raw = localStorage.getItem(UPLOAD_REVIEW_SESSION_KEY);
+        if (raw) stored = JSON.parse(raw) as StoredUploadReviewSession;
+      } catch {
+        localStorage.removeItem(UPLOAD_REVIEW_SESSION_KEY);
+      }
+
+      try {
+        let documentIds = stored?.documentIds ?? [];
+        let restoredActiveId = stored?.activeReviewId ?? null;
+
+        // A page refreshed before this persistence fix will not have a stored
+        // session yet. For a multi-page PDF, recover its most recent page batch.
+        if (documentIds.length === 0) {
+          const recent = await documentsApi.list({ page: 1, limit: 50 });
+          const newestPdfPage = recent.documents.find((doc) => Boolean(doc.sourceDocumentId));
+          if (newestPdfPage?.sourceDocumentId) {
+            documentIds = recent.documents
+              .filter((doc) => doc.sourceDocumentId === newestPdfPage.sourceDocumentId)
+              .map((doc) => doc.id);
+            restoredActiveId = documentIds.find((id) => id === newestPdfPage.id) ?? null;
+          }
+        }
+
+        if (documentIds.length === 0) return;
+
+        const results = await Promise.allSettled(documentIds.map((id) => documentsApi.getById(id)));
+        const restoredDocs = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
+        if (restoredDocs.length === 0) return;
+
+        // A completed batch belongs in Documents, not on the Upload screen.
+        // Only resume a session when at least one page still needs review.
+        const firstPendingReview = restoredDocs.find((doc) => !doc.extractedData?.userReviewed);
+        if (!firstPendingReview) {
+          localStorage.removeItem(UPLOAD_REVIEW_SESSION_KEY);
+          return;
+        }
+
+        setProcessedDocs(restoredDocs);
+        const restoredActiveDoc = restoredDocs.find(
+          (doc) => doc.id === restoredActiveId && !doc.extractedData?.userReviewed,
+        );
+        const nextReviewDoc = restoredActiveDoc ?? firstPendingReview;
+        setActiveReviewId(nextReviewDoc?.id ?? null);
+        setReviewNotice(`↻ Restored ${restoredDocs.length} extracted page${restoredDocs.length === 1 ? '' : 's'} from your previous upload session.`);
+      } catch {
+        // The normal upload workflow remains available if restoring a prior
+        // session fails (for example, after documents were deleted elsewhere).
+      } finally {
+        setSessionRestored(true);
+      }
+    };
+
+    void restoreReviewSession();
+  }, []);
+
+  useEffect(() => {
+    if (!sessionRestored) return;
+    if (processedDocs.length === 0 || processedDocs.every((doc) => doc.extractedData?.userReviewed)) {
+      localStorage.removeItem(UPLOAD_REVIEW_SESSION_KEY);
+      return;
+    }
+    const session: StoredUploadReviewSession = {
+      documentIds: processedDocs.map((doc) => doc.id),
+      activeReviewId,
+    };
+    localStorage.setItem(UPLOAD_REVIEW_SESSION_KEY, JSON.stringify(session));
+  }, [activeReviewId, processedDocs, sessionRestored]);
 
   const addFiles = (incoming: FileList | File[]) => {
     const arr = Array.from(incoming);
@@ -56,7 +138,9 @@ export function DocumentUpload({ onDocumentReady }: Props) {
     if (files.length === 0) return;
     const allProcessed: Document[] = [];
     try {
-      setError(null); setReviewNotice(null); setUploading(true); setProgress('uploading');
+      setError(null); setReviewNotice(null); setProcessedDocs([]); setActiveReviewId(null);
+      localStorage.removeItem(UPLOAD_REVIEW_SESSION_KEY);
+      setUploading(true); setProgress('uploading');
 
       // Upload all files sequentially, collecting documents
       const allDocs: Document[] = [];
@@ -127,6 +211,7 @@ export function DocumentUpload({ onDocumentReady }: Props) {
     setReviewNotice(null);
     setFileProgress(null); setOcrProgress(null);
     setProcessedDocs([]); setActiveReviewId(null);
+    localStorage.removeItem(UPLOAD_REVIEW_SESSION_KEY);
     if (inputRef.current) inputRef.current.value = '';
   };
 
@@ -316,12 +401,29 @@ export function DocumentUpload({ onDocumentReady }: Props) {
       {activeReviewDoc && (
         <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e0e0f0', padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
           <OCRReview
+            key={activeReviewDoc.id}
             document={activeReviewDoc}
             allDocs={processedDocs}
             onSaved={(savedDoc) => {
-              setProcessedDocs((prev) => prev.map((doc) => doc.id === savedDoc.id ? savedDoc : doc));
-              setReviewNotice(`✅ ${savedDoc.originalFilename} saved successfully.`);
-              setActiveReviewId(null);
+              const updatedDocs = processedDocs.map((doc) => doc.id === savedDoc.id ? savedDoc : doc);
+              const savedIndex = updatedDocs.findIndex((doc) => doc.id === savedDoc.id);
+              const remainingDocs = [
+                ...updatedDocs.slice(savedIndex + 1),
+                ...updatedDocs.slice(0, savedIndex),
+              ];
+              const nextReviewDoc = remainingDocs.find((doc) => !doc.extractedData?.userReviewed);
+
+              setProcessedDocs(updatedDocs);
+              setReviewNotice(
+                nextReviewDoc
+                  ? `✅ ${savedDoc.originalFilename} saved. Reviewing ${getDocumentSummaryTitle(nextReviewDoc)} next.`
+                  : `✅ ${savedDoc.originalFilename} saved successfully. All extracted pages have been reviewed.`,
+              );
+              setActiveReviewId(nextReviewDoc?.id ?? null);
+            }}
+            onSelectDocument={(doc) => {
+              setReviewNotice(null);
+              setActiveReviewId(doc.id);
             }}
             onCancel={() => setActiveReviewId(null)}
           />

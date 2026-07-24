@@ -35,14 +35,16 @@ router.post('/send', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Basic email validation
-    if (channel === 'EMAIL' && !recipient.includes('@')) {
-      res.status(400).json({ error: 'recipient must be a valid email address for EMAIL channel' });
+    const recipients = recipient.split(',').map((value) => value.trim()).filter(Boolean);
+
+    // Validate every email address when sending to multiple recipients.
+    if (channel === 'EMAIL' && (recipients.length === 0 || recipients.some((value) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)))) {
+      res.status(400).json({ error: 'every recipient must be a valid email address for EMAIL channel' });
       return;
     }
 
     // Basic phone validation for WhatsApp
-    if (channel === 'WHATSAPP' && !recipient.match(/^\+?\d{7,15}$/)) {
+    if (channel === 'WHATSAPP' && (recipients.length !== 1 || !recipient.match(/^\+?\d{7,15}$/))) {
       res.status(400).json({ error: 'recipient must be an E.164 phone number for WHATSAPP channel (e.g. +919876543210)' });
       return;
     }
