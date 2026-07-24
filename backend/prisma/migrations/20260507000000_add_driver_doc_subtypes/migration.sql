@@ -1,3 +1,0 @@
--- Add WEIGHMENT_PARTY, WEIGHMENT_SITE, and PARTY_ACK to DriverDocType enum.
--- SQLite stores enums as plain TEXT, so no ALTER TABLE is needed.
--- This migration is a schema marker only.

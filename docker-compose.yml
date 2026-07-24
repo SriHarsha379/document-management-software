@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: dms_postgres_local
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dmsuser
+      POSTGRES_PASSWORD: dms_local_dev
+      POSTGRES_DB: dms
+    ports:
+      - "5433:5432"   # host 5433 -> container 5432, avoids the native Postgres on 5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
