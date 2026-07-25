@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import type { Document, DocumentGroup, DocumentType, Lr, LrDocumentCategory } from '../types';
+import type { Document, DocumentType, Lr, LrDocumentCategory } from '../types';
 import { documentsApi, lrApi, masterApi } from '../services/api';
 import { useCurrentUser, PERM } from '../contexts/UserContext';
 import { DocumentExtractionSummary } from './DocumentExtractionSummary';
@@ -36,7 +36,6 @@ export function UploadDocumentsPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [groupsByKey, setGroupsByKey] = useState<Record<string, DocumentGroup>>({});
   const [modal, setModal] = useState<ModalState>(null);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -66,35 +65,9 @@ export function UploadDocumentsPage() {
     return () => { ignore = true; };
   }, [page, search, refreshKey]);
 
-  useEffect(() => {
-    let ignore = false;
-    const run = async () => {
-      try {
-        const { groups } = await documentsApi.listGroups();
-        if (!ignore) {
-          setGroupsByKey(Object.fromEntries(groups.map((group) => [getGroupKey(group.vehicleNo, group.date), group])));
-        }
-      } catch {
-        if (!ignore) setGroupsByKey({});
-      }
-    };
-    void run();
-    return () => { ignore = true; };
-  }, [refreshKey]);
-
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const triggerRefresh = () => setRefreshKey((value) => value + 1);
-
-  const getRowDocuments = (lr: Lr) => {
-    const all = new Map<string, Document>();
-    for (const document of lr.uploadedDocuments ?? []) all.set(document.id, document);
-    const group = groupsByKey[getGroupKey(lr.vehicleNo, lr.lrDate ?? lr.date)];
-    for (const document of group?.documents ?? []) {
-      if (!all.has(document.id)) all.set(document.id, document);
-    }
-    return Array.from(all.values());
-  };
 
   const handleUpload = async (
     lrId: string,
@@ -189,15 +162,10 @@ export function UploadDocumentsPage() {
                   <td style={td}>{lr.lrDate ?? lr.date ?? '—'}</td>
                   {SLOT_CONFIG.map((slot) => {
                     const lrDocs = (lr.uploadedDocuments ?? []).filter((document) => matchesSlot(document, slot.type));
-                    const lrSourceCount = new Set(lrDocs.map((d) => d.sourceDocumentId ?? d.id)).size;
-                    const allDocs = getRowDocuments(lr).filter((document) => matchesSlot(document, slot.type));
-                    const groupSourceCount = new Set(allDocs.map((d) => d.sourceDocumentId ?? d.id)).size;
-                    const groupExtra = groupSourceCount - lrSourceCount;
-                    // Documents uploaded through the OCR inbox are attached to
-                    // the LR's vehicle/date group. They are just as available
-                    // as documents uploaded directly from this table, so count
-                    // them in the visible upload status as well.
-                    const uploadedSourceCount = groupSourceCount;
+                    // Each cell represents documents explicitly attached to
+                    // this LR. Do not aggregate documents from other LRs that
+                    // happen to share the same vehicle number and date.
+                    const uploadedSourceCount = new Set(lrDocs.map((d) => d.sourceDocumentId ?? d.id)).size;
                     const inputKey = `${lr.id}-${slot.type}`;
                     const busy = uploadingKey === `${lr.id}:${slot.type}`;
                     return (
@@ -206,11 +174,6 @@ export function UploadDocumentsPage() {
                           <span style={uploadedSourceCount > 0 ? presentBadge : missingBadge}>
                             {uploadedSourceCount > 0 ? `${uploadedSourceCount} uploaded` : 'Not uploaded'}
                           </span>
-                          {groupExtra > 0 && (
-                            <span style={groupHint} title="Uploaded through the OCR inbox and matched by vehicle and date">
-                              Matched from group
-                            </span>
-                          )}
                           {canUpload && (
                             <>
                               <input
@@ -594,12 +557,6 @@ function parseEmailInput(value: string): string[] {
     .filter(Boolean);
 }
 
-function getGroupKey(vehicleNo: string | null | undefined, date: string | null | undefined) {
-  const normalizedVehicle = vehicleNo?.trim().toUpperCase().replace(/\s+/g, '') || '';
-  const normalizedDate = date?.trim() || '';
-  return `${normalizedVehicle}::${normalizedDate}`;
-}
-
 function matchesSlot(document: Document, slotType: DocumentType) {
   if (slotType === 'WEIGHMENT_PARTY') {
     return document.type === 'WEIGHMENT_PARTY' || document.type === 'WEIGHMENT';
@@ -712,17 +669,6 @@ const missingBadge: CSSProperties = {
   padding: '3px 8px',
   fontSize: 11,
   fontWeight: 700,
-};
-
-const groupHint: CSSProperties = {
-  display: 'inline-block',
-  background: '#eff6ff',
-  color: '#3b82f6',
-  borderRadius: 999,
-  padding: '2px 7px',
-  fontSize: 10,
-  fontWeight: 600,
-  cursor: 'default',
 };
 
 const successAlert: CSSProperties = {
