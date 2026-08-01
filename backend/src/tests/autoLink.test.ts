@@ -104,6 +104,7 @@ vi.mock('../lib/db.js', () => {
     },
     document: {
       findMany: vi.fn(),
+      findUnique: vi.fn(),
     },
     extractedData: {
       findUnique: vi.fn(),
@@ -216,6 +217,145 @@ describe('findBestMatchingLr', () => {
     mockDb.lr.findFirst.mockResolvedValue(null);
     mockDb.lr.findMany.mockResolvedValue([]);
     const result = await findBestMatchingLr({ vehicleNo: 'XX99ZZ9999', date: '2024-01-01' });
+    expect(result).toBeNull();
+  });
+
+  // ── Type-aware tolerance (INVOICE / WEIGHMENT_SITE can lag up to 5 days) ────
+
+  it('INVOICE matches vehicleNo+date up to 5 days after the LR date', async () => {
+    mockDb.lr.findFirst.mockResolvedValue(null);
+    mockDb.lr.findMany.mockResolvedValue([
+      { id: 'lr-inv', vehicleNo: 'MH12AB1234', date: '2024-03-10', lrDate: null },
+    ]);
+    const result = await findBestMatchingLr(
+      { vehicleNo: 'MH12AB1234', date: '2024-03-15' }, // 5 days after
+      undefined,
+      'INVOICE',
+    );
+    expect(result!.lrId).toBe('lr-inv');
+  });
+
+  it('INVOICE does NOT match more than 5 days after the LR date', async () => {
+    mockDb.lr.findFirst.mockResolvedValue(null);
+    mockDb.lr.findMany.mockResolvedValue([
+      { id: 'lr-inv', vehicleNo: 'MH12AB1234', date: '2024-03-10', lrDate: null },
+    ]);
+    const result = await findBestMatchingLr(
+      { vehicleNo: 'MH12AB1234', date: '2024-03-16' }, // 6 days after
+      undefined,
+      'INVOICE',
+    );
+    expect(result).toBeNull();
+  });
+
+  it('WEIGHMENT_SITE matches vehicleNo+date up to 5 days after the LR date', async () => {
+    mockDb.lr.findFirst.mockResolvedValue(null);
+    mockDb.lr.findMany.mockResolvedValue([
+      { id: 'lr-site', vehicleNo: 'MH12AB1234', date: '2024-03-10', lrDate: null },
+    ]);
+    const result = await findBestMatchingLr(
+      { vehicleNo: 'MH12AB1234', date: '2024-03-13' },
+      undefined,
+      'WEIGHMENT_SITE',
+    );
+    expect(result!.lrId).toBe('lr-site');
+  });
+
+  it('a document never matches an LR dated AFTER it (LR always comes first)', async () => {
+    mockDb.lr.findFirst.mockResolvedValue(null);
+    mockDb.lr.findMany.mockResolvedValue([
+      { id: 'lr-future', vehicleNo: 'MH12AB1234', date: '2024-03-20', lrDate: null },
+    ]);
+    const result = await findBestMatchingLr(
+      { vehicleNo: 'MH12AB1234', date: '2024-03-15' }, // document dated BEFORE the LR
+      undefined,
+      'INVOICE',
+    );
+    expect(result).toBeNull();
+  });
+
+  it('WEIGHMENT_PARTY (seller weighment) still requires the exact same day, even with a type passed', async () => {
+    mockDb.lr.findFirst.mockResolvedValue(null);
+    mockDb.lr.findMany.mockResolvedValue([
+      { id: 'lr-party', vehicleNo: 'MH12AB1234', date: '2024-03-10', lrDate: null },
+    ]);
+    const result = await findBestMatchingLr(
+      { vehicleNo: 'MH12AB1234', date: '2024-03-11' }, // 1 day after — outside 0-day tolerance
+      undefined,
+      'WEIGHMENT_PARTY',
+    );
+    expect(result).toBeNull();
+  });
+
+  it('generic WEIGHMENT (classifier does not distinguish party/site) gets the same 5-day tolerance as WEIGHMENT_SITE', async () => {
+    mockDb.lr.findFirst.mockResolvedValue(null);
+    mockDb.lr.findMany.mockResolvedValue([
+      { id: 'lr-weighment', vehicleNo: 'MH12AB1234', date: '2024-03-10', lrDate: null },
+    ]);
+    const result = await findBestMatchingLr(
+      { vehicleNo: 'MH12AB1234', date: '2024-03-11' }, // 1 day after — real-world site weighment lag
+      undefined,
+      'WEIGHMENT',
+    );
+    expect(result!.lrId).toBe('lr-weighment');
+  });
+
+  // ── Same-vehicle ambiguity guard (never confuse two separate trips) ────────
+
+  it('auto-links when exactly one LR candidate falls in the tolerance window', async () => {
+    mockDb.lr.findFirst.mockResolvedValue(null);
+    mockDb.lr.findMany.mockResolvedValue([
+      { id: 'lr-a', vehicleNo: 'MH12AB1234', date: '2024-03-10', lrDate: null },
+      { id: 'lr-b', vehicleNo: 'MH12AB1234', date: '2024-01-01', lrDate: null }, // way outside window
+    ]);
+    const result = await findBestMatchingLr(
+      { vehicleNo: 'MH12AB1234', date: '2024-03-12' },
+      undefined,
+      'INVOICE',
+    );
+    expect(result!.lrId).toBe('lr-a');
+  });
+
+  it('does NOT auto-link when the same vehicle has two LRs both within the tight 1-day window (two real trips, same/adjacent day)', async () => {
+    mockDb.lr.findFirst.mockResolvedValue(null);
+    mockDb.lr.findMany.mockResolvedValue([
+      { id: 'lr-trip1', vehicleNo: 'MH12AB1234', date: '2024-03-10', lrDate: null },
+      { id: 'lr-trip2', vehicleNo: 'MH12AB1234', date: '2024-03-10', lrDate: null },
+    ]);
+    const result = await findBestMatchingLr(
+      { vehicleNo: 'MH12AB1234', date: '2024-03-10' },
+      undefined,
+      'WEIGHMENT_PARTY',
+    );
+    expect(result).toBeNull();
+  });
+
+  it('narrows to the tight 1-day window when the wide window has multiple candidates, auto-linking the sole close one', async () => {
+    mockDb.lr.findFirst.mockResolvedValue(null);
+    mockDb.lr.findMany.mockResolvedValue([
+      { id: 'lr-close', vehicleNo: 'MH12AB1234', date: '2024-03-11', lrDate: null }, // 1 day before doc date
+      { id: 'lr-far', vehicleNo: 'MH12AB1234', date: '2024-03-08', lrDate: null }, // 4 days before doc date
+    ]);
+    const result = await findBestMatchingLr(
+      { vehicleNo: 'MH12AB1234', date: '2024-03-12' },
+      undefined,
+      'INVOICE',
+    );
+    expect(result!.lrId).toBe('lr-close');
+  });
+
+  it('stays unlinked when even the tight 1-day window has more than one candidate', async () => {
+    mockDb.lr.findFirst.mockResolvedValue(null);
+    mockDb.lr.findMany.mockResolvedValue([
+      { id: 'lr-close1', vehicleNo: 'MH12AB1234', date: '2024-03-11', lrDate: null },
+      { id: 'lr-close2', vehicleNo: 'MH12AB1234', date: '2024-03-12', lrDate: null },
+      { id: 'lr-far', vehicleNo: 'MH12AB1234', date: '2024-03-08', lrDate: null },
+    ]);
+    const result = await findBestMatchingLr(
+      { vehicleNo: 'MH12AB1234', date: '2024-03-12' },
+      undefined,
+      'INVOICE',
+    );
     expect(result).toBeNull();
   });
 });

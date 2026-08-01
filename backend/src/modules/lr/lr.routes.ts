@@ -687,23 +687,20 @@ async function getScopedLrWithDocuments(req: Request, lrId: string) {
           extractedData: true,
         },
       },
+      // Confirmed document<->LR matches — the real source of truth, see
+      // listLrRelatedDocuments below.
+      documentLinks: {
+        include: {
+          document: {
+            include: {
+              uploadedBy: { select: { id: true, name: true, email: true } },
+              extractedData: true,
+            },
+          },
+        },
+      },
     },
   });
-}
-
-function normalizeVehicleNo(value: string | null | undefined) {
-  return value?.trim().toUpperCase().replace(/\s+/g, '') || null;
-}
-
-function resolveLrGroupLookup(lr: {
-  vehicleNo?: string | null;
-  lrDate?: string | null;
-  date?: string | null;
-}) {
-  const vehicleNo = normalizeVehicleNo(lr.vehicleNo);
-  const date = (lr.lrDate ?? lr.date)?.trim() || null;
-  if (!vehicleNo || !date) return null;
-  return { vehicleNo, date };
 }
 
 async function listLrRelatedDocuments(lr: Awaited<ReturnType<typeof getScopedLrWithDocuments>>) {
@@ -714,27 +711,19 @@ async function listLrRelatedDocuments(lr: Awaited<ReturnType<typeof getScopedLrW
     merged.set(document.id, document);
   }
 
-  const groupLookup = resolveLrGroupLookup(lr);
-  if (groupLookup) {
-    const group = await db.documentGroup.findUnique({
-      where: { vehicleNo_date: groupLookup },
-      include: {
-        documents: {
-          include: {
-            uploadedBy: { select: { id: true, name: true, email: true } },
-            extractedData: true,
-          },
-        },
-      },
+  // Confirmed matches from the auto-link pipeline (lrNo / invoiceNo /
+  // vehicleNo+date within tolerance, or a manual link) — this is scoped to
+  // THIS LR specifically. We deliberately do NOT fall back to "every
+  // document in the shared vehicle+date DocumentGroup": that group can
+  // legitimately contain documents from a different LR entirely (e.g. the
+  // same truck making two separate trips close together), and showing them
+  // here would silently attach one LR's paperwork to another.
+  for (const link of lr.documentLinks) {
+    if (merged.has(link.document.id)) continue;
+    merged.set(link.document.id, {
+      ...link.document,
+      lrDocumentCategory: link.document.lrDocumentCategory ?? deriveLrDocumentCategory(link.document.type),
     });
-
-    for (const document of group?.documents ?? []) {
-      if (merged.has(document.id)) continue;
-      merged.set(document.id, {
-        ...document,
-        lrDocumentCategory: document.lrDocumentCategory ?? deriveLrDocumentCategory(document.type),
-      });
-    }
   }
 
   return Array.from(merged.values());

@@ -7,12 +7,14 @@ import { formatOfficerLabel } from '../utils/masterData';
 
 const PAGE_SIZE = 10;
 
+// Toll receipts are intentionally not tracked here — not extracted, not
+// shown as a slot. If this needs to come back, re-add:
+// { type: 'TOLL', category: 'TOLL_RECEIPT', label: 'Tollgate' },
 const SLOT_CONFIG: Array<{ type: DocumentType; category: LrDocumentCategory; label: string }> = [
   { type: 'INVOICE', category: 'ACKNOWLEDGED_INVOICE', label: 'Tax Invoice' },
   { type: 'LR', category: 'LR_GENERATED', label: 'Lorry Receipt' },
   { type: 'WEIGHMENT_PARTY', category: 'DEPOT_PLANT_WEIGHMENT_SLIP', label: 'Party Weighment Slip' },
   { type: 'WEIGHMENT_SITE', category: 'SITE_WEIGHMENT_SLIP', label: 'Site Weighment Slip' },
-  { type: 'TOLL', category: 'TOLL_RECEIPT', label: 'Tollgate' },
   { type: 'EWAYBILL', category: 'ADDITIONAL_ATTACHMENT_1', label: 'E-Way Bill' },
   { type: 'RECEIVING', category: 'ACKNOWLEDGED_LR_COPY', label: 'Receiving Copy' },
 ];
@@ -132,8 +134,8 @@ export function UploadDocumentsPage() {
           </div>
         )}
 
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1400 }}>
+        <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '70vh' }}>
+          <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: 1400 }}>
             <thead>
               <tr>
                 <th style={th}>LR Number</th>
@@ -161,10 +163,21 @@ export function UploadDocumentsPage() {
                   <td style={{ ...td, fontWeight: 700 }}>{lr.lrNo}</td>
                   <td style={td}>{lr.lrDate ?? lr.date ?? '—'}</td>
                   {SLOT_CONFIG.map((slot) => {
-                    const lrDocs = (lr.uploadedDocuments ?? []).filter((document) => matchesSlot(document, slot.type));
-                    // Each cell represents documents explicitly attached to
+                    // Prefer confirmed auto-link matches (documentLinks) — this
+                    // is the real "does this document belong to this LR" data,
+                    // populated by lrNo / invoiceNo / vehicleNo+date matching.
+                    // Fall back to the direct lrId relation (uploadedDocuments)
+                    // for documents attached via the manual per-slot uploader
+                    // below, which sets lrId directly rather than going
+                    // through the auto-link pipeline.
+                    // Each cell represents documents confirmed to belong to
                     // this LR. Do not aggregate documents from other LRs that
                     // happen to share the same vehicle number and date.
+                    const linkedDocs = (lr.documentLinks ?? [])
+                      .map((link) => link.document)
+                      .filter((document) => matchesSlot(document, slot.type));
+                    const directDocs = (lr.uploadedDocuments ?? []).filter((document) => matchesSlot(document, slot.type));
+                    const lrDocs = [...linkedDocs, ...directDocs];
                     const uploadedSourceCount = new Set(lrDocs.map((d) => d.sourceDocumentId ?? d.id)).size;
                     const inputKey = `${lr.id}-${slot.type}`;
                     const busy = uploadingKey === `${lr.id}:${slot.type}`;
@@ -305,8 +318,8 @@ function DocumentsModal({
       ) : groupedDocuments.length === 0 ? (
         <p style={modalHint}>No uploaded documents found for this LR.</p>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+        <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '60vh' }}>
+          <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: 760 }}>
             <thead>
               <tr>
                 <th style={th}>Document Name</th>
@@ -598,6 +611,9 @@ const th: CSSProperties = {
   letterSpacing: '0.04em',
   background: '#f8f9ff',
   borderBottom: '1px solid #e0e0f0',
+  position: 'sticky',
+  top: 0,
+  zIndex: 2,
 };
 
 const td: CSSProperties = {

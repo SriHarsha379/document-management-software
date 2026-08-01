@@ -817,13 +817,16 @@ const styles: Record<string, React.CSSProperties> = {
 
   tableWrapper: {
     overflowX: 'auto',
+    overflowY: 'auto',
+    maxHeight: '70vh',
     borderRadius: 10,
     border: '1.5px solid #e0e0f0',
     boxShadow: '0 2px 10px rgba(0,0,0,0.06)',
   },
   table: {
     width: '100%',
-    borderCollapse: 'collapse',
+    borderCollapse: 'separate',
+    borderSpacing: 0,
     fontSize: 13,
   },
   th: {
@@ -834,6 +837,9 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'center',
     borderBottom: '2px solid #d8dcf8',
     whiteSpace: 'nowrap',
+    position: 'sticky',
+    top: 0,
+    zIndex: 2,
   },
   thFixed: {
     textAlign: 'left',

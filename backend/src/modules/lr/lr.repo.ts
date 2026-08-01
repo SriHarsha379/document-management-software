@@ -140,6 +140,42 @@ export const lrRepo = {
             },
             orderBy: [{ uploadedAt: 'desc' }],
           },
+          // The real source of truth for "which documents belong to this LR":
+          // confirmed matches from the auto-link pipeline (lrNo / invoiceNo /
+          // vehicleNo+date within tolerance) or a manual link. Unlike
+          // uploadedDocuments (direct lrId FK, rarely populated) or raw
+          // groupId membership (shared across every LR for the same
+          // vehicle+date, including separate trips), this only contains
+          // documents actually confirmed to belong to this specific LR.
+          documentLinks: {
+            select: {
+              lrId: true,
+              matchedFields: true,
+              confidence: true,
+              isManual: true,
+              linkedAt: true,
+              document: {
+                select: {
+                  id: true,
+                  type: true,
+                  status: true,
+                  originalFilename: true,
+                  mimeType: true,
+                  rawFilePath: true,
+                  uploadedAt: true,
+                  updatedAt: true,
+                  sourceDocumentId: true,
+                  pageNumber: true,
+                  lrDocumentCategory: true,
+                  uploadedById: true,
+                  uploadedBy: {
+                    select: { id: true, name: true, email: true },
+                  },
+                },
+              },
+            },
+            orderBy: [{ linkedAt: 'desc' }],
+          },
         },
       }),
       db.lr.count({ where }),

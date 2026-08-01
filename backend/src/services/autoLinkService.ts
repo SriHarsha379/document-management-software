@@ -4,13 +4,25 @@
  * Automatically attaches uploaded Documents to Lr (Lorry Receipt) records by
  * comparing extracted OCR fields against the fields stored on Lr rows.
  *
- * Matching strategy (in priority order — all comparisons are exact):
- *  1. lrNo   exact match        → linked
- *  2. invoiceNo exact match     → linked
- *  3. vehicleNo + date (same calendar day, normalised) → linked
+ * Matching strategy (in priority order):
+ *  1. lrNo      exact match                              → linked
+ *  2. invoiceNo exact match (invoiceNo or companyInvoiceNo) → linked
+ *  3. vehicleNo + date, tolerance depends on document type:
+ *       - LR, WEIGHMENT_PARTY (seller weighment)  → same calendar day only
+ *       - INVOICE, WEIGHMENT_SITE (buyer weighment) → 0-5 days AFTER the LR date
+ *         (invoices are raised at the head office and can lag by up to 5 days;
+ *          the buyer-side weighment happens after the trip, similarly delayed)
+ *       - everything else                          → same calendar day only
+ *     Documents never match a date *before* the LR date — the LR is always
+ *     created first.
  *
- * No confidence scoring or fuzzy thresholds are used.  A link is created
- * whenever any of the above fields match exactly.
+ * Same-vehicle ambiguity guard: a vehicle can make more than one trip
+ * (more than one LR) within the tolerance window. Rule 3 must never guess
+ * which trip a weighment/invoice belongs to:
+ *   - exactly one LR candidate in the window → auto-link
+ *   - more than one candidate → narrow to a tight 1-day window; auto-link
+ *     only if that narrower window still has exactly one candidate
+ *   - still ambiguous → leave unlinked for manual review, never guess
  *
  * Duplicate links are prevented by the unique constraint on
  * document_link_records(documentId, lrId).
@@ -86,20 +98,53 @@ export function isDateWithinTolerance(
   return diff !== null && diff <= toleranceDays;
 }
 
+/**
+ * Maximum number of days AFTER the LR date that a document of this type is
+ * allowed to be dated and still auto-link via the vehicleNo+date fallback.
+ *
+ * LR and the seller/party weighment slip are created the same day as the LR.
+ * The invoice (raised at the head office) and the buyer/site weighment slip
+ * (taken after the trip) can legitimately lag by up to 5 days.
+ */
+function getForwardToleranceDays(documentType?: string | null): number {
+  switch (documentType) {
+    case 'INVOICE':
+    case 'WEIGHMENT_SITE':
+    case 'WEIGHMENT':
+      // The OCR classifier doesn't always distinguish party vs site
+      // weighment slips and tags both generically as 'WEIGHMENT'. Real
+      // uploads confirm the destination/site weighment slip can legitimately
+      // land a day or more after the LR date, so the generic type gets the
+      // same tolerance as WEIGHMENT_SITE rather than silently missing real
+      // matches. WEIGHMENT_PARTY (explicitly classified) stays strict below
+      // — that one is confirmed same-day.
+      return 5;
+    default:
+      // LR, WEIGHMENT_PARTY, EWAYBILL, RECEIVING, TOLL, UNKNOWN
+      return 0;
+  }
+}
+
 // ── Database operations ───────────────────────────────────────────────────────
 
 /**
- * Find the matching Lr row for the given extracted fields using exact matching.
+ * Find the matching Lr row for the given extracted fields.
  *
  * Matching priority (first match wins):
  *  1. lrNo exact match
  *  2. invoiceNo or companyInvoiceNo exact match
- *  3. vehicleNo + same calendar day (date normalised via Date.parse)
+ *  3. vehicleNo + date within the type-appropriate forward tolerance
+ *     (see getForwardToleranceDays), with the same-vehicle ambiguity guard
+ *     described in the file header — never auto-picks between two candidate
+ *     trips it can't confidently tell apart.
  *
  * When a companyId is supplied the search is scoped to that company,
  * preventing cross-company data leaks.
  *
- * Returns null when no field produces an exact match.
+ * `documentType` (e.g. 'INVOICE', 'WEIGHMENT_SITE') controls the rule-3
+ * tolerance window. Pass it whenever available.
+ *
+ * Returns null when no field produces a confident match.
  */
 export async function findBestMatchingLr(
   extracted: {
@@ -109,6 +154,7 @@ export async function findBestMatchingLr(
     date?: string | null;
   },
   companyId?: string,
+  documentType?: string | null,
 ): Promise<MatchResult | null> {
   const scope: Prisma.LrWhereInput = companyId ? { companyId } : {};
 
@@ -135,24 +181,46 @@ export async function findBestMatchingLr(
     if (lr) return { lrId: lr.id, matchedFields: ['invoiceNo'] };
   }
 
-  // ── 3. vehicleNo + exact same calendar day ────────────────────────────────
+  // ── 3. vehicleNo + date within tolerance, with same-vehicle ambiguity guard ─
   if (extracted.vehicleNo?.trim() && extracted.date?.trim()) {
     const normalizedVehicle = normalizeVehicleNo(extracted.vehicleNo);
     const extractedDateMs = parseDateMs(extracted.date);
+    const toleranceDays = getForwardToleranceDays(documentType);
+
     if (extractedDateMs !== null) {
       const candidates = await db.lr.findMany({
         where: { vehicleNo: normalizedVehicle, ...scope },
         take: 20,
       });
+
+      // A document can only be dated on/after its LR (the LR is always
+      // created first), and never more than `toleranceDays` after it.
+      const withinWindow: Array<{ lrId: string; diffDays: number }> = [];
       for (const lr of candidates) {
-        // Check both date and lrDate fields on the Lr record
         const lrDateStr = lr.lrDate ?? lr.date;
-        if (lrDateStr) {
-          const lrDateMs = parseDateMs(lrDateStr);
-          if (lrDateMs !== null && lrDateMs === extractedDateMs) {
-            return { lrId: lr.id, matchedFields: ['vehicleNo', 'date'] };
-          }
+        if (!lrDateStr) continue;
+        const lrDateMs = parseDateMs(lrDateStr);
+        if (lrDateMs === null) continue;
+        const diffDays = (extractedDateMs - lrDateMs) / (1000 * 60 * 60 * 24);
+        if (diffDays >= 0 && diffDays <= toleranceDays) {
+          withinWindow.push({ lrId: lr.id, diffDays });
         }
+      }
+
+      if (withinWindow.length === 1) {
+        // Unambiguous — only one trip for this vehicle falls in the window.
+        return { lrId: withinWindow[0].lrId, matchedFields: ['vehicleNo', 'date'] };
+      }
+
+      if (withinWindow.length > 1) {
+        // Same vehicle matches more than one LR in the window — likely two
+        // separate trips close together. Never guess between them; only
+        // auto-link if a tighter 1-day window narrows it down to exactly one.
+        const tight = withinWindow.filter((c) => c.diffDays <= 1);
+        if (tight.length === 1) {
+          return { lrId: tight[0].lrId, matchedFields: ['vehicleNo', 'date'] };
+        }
+        // Still ambiguous — leave unlinked for manual review.
       }
     }
   }
@@ -219,7 +287,10 @@ export async function autoLinkDocument(
   documentId: string,
   companyId?: string,
 ): Promise<LinkResult> {
-  const extracted = await db.extractedData.findUnique({ where: { documentId } });
+  const [document, extracted] = await Promise.all([
+    db.document.findUnique({ where: { id: documentId }, select: { type: true } }),
+    db.extractedData.findUnique({ where: { documentId } }),
+  ]);
   if (!extracted) {
     return { linked: false };
   }
@@ -232,6 +303,7 @@ export async function autoLinkDocument(
       date: extracted.date,
     },
     companyId,
+    document?.type,
   );
 
   if (!match) {

@@ -71,6 +71,22 @@ export interface Lr {
   company?: { id: string; name: string };
   branch?: { id: string; name: string };
   uploadedDocuments?: Document[];
+  // Confirmed document<->LR matches from the auto-link pipeline (lrNo /
+  // invoiceNo / vehicleNo+date within tolerance) or a manual link. This is
+  // the correct source for "which documents belong to this LR" — unlike
+  // uploadedDocuments (direct lrId FK, rarely populated) it reflects the
+  // actual matching logic, and unlike raw document groups it never includes
+  // another LR's documents just because they share a vehicle+date.
+  documentLinks?: DocumentLink[];
+}
+
+export interface DocumentLink {
+  lrId: string;
+  matchedFields: string; // JSON-encoded string[], e.g. '["vehicleNo","date"]'
+  confidence: number;
+  isManual: boolean;
+  linkedAt: string;
+  document: Document;
 }
 
 export interface PaginatedLrs {

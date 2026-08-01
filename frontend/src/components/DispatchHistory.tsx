@@ -62,8 +62,8 @@ export function DispatchHistory() {
 
       {logs.length > 0 && (
         <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e0e0f0', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '70vh' }}>
+            <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 13 }}>
               <thead>
                 <tr>
                   {['Channel', 'Vehicle / Date', 'Recipient', 'CC', 'Type', 'Status', 'Sent At', ''].map((h) => (
@@ -154,6 +154,6 @@ export function DispatchHistory() {
 
 const btnRefresh: React.CSSProperties = { padding: '6px 14px', background: '#eef0ff', color: '#4361ee', border: '1px solid #c0c8ff', borderRadius: 7, cursor: 'pointer', fontWeight: 600, fontSize: 13 };
 const errorBox: React.CSSProperties = { background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '10px 14px', color: '#b91c1c', fontSize: 13, marginBottom: 12 };
-const th: React.CSSProperties = { padding: '10px 12px', background: '#f5f6ff', color: '#555', fontWeight: 700, fontSize: 11, textAlign: 'left', borderBottom: '1px solid #e0e0f0', whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '0.05em' };
+const th: React.CSSProperties = { padding: '10px 12px', background: '#f5f6ff', color: '#555', fontWeight: 700, fontSize: 11, textAlign: 'left', borderBottom: '1px solid #e0e0f0', whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 2 };
 const td: React.CSSProperties = { padding: '10px 12px', color: '#333', verticalAlign: 'middle' };
 const pageBtn: React.CSSProperties = { padding: '6px 14px', background: '#eef0ff', border: '1px solid #c0c8ff', borderRadius: 6, cursor: 'pointer', fontSize: 13, color: '#4361ee', fontWeight: 500 };
