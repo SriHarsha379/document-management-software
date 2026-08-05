@@ -797,3 +797,22 @@ ALTER TABLE "working_centres" ADD CONSTRAINT "working_centres_branchId_fkey" FOR
 -- AddForeignKey
 ALTER TABLE "working_centres" ADD CONSTRAINT "working_centres_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "companies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
+-- Add sealNo + outTime to lrs, and sealNo + documentTime to extracted_data.
+-- These support two auto-link improvements:
+--   1. Matching a weighment slip's handwritten seal number against the seal
+--      number printed on the Lorry Receipt (a stronger signal than
+--      vehicleNo+date alone).
+--   2. Time-aware disambiguation when the same vehicle has more than one
+--      trip (LR) within the same calendar-day matching window.
+
+ALTER TABLE "lrs"
+  ADD COLUMN "sealNo" TEXT,
+  ADD COLUMN "outTime" TEXT;
+
+CREATE INDEX "lrs_sealNo_idx" ON "lrs"("sealNo");
+
+ALTER TABLE "extracted_data"
+  ADD COLUMN "sealNo" TEXT,
+  ADD COLUMN "documentTime" TEXT;
+
+CREATE INDEX "extracted_data_sealNo_idx" ON "extracted_data"("sealNo");

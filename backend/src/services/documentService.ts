@@ -278,6 +278,8 @@ async function autoCreateLrRecord(
     workingCenter?: string | null;
     depotPlantCode?: string | null;
     source?: string | null;
+    sealNo?: string | null;
+    outTime?: string | null;
   },
 ): Promise<boolean> {
   if (documentType !== 'LR' || !fields.lrNo?.trim()) return false;
@@ -420,6 +422,8 @@ async function autoCreateLrRecord(
       driverCellNo: fields.driverCellNo?.trim() || undefined,
       workingCenter: fields.workingCenter?.trim() || undefined,
       depotPlantCode: fields.depotPlantCode?.trim() || undefined,
+      sealNo: fields.sealNo?.trim() || undefined,
+      outTime: fields.outTime?.trim() || undefined,
     },
   });
 
@@ -606,6 +610,8 @@ export async function saveOcrResults(
     workingCenter?: string;
     depotPlantCode?: string;
     source?: string;
+    sealNo?: string;
+    documentTime?: string;
   },
   documentType: DocumentType,
   rawOcrResponse: string
@@ -648,6 +654,8 @@ export async function saveOcrResults(
         workingCenter: fields.workingCenter ?? null,
         depotPlantCode: fields.depotPlantCode ?? null,
         source: fields.source ?? null,
+        sealNo: fields.sealNo ?? null,
+        documentTime: fields.documentTime ?? null,
       },
       update: {
         lrNo: fields.lrNo ?? null,
@@ -683,6 +691,8 @@ export async function saveOcrResults(
         workingCenter: fields.workingCenter ?? null,
         depotPlantCode: fields.depotPlantCode ?? null,
         source: fields.source ?? null,
+        sealNo: fields.sealNo ?? null,
+        documentTime: fields.documentTime ?? null,
       },
     });
 
@@ -745,6 +755,8 @@ export async function saveOcrResults(
       workingCenter: fields.workingCenter,
       depotPlantCode: fields.depotPlantCode,
       source: fields.source,
+      sealNo: fields.sealNo,
+      outTime: fields.documentTime,
     });
     const linkResult = await autoLinkDocument(documentId);
     // When an invoice arrives after the LR (e.g. from a remote office), back-fill
@@ -831,6 +843,8 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
         workingCenter: payload.workingCenter ?? existing.workingCenter,
         depotPlantCode: payload.depotPlantCode ?? existing.depotPlantCode,
         source: payload.source ?? existing.source,
+        sealNo: payload.sealNo ?? existing.sealNo,
+        documentTime: payload.documentTime ?? existing.documentTime,
         userReviewed: true,
         reviewedAt: new Date(),
         userEdits: Object.keys(userEdits).length > 0 ? JSON.stringify(userEdits) : existing.userEdits,
@@ -895,6 +909,8 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
         workingCenter: updatedExtracted.workingCenter,
         depotPlantCode: updatedExtracted.depotPlantCode,
         source: updatedExtracted.source,
+        sealNo: updatedExtracted.sealNo,
+        outTime: updatedExtracted.documentTime,
       });
     } else if (updatedDoc?.type === 'INVOICE' && updatedExtracted?.lrNo?.trim()) {
       // Invoice carries an explicit LR number → ensure the LR record exists.

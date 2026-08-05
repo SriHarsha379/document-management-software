@@ -99,6 +99,46 @@ export function isDateWithinTolerance(
 }
 
 /**
+ * Parse a time-of-day string ("HH:MM", "HH:MM:SS", or "hh:mm AM/PM") into
+ * minutes since midnight. Returns null if it can't be parsed.
+ */
+export function parseTimeToMinutes(timeStr: string): number | null {
+  const m = timeStr.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
+  if (!m) return null;
+  let hours = parseInt(m[1]!, 10);
+  const minutes = parseInt(m[2]!, 10);
+  const ampm = m[4]?.toUpperCase();
+  if (ampm === 'PM' && hours < 12) hours += 12;
+  if (ampm === 'AM' && hours === 12) hours = 0;
+  if (hours > 23 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+/**
+ * Combine a date string and an optional time-of-day string into a single UTC
+ * timestamp (ms). Falls back to UTC midnight for the date when the time is
+ * missing or unparseable, so callers can always get a rough comparison point.
+ * Returns null when the date itself can't be parsed.
+ */
+export function combineDateTimeMs(dateStr: string, timeStr?: string | null): number | null {
+  const dateMs = parseDateMs(dateStr);
+  if (dateMs === null) return null;
+  if (!timeStr?.trim()) return dateMs;
+  const minutes = parseTimeToMinutes(timeStr);
+  if (minutes === null) return dateMs;
+  return dateMs + minutes * 60 * 1000;
+}
+
+/**
+ * Document types whose sealNo can be cross-checked against the LR's own
+ * printed Seal No. field. Weighment slips at the loading/origin point are
+ * sometimes hand-annotated with the LR's seal number as a manual
+ * cross-check; the generic 'WEIGHMENT' type is included since the OCR
+ * classifier doesn't always distinguish party vs site weighment.
+ */
+const SEAL_MATCH_TYPES = new Set(['WEIGHMENT', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE']);
+
+/**
  * Maximum number of days AFTER the LR date that a document of this type is
  * allowed to be dated and still auto-link via the vehicleNo+date fallback.
  *
@@ -133,16 +173,23 @@ function getForwardToleranceDays(documentType?: string | null): number {
  * Matching priority (first match wins):
  *  1. lrNo exact match
  *  2. invoiceNo or companyInvoiceNo exact match
- *  3. vehicleNo + date within the type-appropriate forward tolerance
+ *  3. sealNo exact match (weighment documents only) — a weighment slip is
+ *     sometimes hand-annotated with the LR's seal number as a manual
+ *     cross-check; treat it as a confident exact match when present.
+ *  4. vehicleNo + date within the type-appropriate forward tolerance
  *     (see getForwardToleranceDays), with the same-vehicle ambiguity guard
  *     described in the file header — never auto-picks between two candidate
- *     trips it can't confidently tell apart.
+ *     trips it can't confidently tell apart. When the date alone leaves more
+ *     than one candidate trip, documentTime (if extracted) is used to prefer
+ *     the LR whose own outTime precedes the document's time most closely,
+ *     before falling back to the tighter 1-day window.
  *
  * When a companyId is supplied the search is scoped to that company,
  * preventing cross-company data leaks.
  *
- * `documentType` (e.g. 'INVOICE', 'WEIGHMENT_SITE') controls the rule-3
- * tolerance window. Pass it whenever available.
+ * `documentType` (e.g. 'INVOICE', 'WEIGHMENT_SITE') controls the rule-4
+ * tolerance window and whether the sealNo tier applies. Pass it whenever
+ * available.
  *
  * Returns null when no field produces a confident match.
  */
@@ -152,6 +199,8 @@ export async function findBestMatchingLr(
     invoiceNo?: string | null;
     vehicleNo?: string | null;
     date?: string | null;
+    sealNo?: string | null;
+    documentTime?: string | null;
   },
   companyId?: string,
   documentType?: string | null,
@@ -181,7 +230,20 @@ export async function findBestMatchingLr(
     if (lr) return { lrId: lr.id, matchedFields: ['invoiceNo'] };
   }
 
-  // ── 3. vehicleNo + date within tolerance, with same-vehicle ambiguity guard ─
+  // ── 3. sealNo exact match (weighment documents only) ──────────────────────
+  if (
+    extracted.sealNo?.trim() &&
+    documentType &&
+    SEAL_MATCH_TYPES.has(documentType)
+  ) {
+    const normalizedSeal = normalizeRefNo(extracted.sealNo);
+    const lr = await db.lr.findFirst({
+      where: { sealNo: normalizedSeal, ...scope },
+    });
+    if (lr) return { lrId: lr.id, matchedFields: ['sealNo'] };
+  }
+
+  // ── 4. vehicleNo + date within tolerance, with same-vehicle ambiguity guard ─
   if (extracted.vehicleNo?.trim() && extracted.date?.trim()) {
     const normalizedVehicle = normalizeVehicleNo(extracted.vehicleNo);
     const extractedDateMs = parseDateMs(extracted.date);
@@ -214,8 +276,43 @@ export async function findBestMatchingLr(
 
       if (withinWindow.length > 1) {
         // Same vehicle matches more than one LR in the window — likely two
-        // separate trips close together. Never guess between them; only
-        // auto-link if a tighter 1-day window narrows it down to exactly one.
+        // separate trips close together. Never guess between them unless we
+        // can narrow it down with real evidence.
+
+        // 4a. Time-aware narrowing: if the document carries a time-of-day and
+        // the candidate LRs have their own outTime recorded, prefer the LR
+        // whose outTime precedes the document's time most closely — a
+        // weighment/toll can only belong to a trip that had already left.
+        // Only trust this when it produces a single, unambiguous winner.
+        if (extracted.documentTime?.trim()) {
+          const docMs = combineDateTimeMs(extracted.date!, extracted.documentTime);
+          if (docMs !== null) {
+            const withTimeDiff: Array<{ lrId: string; diffMinutes: number }> = [];
+            for (const candidate of withinWindow) {
+              const lr = candidates.find((c) => c.id === candidate.lrId);
+              const lrDateStr = lr?.lrDate ?? lr?.date;
+              if (!lr?.outTime?.trim() || !lrDateStr) continue;
+              const lrMs = combineDateTimeMs(lrDateStr, lr.outTime);
+              if (lrMs === null) continue;
+              const diffMinutes = (docMs - lrMs) / (1000 * 60);
+              // The document must postdate the LR's own departure.
+              if (diffMinutes >= 0) {
+                withTimeDiff.push({ lrId: candidate.lrId, diffMinutes });
+              }
+            }
+            if (withTimeDiff.length > 0) {
+              withTimeDiff.sort((a, b) => a.diffMinutes - b.diffMinutes);
+              const isUnambiguous =
+                withTimeDiff.length === 1 || withTimeDiff[0]!.diffMinutes < withTimeDiff[1]!.diffMinutes;
+              if (isUnambiguous) {
+                return { lrId: withTimeDiff[0]!.lrId, matchedFields: ['vehicleNo', 'date', 'documentTime'] };
+              }
+            }
+          }
+        }
+
+        // 4b. Fall back to a tighter 1-day window when no time evidence
+        // resolved it (older documents, or LRs without a recorded outTime).
         const tight = withinWindow.filter((c) => c.diffDays <= 1);
         if (tight.length === 1) {
           return { lrId: tight[0].lrId, matchedFields: ['vehicleNo', 'date'] };
@@ -301,6 +398,8 @@ export async function autoLinkDocument(
       invoiceNo: extracted.invoiceNo,
       vehicleNo: extracted.vehicleNo,
       date: extracted.date,
+      sealNo: extracted.sealNo,
+      documentTime: extracted.documentTime,
     },
     companyId,
     document?.type,

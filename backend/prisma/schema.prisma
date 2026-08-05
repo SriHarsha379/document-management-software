@@ -170,6 +170,8 @@ model Lr {
   workingCenter       String?
   depotPlantCode      String?
   source              String               @default("INTERNAL")
+  sealNo              String?
+  outTime             String?
   documentLinks       DocumentLinkRecord[]
   uploadedDocuments   Document[]
   branch              Branch               @relation(fields: [branchId], references: [id])
@@ -180,6 +182,7 @@ model Lr {
   @@index([vehicleNo])
   @@index([date])
   @@index([serialNo])
+  @@index([sealNo])
   @@map("lrs")
 }
 
@@ -264,6 +267,8 @@ model ExtractedData {
   workingCenter       String?
   depotPlantCode      String?
   source              String?
+  sealNo              String?
+  documentTime        String?
   rawOcrResponse      String
   confidence          Float?
   ocrProcessedAt      DateTime  @default(now())
@@ -280,6 +285,7 @@ model ExtractedData {
   @@index([date])
   @@index([transporter])
   @@index([reviewedAt])
+  @@index([sealNo])
   @@map("extracted_data")
 }
 

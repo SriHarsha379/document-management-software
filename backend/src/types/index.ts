@@ -37,6 +37,13 @@ export interface ExtractedFields {
   workingCenter?: string;
   depotPlantCode?: string;
   source?: string;
+  // Seal number — printed "Seal No." on the LR, or handwritten/annotated on
+  // a weighment slip. Used as a strong auto-link match key for weighment docs.
+  sealNo?: string;
+  // Time-of-day the document itself records: LR "Out Time", the weighbridge
+  // in/out time, or the toll "Debited at" time. Format "HH:MM" or "HH:MM:SS",
+  // 24-hour where possible. Used to disambiguate same-vehicle, same-day trips.
+  documentTime?: string;
   documentType?: DocumentType;
   confidence?: number;
   classificationConfidence?: number;
@@ -150,6 +157,8 @@ export interface ReviewPayload {
   workingCenter?: string;
   depotPlantCode?: string;
   source?: string;
+  sealNo?: string;
+  documentTime?: string;
   documentType?: DocumentType;
 }
 

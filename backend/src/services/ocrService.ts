@@ -21,12 +21,14 @@ type ImageQuality = 'HIGH' | 'MEDIUM' | 'LOW';
 const CLASSIFICATION_WEIGHT = 0.4;
 const OCR_WEIGHT = 0.6;
 
-/** For weighment slips only vehicleNo, date, and weightInfo should be retained; strip everything else. */
+/** For weighment slips only vehicleNo, date, weightInfo, sealNo, and documentTime should be retained; strip everything else. */
 function restrictToWeighmentFields(fields: ExtractedFields): ExtractedFields {
   return {
     vehicleNo: fields.vehicleNo,
     date: fields.date,
     weightInfo: fields.weightInfo,
+    sealNo: fields.sealNo,
+    documentTime: fields.documentTime,
     documentType: fields.documentType,
     confidence: fields.confidence,
     classificationConfidence: fields.classificationConfidence,
@@ -76,6 +78,8 @@ function parseExtractedFields(parsed: Record<string, unknown>, documentType: Doc
     workingCenter: typeof parsed.workingCenter === 'string' ? parsed.workingCenter : undefined,
     depotPlantCode: typeof parsed.depotPlantCode === 'string' ? parsed.depotPlantCode : undefined,
     source: typeof parsed.source === 'string' ? parsed.source : undefined,
+    sealNo: typeof parsed.sealNo === 'string' ? parsed.sealNo : undefined,
+    documentTime: typeof parsed.documentTime === 'string' ? parsed.documentTime : undefined,
     documentType,
     confidence: typeof parsed.ocrConfidence === 'number'
       ? parsed.ocrConfidence
@@ -130,6 +134,8 @@ STEP 2 — Extract fields according to the identified document type using the ru
 === FOR LR (Lorry Receipt) ===
 - lrNo: LR / consignment number — look for labels "LR No", "LR No.", "L.R. No.", "LR Number", "Consignment No."
 - loadingSlipNo: Loading slip number — look for labels "LS No", "L.S. No.", "Loading Slip No.", "LS No."
+- sealNo: Seal number — look for labels "Seal No.", "Seal No", "SEAL NO."
+- documentTime: The LR's "Out Time" (time the vehicle left), e.g. "11:38:17" or "17:56". Look for a label "Out Time" near the LR date. Return in HH:MM or HH:MM:SS 24-hour format exactly as printed. Return null if not present.
 - invoiceNo: Supplier invoice number on the LR — look for "Invoice No", "Invoice No."
 - companyInvoiceDate: Invoice date / "Inv Date" / "In Date" in YYYY-MM-DD (convert DD/MM/YYYY or DD-MM-YYYY)
 - companyEwayBillNo: E-Way Bill number — look for "E-Way Bill No", "E-Way Bill No.", "EWB No."
@@ -158,10 +164,12 @@ STEP 2 — Extract fields according to the identified document type using the ru
 - transporterName: The transport company name (usually printed as the issuing company on the document header)
 
 === FOR WEIGHMENT (Weighbridge Slip) ===
-Extract ONLY the three fields below. Set every other field to null.
+Extract ONLY the five fields below. Set every other field to null.
 - vehicleNo: Vehicle registration number — look for "VEHICLE NO", "Vehicle No.", "Veh. No.", "Truck No."
 - date: Date from the slip in YYYY-MM-DD. The date may appear as "DT:DD-MM-YYYY TM:HH:MM" (e.g. "DT:16-09-2025 TM:12:05") or "DD/MM/YYYY" — extract only the date part and convert to YYYY-MM-DD.
 - weightInfo: Weight details from the slip — look for gross weight, tare weight, and net weight labels (e.g. "Gross Wt", "Tare Wt", "Net Wt", "GWT", "TWt", "NWT"). Combine all weight readings into a single string, e.g. "Gross: 49670 kg, Tare: 14290 kg, Net: 35380 kg".
+- sealNo: A seal number written or stamped on the slip — this is often a HANDWRITTEN annotation (pen, marker, or a circled number) rather than a printed field, sometimes next to a label like "Seal No", "seal no.", or just written near the vehicle number. Only return it if it is explicitly labelled or clearly identifiable as a seal number — do not guess from an unlabelled circled number, since slips are sometimes annotated with other reference numbers (e.g. an invoice number) instead. Return null if uncertain.
+- documentTime: The weighment time-of-day — prefer the "out" / second weighing time if the slip shows separate in/out or first/second weighing times (e.g. "Date time Out", "TM:", "Second Weight Date Time"); otherwise use whatever single time is printed. Return in HH:MM or HH:MM:SS 24-hour format. Return null if not present.
 - If the slip explicitly indicates PARTY / LOADING / PLANT / ORIGIN weighment, classify as WEIGHMENT_PARTY.
 - If the slip explicitly indicates SITE / DESTINATION / DELIVERY / UNLOADING weighment, classify as WEIGHMENT_SITE.
 - Otherwise classify as WEIGHMENT.
@@ -187,6 +195,7 @@ Extract ONLY the three fields below. Set every other field to null.
 - vehicleNo: Vehicle registration number
 - date: Date in YYYY-MM-DD
 - tollAmount: Amount collected with currency symbol, e.g. "₹120" or "Rs.150"
+- documentTime: The time the toll was debited — look for "Debited at", e.g. "03:05 PM". Convert to 24-hour HH:MM. Return null if not present.
 
 Always respond with a valid JSON object with EXACTLY these fields:
 {
@@ -224,6 +233,8 @@ Always respond with a valid JSON object with EXACTLY these fields:
   "workingCenter": "<working center / working centre name or null>",
   "depotPlantCode": "<depot or plant code or null>",
   "source": "<source location from sender/company header for LR and INVOICE (use explicit 'Source:' label when present, otherwise infer city/location from address block) or null>",
+  "sealNo": "<seal number — printed 'Seal No.' on an LR, or a labelled handwritten seal number on a weighment slip — or null>",
+  "documentTime": "<time-of-day this document records (LR Out Time, weighment in/out time, or toll debited time) in HH:MM or HH:MM:SS 24-hour format, or null>",
   "rawText": "<full text extracted from document>"
 }
 

@@ -177,7 +177,14 @@ export function UploadDocumentsPage() {
                       .map((link) => link.document)
                       .filter((document) => matchesSlot(document, slot.type));
                     const directDocs = (lr.uploadedDocuments ?? []).filter((document) => matchesSlot(document, slot.type));
-                    const lrDocs = [...linkedDocs, ...directDocs];
+                    // linkedDocs and directDocs can both contain the SAME physical
+                    // upload (e.g. a file that was auto-linked by the OCR pipeline
+                    // AND also attached directly via the per-slot uploader below).
+                    // De-dupe by document id first so it isn't double-counted, then
+                    // collapse multi-page-PDF siblings that share a sourceDocumentId.
+                    const lrDocs = Array.from(
+                      new Map([...linkedDocs, ...directDocs].map((document) => [document.id, document])).values(),
+                    );
                     const uploadedSourceCount = new Set(lrDocs.map((d) => d.sourceDocumentId ?? d.id)).size;
                     const inputKey = `${lr.id}-${slot.type}`;
                     const busy = uploadingKey === `${lr.id}:${slot.type}`;
