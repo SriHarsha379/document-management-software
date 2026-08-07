@@ -780,6 +780,110 @@ export async function saveOcrResults(
 }
 
 /**
+ * When OCR finds MORE THAN ONE toll swipe or weighment slip on a single
+ * source image (see `ExtractedFields.additionalTollEntries` /
+ * `additionalWeighments`), the primary document/ExtractedData row can only
+ * describe the first one. This creates one sibling Document + ExtractedData
+ * row per additional entry so each becomes independently reviewable,
+ * linkable to an Lr, and included in reconciliation — instead of being
+ * silently dropped, which was the previous behaviour.
+ *
+ * Siblings share the same underlying file (rawFilePath/pageNumber) as the
+ * primary document; they are distinguished only by their extracted fields.
+ */
+export async function createSiblingDocumentsForAdditionalEntries(
+  primaryDocumentId: string,
+  fields: {
+    vehicleNo?: string;
+    date?: string;
+    additionalTollEntries?: Array<{ tollAmount?: string; documentTime?: string; vehicleNo?: string; date?: string }>;
+    additionalWeighments?: Array<{ vehicleNo?: string; date?: string; weightInfo?: string; sealNo?: string; documentTime?: string; documentType?: DocumentType }>;
+  },
+  rawOcrResponse: string,
+): Promise<string[]> {
+  const additionalTollEntries = fields.additionalTollEntries ?? [];
+  const additionalWeighments = fields.additionalWeighments ?? [];
+  if (additionalTollEntries.length === 0 && additionalWeighments.length === 0) {
+    return [];
+  }
+
+  const primary = await prisma.document.findUnique({ where: { id: primaryDocumentId } });
+  if (!primary) return [];
+
+  const createdIds: string[] = [];
+
+  const finishSibling = async (
+    documentId: string,
+    entryVehicleNo?: string,
+    entryDate?: string,
+  ): Promise<void> => {
+    const vehicleNo = entryVehicleNo ?? fields.vehicleNo;
+    const date = entryDate ?? fields.date;
+    if (!vehicleNo) return; // nothing to link/group by
+    await autoLinkDocument(documentId);
+    await autoLinkDocumentToGroup(documentId, { vehicleNo, date });
+  };
+
+  for (const entry of additionalTollEntries) {
+    const sibling = await prisma.document.create({
+      data: {
+        type: 'TOLL',
+        status: 'PENDING_REVIEW',
+        originalFilename: primary.originalFilename,
+        rawFilePath: primary.rawFilePath,
+        mimeType: primary.mimeType,
+        groupId: primary.groupId,
+        sourceDocumentId: primary.sourceDocumentId ?? primary.id,
+        pageNumber: primary.pageNumber,
+      },
+    });
+    await prisma.extractedData.create({
+      data: {
+        documentId: sibling.id,
+        vehicleNo: entry.vehicleNo ?? fields.vehicleNo ?? null,
+        date: entry.date ?? fields.date ?? null,
+        tollAmount: entry.tollAmount ?? null,
+        documentTime: entry.documentTime ?? null,
+        rawOcrResponse,
+      },
+    });
+    createdIds.push(sibling.id);
+    await finishSibling(sibling.id, entry.vehicleNo, entry.date);
+  }
+
+  for (const entry of additionalWeighments) {
+    const docType: DocumentType = entry.documentType ?? 'WEIGHMENT';
+    const sibling = await prisma.document.create({
+      data: {
+        type: docType,
+        status: 'PENDING_REVIEW',
+        originalFilename: primary.originalFilename,
+        rawFilePath: primary.rawFilePath,
+        mimeType: primary.mimeType,
+        groupId: primary.groupId,
+        sourceDocumentId: primary.sourceDocumentId ?? primary.id,
+        pageNumber: primary.pageNumber,
+      },
+    });
+    await prisma.extractedData.create({
+      data: {
+        documentId: sibling.id,
+        vehicleNo: entry.vehicleNo ?? fields.vehicleNo ?? null,
+        date: entry.date ?? fields.date ?? null,
+        weightInfo: entry.weightInfo ?? null,
+        sealNo: entry.sealNo ?? null,
+        documentTime: entry.documentTime ?? null,
+        rawOcrResponse,
+      },
+    });
+    createdIds.push(sibling.id);
+    await finishSibling(sibling.id, entry.vehicleNo, entry.date);
+  }
+
+  return createdIds;
+}
+
+/**
  * Save user-reviewed/edited data and mark document as REVIEWED.
  */
 export async function saveReviewedData(documentId: string, payload: ReviewPayload): Promise<void> {

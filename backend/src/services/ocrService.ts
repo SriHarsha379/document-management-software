@@ -38,7 +38,40 @@ function restrictToWeighmentFields(fields: ExtractedFields): ExtractedFields {
     processingNotes: fields.processingNotes,
     fieldConfidence: fields.fieldConfidence,
     validationIssues: fields.validationIssues,
+    additionalWeighments: fields.additionalWeighments,
   };
+}
+
+function parseAdditionalTollEntries(raw: unknown): ExtractedFields['additionalTollEntries'] {
+  if (!Array.isArray(raw)) return undefined;
+  const entries = raw
+    .filter((e): e is Record<string, unknown> => typeof e === 'object' && e !== null)
+    .map((e) => ({
+      tollAmount: typeof e.tollAmount === 'string' ? e.tollAmount : undefined,
+      documentTime: typeof e.documentTime === 'string' ? e.documentTime : undefined,
+      vehicleNo: typeof e.vehicleNo === 'string' ? e.vehicleNo : undefined,
+      date: typeof e.date === 'string' ? e.date : undefined,
+    }))
+    .filter((e) => e.tollAmount || e.documentTime);
+  return entries.length > 0 ? entries : undefined;
+}
+
+function parseAdditionalWeighments(raw: unknown): ExtractedFields['additionalWeighments'] {
+  if (!Array.isArray(raw)) return undefined;
+  const entries = raw
+    .filter((e): e is Record<string, unknown> => typeof e === 'object' && e !== null)
+    .map((e) => ({
+      vehicleNo: typeof e.vehicleNo === 'string' ? e.vehicleNo : undefined,
+      date: typeof e.date === 'string' ? e.date : undefined,
+      weightInfo: typeof e.weightInfo === 'string' ? e.weightInfo : undefined,
+      sealNo: typeof e.sealNo === 'string' ? e.sealNo : undefined,
+      documentTime: typeof e.documentTime === 'string' ? e.documentTime : undefined,
+      documentType: (WEIGHMENT_TYPES.includes(e.documentType as DocumentType)
+        ? (e.documentType as DocumentType)
+        : undefined),
+    }))
+    .filter((e) => e.weightInfo);
+  return entries.length > 0 ? entries : undefined;
 }
 
 function parseExtractedFields(parsed: Record<string, unknown>, documentType: DocumentType, defaultConfidence = 0.5): ExtractedFields {
@@ -96,6 +129,8 @@ function parseExtractedFields(parsed: Record<string, unknown>, documentType: Doc
       : typeof parsed.confidence === 'number'
         ? parsed.confidence
         : defaultConfidence,
+    additionalTollEntries: parseAdditionalTollEntries(parsed.additionalTollEntries),
+    additionalWeighments: parseAdditionalWeighments(parsed.additionalWeighments),
   };
   const normalized = normalizeExtractedFields(fields);
   if (WEIGHMENT_TYPES.includes(documentType)) {
@@ -137,11 +172,11 @@ STEP 2 — Extract fields according to the identified document type using the ru
 - sealNo: Seal number — look for labels "Seal No.", "Seal No", "SEAL NO."
 - documentTime: The LR's "Out Time" (time the vehicle left), e.g. "11:38:17" or "17:56". Look for a label "Out Time" near the LR date. Return in HH:MM or HH:MM:SS 24-hour format exactly as printed. Return null if not present.
 - invoiceNo: Supplier invoice number on the LR — look for "Invoice No", "Invoice No."
-- companyInvoiceDate: Invoice date / "Inv Date" / "In Date" in YYYY-MM-DD (convert DD/MM/YYYY or DD-MM-YYYY)
+- companyInvoiceDate: Invoice date / "Inv Date" / "In Date" in YYYY-MM-DD (convert DD/MM/YYYY, DD-MM-YYYY, or DD.MM.YYYY)
 - companyEwayBillNo: E-Way Bill number — look for "E-Way Bill No", "E-Way Bill No.", "EWB No."
-- ewayBillDate: E-Way Bill date in YYYY-MM-DD (convert DD/MM/YYYY or DD-MM-YYYY)
+- ewayBillDate: E-Way Bill date in YYYY-MM-DD (convert DD/MM/YYYY, DD-MM-YYYY, or DD.MM.YYYY)
 - vehicleNo: Truck/vehicle registration number — look for "Truck No.", "Vehicle No.", "Lorry No.", "Truck No"
-- date: LR date or document date in YYYY-MM-DD (convert DD/MM/YYYY or DD-MM-YYYY)
+- date: LR date or document date in YYYY-MM-DD (convert DD/MM/YYYY, DD-MM-YYYY, or DD.MM.YYYY)
 - billToParty: The "BILL TO PARTY" company name
 - shipToParty: The "SHIP TO PARTY" company name (delivery address party)
 - approvedDestination: Approved destination / sanctioned destination — look for labels like "Approved Destination"
@@ -173,11 +208,12 @@ Extract ONLY the five fields below. Set every other field to null.
 - If the slip explicitly indicates PARTY / LOADING / PLANT / ORIGIN weighment, classify as WEIGHMENT_PARTY.
 - If the slip explicitly indicates SITE / DESTINATION / DELIVERY / UNLOADING weighment, classify as WEIGHMENT_SITE.
 - Otherwise classify as WEIGHMENT.
+- IMPORTANT — MULTIPLE SLIPS ON ONE IMAGE: source documents are frequently a single sheet with TWO weighbridge slips stacked on it (e.g. an origin/party slip printed above a destination/site slip, or two separate weighbridge dockets pasted one under the other). Extract the FIRST (topmost) slip into the main vehicleNo/date/weightInfo/sealNo/documentTime/documentType fields as usual. If a SECOND, clearly distinct weighment slip is visible lower on the same image, extract it into "additionalWeighments" as an array with one object per extra slip using the same field names (vehicleNo, date, weightInfo, sealNo, documentTime, documentType). Do not merge the two slips' weight readings into one string. If there is only one slip on the image, omit "additionalWeighments" or return an empty array.
 
 === FOR INVOICE (Tax Invoice / GST Invoice) ===
 - invoiceNo: Invoice number — look for "Invoice No", "Invoice No."
-- date: Invoice date in YYYY-MM-DD (convert DD/MM/YYYY)
-- companyInvoiceDate: Invoice date / "Inv Date" / "In Date" in YYYY-MM-DD (convert DD/MM/YYYY or DD-MM-YYYY)
+- date: Invoice date in YYYY-MM-DD (convert DD/MM/YYYY or DD.MM.YYYY)
+- companyInvoiceDate: Invoice date / "Inv Date" / "In Date" in YYYY-MM-DD (convert DD/MM/YYYY, DD-MM-YYYY, or DD.MM.YYYY)
 - vehicleNo: Vehicle number — look for "Vehicle No", "Veh No"
 - lrNo: LR number referenced in the invoice — look for "LR No.", "LR No"
 - billToParty: "BILL TO" party name
@@ -189,13 +225,14 @@ Extract ONLY the five fields below. Set every other field to null.
 - quantity: Quantity from line items with unit
 - quantityInMt: Numeric quantity in metric tonnes from line items (float), e.g. 35.38
 - companyEwayBillNo: E-Way Bill number — look for "E-Way Bill No", "E-Way bill No"
-- ewayBillDate: E-Way Bill date in YYYY-MM-DD (convert DD/MM/YYYY or DD-MM-YYYY)
+- ewayBillDate: E-Way Bill date in YYYY-MM-DD (convert DD/MM/YYYY, DD-MM-YYYY, or DD.MM.YYYY)
 
 === FOR TOLL ===
 - vehicleNo: Vehicle registration number
 - date: Date in YYYY-MM-DD
 - tollAmount: Amount collected with currency symbol, e.g. "₹120" or "Rs.150"
 - documentTime: The time the toll was debited — look for "Debited at", e.g. "03:05 PM". Convert to 24-hour HH:MM. Return null if not present.
+- IMPORTANT — MULTIPLE TOLL ENTRIES ON ONE IMAGE: toll documents are very often phone screenshots of a FASTag/toll app showing a LIST of swipes (e.g. two or more "FASTag Swipe" entries for the same trip, sometimes at different plazas or times, occasionally for different vehicles if the driver's phone is shared across a fleet). Extract the FIRST (topmost) entry into the main tollAmount/documentTime/vehicleNo/date fields as usual. For every ADDITIONAL entry visible in the same screenshot, add one object to "additionalTollEntries" with tollAmount, documentTime, and — only if it differs from the first entry's vehicle — vehicleNo and date. Never sum multiple entries into a single tollAmount string; report each one separately. If there is only one entry, omit "additionalTollEntries" or return an empty array.
 
 Always respond with a valid JSON object with EXACTLY these fields:
 {
@@ -235,13 +272,17 @@ Always respond with a valid JSON object with EXACTLY these fields:
   "source": "<source location from sender/company header for LR and INVOICE (use explicit 'Source:' label when present, otherwise infer city/location from address block) or null>",
   "sealNo": "<seal number — printed 'Seal No.' on an LR, or a labelled handwritten seal number on a weighment slip — or null>",
   "documentTime": "<time-of-day this document records (LR Out Time, weighment in/out time, or toll debited time) in HH:MM or HH:MM:SS 24-hour format, or null>",
+  "additionalTollEntries": [{"tollAmount": "<amount or null>", "documentTime": "<HH:MM or null>", "vehicleNo": "<only if different from main vehicleNo, else null>", "date": "<only if different from main date, else null>"}],
+  "additionalWeighments": [{"vehicleNo": "<or null>", "date": "<or null>", "weightInfo": "<or null>", "sealNo": "<or null>", "documentTime": "<or null>", "documentType": "<WEIGHMENT|WEIGHMENT_PARTY|WEIGHMENT_SITE>"}],
   "rawText": "<full text extracted from document>"
 }
+
+"additionalTollEntries" and "additionalWeighments" should be omitted or empty arrays when the image contains only a single toll entry / single weighment slip — most documents. Only populate them when you can clearly see a second, distinct entry on the same image.
 
 Important rules:
 - Indian vehicle registration format: MH46CL9571, GJ05CD5678, MH12AB1234 — always uppercase, no spaces.
 - LR numbers may contain slashes, e.g. "SP/DR/LR/25-26/1433" — capture the full value exactly.
-- For dates: convert DD/MM/YYYY → YYYY-MM-DD and DD-MM-YYYY → YYYY-MM-DD. Read the year digit by digit carefully (e.g. 2-0-2-5 = 2025, not 2020).
+- For dates: convert DD/MM/YYYY → YYYY-MM-DD, DD-MM-YYYY → YYYY-MM-DD, and DD.MM.YYYY → YYYY-MM-DD (dot-separated dates are common on printed invoices, e.g. "12.05.2026" means 12 May 2026 — do not mistake the dots for a decimal number or guess an unrelated year). Read the year digit by digit carefully (e.g. 2-0-2-5 = 2025, not 2020; 2-0-2-6 = 2026, not 2020 or 2023).
 - For weighment slips the date often appears alongside a time stamp like "DT:16-09-2025 TM:12:05" — extract only the date portion.
 - quantityInMt and quantityInBags must be plain numbers (no units), e.g. 35.38 not "35.38 MT".
 - If a field is not present or cannot be read clearly, return null for that field.

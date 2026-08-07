@@ -172,6 +172,15 @@ model Lr {
   source              String               @default("INTERNAL")
   sealNo              String?
   outTime             String?
+  // ── Auto-reconciliation (computed from linked TOLL / WEIGHMENT documents) ──
+  // Never hand-edited by users; recomputed every time a document is linked
+  // or unlinked. See services/reconciliationService.ts.
+  autoTollAmount        Float?
+  originNetWeightKg     Float?
+  destinationNetWeightKg Float?
+  weightVariancePct     Float?
+  reconciliationIssues  String?
+  reconciledAt          DateTime?
   documentLinks       DocumentLinkRecord[]
   uploadedDocuments   Document[]
   branch              Branch               @relation(fields: [branchId], references: [id])

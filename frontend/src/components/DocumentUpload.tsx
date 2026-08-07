@@ -164,11 +164,30 @@ export function DocumentUpload({ onDocumentReady }: Props) {
       // slow/failed OCR call (e.g. a timeout) doesn't wipe out results for
       // every other document that succeeded.
       const ocrErrors: string[] = [];
+      let extraDetected = 0;
       for (let i = 0; i < allDocs.length; i++) {
         setOcrProgress({ current: i + 1, total: allDocs.length });
         try {
-          const processed = await documentsApi.runOcr(allDocs[i]!.id);
+          const { document: processed, additionalDocumentIds } = await documentsApi.runOcr(allDocs[i]!.id);
           allProcessed.push(processed);
+
+          // The source image may have contained more than one toll swipe or
+          // weighment slip (see additionalTollEntries/additionalWeighments in
+          // the OCR prompt) — each one became its own sibling Document
+          // server-side, already saved and auto-linked, but not otherwise
+          // visible in this review screen. Fetch and surface them here too
+          // so nothing silently disappears from the reviewer's view.
+          if (additionalDocumentIds.length > 0) {
+            extraDetected += additionalDocumentIds.length;
+            for (const extraId of additionalDocumentIds) {
+              try {
+                const extraDoc = await documentsApi.getById(extraId);
+                allProcessed.push(extraDoc);
+              } catch (fetchErr) {
+                console.error(`Failed to fetch additional document ${extraId}`, fetchErr);
+              }
+            }
+          }
         } catch (ocrErr) {
           const msg = ocrErr instanceof Error ? ocrErr.message : String(ocrErr);
           console.error(`OCR failed for document ${allDocs[i]!.id}`, ocrErr);
@@ -179,6 +198,14 @@ export function DocumentUpload({ onDocumentReady }: Props) {
       setProcessingOcr(false); setProgress('idle');
       setOcrProgress(null);
       setProcessedDocs(allProcessed);
+
+      if (extraDetected > 0) {
+        setReviewNotice(
+          `Detected ${extraDetected} additional document${extraDetected > 1 ? 's' : ''} ` +
+          `(e.g. a second toll entry or weighment slip) on a single page — ` +
+          `added below for review alongside the rest.`,
+        );
+      }
 
       if (ocrErrors.length > 0) {
         setError(

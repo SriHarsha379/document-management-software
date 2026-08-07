@@ -80,16 +80,21 @@ export const documentsApi = {
     return res.data;
   },
 
-  runOcr: async (documentId: string): Promise<Document> => {
+  runOcr: async (documentId: string): Promise<{ document: Document; additionalDocumentIds: string[] }> => {
     // OCR can trigger multiple sequential GPT-4o vision calls on the backend
     // (up to 4 rotation variants + a hints-guided retry), which routinely
     // exceeds the default 60s timeout. Give this call much more headroom.
-    const res = await api.post<{ document: Document }>(
+    const res = await api.post<{ document: Document; additionalDocumentIds?: string[] }>(
       `/documents/${documentId}/ocr`,
       undefined,
       { timeout: 180000 },
     );
-    return res.data.document;
+    // additionalDocumentIds is populated when the source image contained more
+    // than one toll swipe or weighment slip (see additionalTollEntries /
+    // additionalWeighments in the OCR prompt) — each one became its own
+    // sibling Document server-side. Callers that care about surfacing those
+    // for review (e.g. DocumentUpload) should fetch them via getById.
+    return { document: res.data.document, additionalDocumentIds: res.data.additionalDocumentIds ?? [] };
   },
 
   review: async (documentId: string, payload: ReviewPayload): Promise<Document> => {

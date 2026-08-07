@@ -30,6 +30,7 @@
 
 import { db } from '../lib/db.js';
 import type { Prisma } from '@prisma/client';
+import { reconcileLr } from './reconciliationService.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -368,6 +369,14 @@ export async function unlinkDocumentFromLr(
     .catch(() => {
       // Record didn't exist — that's fine
     });
+
+  // The linked-document set changed — recompute rollups so a removed TOLL/
+  // WEIGHMENT link doesn't leave stale totals on the Lr.
+  try {
+    await reconcileLr(lrId);
+  } catch (err) {
+    console.error(`reconcileLr failed for lrId=${lrId}:`, err);
+  }
 }
 
 /**
@@ -416,6 +425,16 @@ export async function autoLinkDocument(
     1.0,
     false,
   );
+
+  // Roll up TOLL/WEIGHMENT data and cross-check quantities onto the Lr now
+  // that its set of linked documents has changed. Never let a reconciliation
+  // failure (e.g. a transient DB hiccup) fail the link itself — the link is
+  // the important part and reconciliation can be re-run later.
+  try {
+    await reconcileLr(match.lrId);
+  } catch (err) {
+    console.error(`reconcileLr failed for lrId=${match.lrId}:`, err);
+  }
 
   return {
     linked: true,

@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import * as path from 'path';
 import { upload } from '../middleware/upload.js';
 import { processDocumentOcr } from '../services/ocrService.js';
-import { getOcrMetrics, prisma, saveOcrResults, saveReviewedData } from '../services/documentService.js';
+import { getOcrMetrics, prisma, saveOcrResults, saveReviewedData, createSiblingDocumentsForAdditionalEntries } from '../services/documentService.js';
 import type { DocumentType, ReviewPayload } from '../types/index.js';
 import { LrDocumentCategory } from '@prisma/client';
 import { getPdfPageCount, splitPdfToPageImages, MAX_PDF_PAGES } from '../services/pdfSplitService.js';
@@ -189,14 +189,26 @@ router.post('/:id/ocr', async (req: Request, res: Response): Promise<void> => {
 
     const ocrResult = await processDocumentOcr(document.rawFilePath, document.mimeType);
 
-    await saveOcrResults(
+    const rawOcrResponse = JSON.stringify({
+      providerResponse: ocrResult.rawResponse,
+      metadata: ocrResult.metadata,
+    });
+
+    await saveOcrResults(id, ocrResult.fields, ocrResult.documentType, rawOcrResponse);
+
+    // The source image may contain more than one toll swipe or weighment
+    // slip (see additionalTollEntries/additionalWeighments in the OCR
+    // prompt). Spin those off into their own sibling documents instead of
+    // dropping them, and let each be reviewed/linked independently.
+    const siblingIds = await createSiblingDocumentsForAdditionalEntries(
       id,
-      ocrResult.fields,
-      ocrResult.documentType,
-      JSON.stringify({
-        providerResponse: ocrResult.rawResponse,
-        metadata: ocrResult.metadata,
-      }),
+      {
+        vehicleNo: ocrResult.fields.vehicleNo,
+        date: ocrResult.fields.date,
+        additionalTollEntries: ocrResult.fields.additionalTollEntries,
+        additionalWeighments: ocrResult.fields.additionalWeighments,
+      },
+      rawOcrResponse,
     );
 
     const updated = await prisma.document.findUnique({
@@ -205,8 +217,11 @@ router.post('/:id/ocr', async (req: Request, res: Response): Promise<void> => {
     });
 
     res.json({
-      message: 'OCR processing complete',
+      message: siblingIds.length > 0
+        ? `OCR processing complete. Detected ${siblingIds.length} additional entry(ies) on this page — created as separate documents for review.`
+        : 'OCR processing complete',
       document: formatDocument(updated),
+      additionalDocumentIds: siblingIds,
     });
   } catch (err) {
   console.error('OCR ERROR:', err);

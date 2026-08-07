@@ -53,6 +53,28 @@ export interface ExtractedFields {
   processingNotes?: string[];
   fieldConfidence?: Record<string, number>;
   validationIssues?: string[];
+  // ── Multi-document-per-page support ──────────────────────────────────────
+  // Some source documents are photographed/scanned with more than one
+  // physical slip on a single page image (e.g. two FASTag toll-swipe
+  // screenshots stitched together, or an origin + destination weighment
+  // slip on the same sheet). The primary fields above always describe the
+  // FIRST/most prominent entry; any further entries the model can identify
+  // on the same image are captured here so they aren't silently dropped.
+  // The OCR route turns each of these into its own sibling Document record.
+  additionalTollEntries?: Array<{
+    tollAmount?: string;
+    documentTime?: string;
+    vehicleNo?: string;
+    date?: string;
+  }>;
+  additionalWeighments?: Array<{
+    vehicleNo?: string;
+    date?: string;
+    weightInfo?: string;
+    sealNo?: string;
+    documentTime?: string;
+    documentType?: DocumentType;
+  }>;
 }
 
 export interface OcrResult {

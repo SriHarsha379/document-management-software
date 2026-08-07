@@ -1,0 +1,739 @@
+diff --git a/backend/prisma/migrations/20260807120000_lr_reconciliation_fields/migration.sql b/backend/prisma/migrations/20260807120000_lr_reconciliation_fields/migration.sql
+new file mode 100644
+index 0000000..a759f54
+--- /dev/null
++++ b/backend/prisma/migrations/20260807120000_lr_reconciliation_fields/migration.sql
+@@ -0,0 +1,10 @@
++-- Auto-reconciliation fields on lrs: computed by services/reconciliationService.ts
++-- whenever a TOLL or WEIGHMENT document is linked/unlinked from an Lr.
++-- These are never edited directly by users.
++ALTER TABLE "lrs"
++  ADD COLUMN "autoTollAmount" DOUBLE PRECISION,
++  ADD COLUMN "originNetWeightKg" DOUBLE PRECISION,
++  ADD COLUMN "destinationNetWeightKg" DOUBLE PRECISION,
++  ADD COLUMN "weightVariancePct" DOUBLE PRECISION,
++  ADD COLUMN "reconciliationIssues" TEXT,
++  ADD COLUMN "reconciledAt" TIMESTAMP(3);
+diff --git a/backend/src/services/reconciliationService.ts b/backend/src/services/reconciliationService.ts
+new file mode 100644
+index 0000000..6cf60e4
+--- /dev/null
++++ b/backend/src/services/reconciliationService.ts
+@@ -0,0 +1,197 @@
++/**
++ * reconciliationService.ts
++ *
++ * Rolls up data from documents linked to an Lr (trip) and cross-checks it,
++ * instead of leaving each document's ExtractedData sitting in isolation.
++ *
++ * Problem this solves:
++ *   - TOLL documents' `tollAmount` was extracted but never summed onto the
++ *     Lr's `tollCharges`-equivalent, so the cost never reached the trip record.
++ *   - Two independent weighment readings exist per trip (origin/party and
++ *     destination/site) but nothing compared them, so a short-loaded or
++ *     mis-weighed trip was invisible unless someone manually opened both slips.
++ *   - Invoice / LR quantity vs actual weighbridge net weight was never
++ *     cross-checked either.
++ *
++ * This module is intentionally read-only with respect to user-editable Lr
++ * fields (e.g. it never touches the manually-entered `tollCharges`) — it only
++ * writes to the dedicated `auto*`/`reconciliation*` columns so a human's
++ * manual entry is never silently overwritten.
++ *
++ * Call `reconcileLr(lrId)` any time a document is linked or unlinked from an
++ * Lr. It is deliberately cheap (a handful of indexed reads) so it's safe to
++ * call synchronously after every link/unlink.
++ */
++
++import { db } from '../lib/db.js';
++
++const WEIGHT_VARIANCE_WARN_PCT = 0.5; // origin vs destination net weight
++const QUANTITY_VARIANCE_WARN_PCT = 2; // declared quantity vs actual net weight
++
++export interface ReconciliationResult {
++  autoTollAmount: number | null;
++  originNetWeightKg: number | null;
++  destinationNetWeightKg: number | null;
++  weightVariancePct: number | null;
++  issues: string[];
++}
++
++/**
++ * Parse a currency string like "₹205.50", "Rs.150", "INR 411", or a bare
++ * "411" into a plain number. Returns null when nothing numeric is found.
++ */
++export function parseAmount(value: string | null | undefined): number | null {
++  if (!value) return null;
++  const match = value.replace(/,/g, '').match(/-?\d+(\.\d+)?/);
++  if (!match) return null;
++  const n = parseFloat(match[0]);
++  return Number.isFinite(n) ? n : null;
++}
++
++/**
++ * Extract the net weight in kg from a weightInfo string such as
++ * "Gross: 50180 kg, Tare: 15490 kg, Net: 34690 kg". Falls back to
++ * gross-minus-tare if a labelled "Net" is missing but both other readings
++ * are present. Returns null when no usable weight can be recovered.
++ */
++export function parseNetWeightKg(value: string | null | undefined): number | null {
++  if (!value) return null;
++  const netMatch = value.match(/net[^0-9-]*(-?\d+(?:\.\d+)?)/i);
++  if (netMatch) {
++    const n = parseFloat(netMatch[1]);
++    if (Number.isFinite(n)) return n;
++  }
++  const grossMatch = value.match(/gross[^0-9-]*(-?\d+(?:\.\d+)?)/i);
++  const tareMatch = value.match(/tare[^0-9-]*(-?\d+(?:\.\d+)?)/i);
++  if (grossMatch && tareMatch) {
++    const gross = parseFloat(grossMatch[1]);
++    const tare = parseFloat(tareMatch[1]);
++    if (Number.isFinite(gross) && Number.isFinite(tare)) {
++      return gross - tare;
++    }
++  }
++  return null;
++}
++
++function pctDiff(a: number, b: number): number {
++  const base = Math.max(Math.abs(a), Math.abs(b), 1e-9);
++  return (Math.abs(a - b) / base) * 100;
++}
++
++/**
++ * Recompute rollup/reconciliation fields for a single Lr from all of its
++ * currently-linked documents, and persist the result.
++ *
++ * Safe to call repeatedly (e.g. after every link/unlink) — it always
++ * recomputes from scratch rather than incrementally accumulating, so it
++ * self-corrects if a document is unlinked or its OCR data is corrected.
++ */
++export async function reconcileLr(lrId: string): Promise<ReconciliationResult> {
++  const [lr, links] = await Promise.all([
++    db.lr.findUnique({
++      where: { id: lrId },
++      select: { quantityInMt: true },
++    }),
++    db.documentLinkRecord.findMany({
++      where: { lrId },
++      select: {
++        document: {
++          select: {
++            type: true,
++            extractedData: {
++              select: { tollAmount: true, weightInfo: true, quantityInMt: true },
++            },
++          },
++        },
++      },
++    }),
++  ]);
++
++  const result: ReconciliationResult = {
++    autoTollAmount: null,
++    originNetWeightKg: null,
++    destinationNetWeightKg: null,
++    weightVariancePct: null,
++    issues: [],
++  };
++
++  if (!lr) {
++    return result;
++  }
++
++  let tollSum = 0;
++  let tollCount = 0;
++  let invoiceQuantityMt: number | null = null;
++
++  for (const link of links) {
++    const doc = link.document;
++    const extracted = doc.extractedData;
++    if (!extracted) continue;
++
++    if (doc.type === 'TOLL') {
++      const amt = parseAmount(extracted.tollAmount);
++      if (amt !== null) {
++        tollSum += amt;
++        tollCount += 1;
++      }
++    }
++
++    if (doc.type === 'WEIGHMENT_PARTY' || doc.type === 'WEIGHMENT') {
++      const kg = parseNetWeightKg(extracted.weightInfo);
++      if (kg !== null) result.originNetWeightKg = kg;
++    }
++
++    if (doc.type === 'WEIGHMENT_SITE') {
++      const kg = parseNetWeightKg(extracted.weightInfo);
++      if (kg !== null) result.destinationNetWeightKg = kg;
++    }
++
++    if (doc.type === 'INVOICE' && extracted.quantityInMt != null) {
++      invoiceQuantityMt = extracted.quantityInMt;
++    }
++  }
++
++  result.autoTollAmount = tollCount > 0 ? Math.round(tollSum * 100) / 100 : null;
++
++  if (result.originNetWeightKg !== null && result.destinationNetWeightKg !== null) {
++    result.weightVariancePct =
++      Math.round(pctDiff(result.originNetWeightKg, result.destinationNetWeightKg) * 100) / 100;
++    if (result.weightVariancePct > WEIGHT_VARIANCE_WARN_PCT) {
++      result.issues.push(
++        `Origin weighment (${result.originNetWeightKg} kg) and destination weighment ` +
++          `(${result.destinationNetWeightKg} kg) differ by ${result.weightVariancePct}% ` +
++          `— above the ${WEIGHT_VARIANCE_WARN_PCT}% tolerance.`,
++      );
++    }
++  }
++
++  // Cross-check declared quantity (LR, or invoice as fallback) against the
++  // actual weighbridge net weight, whichever weighment reading we have.
++  const declaredQuantityMt = lr.quantityInMt ?? invoiceQuantityMt;
++  const actualNetKg = result.destinationNetWeightKg ?? result.originNetWeightKg;
++  if (declaredQuantityMt != null && actualNetKg !== null) {
++    const declaredKg = declaredQuantityMt * 1000;
++    const qtyVariancePct = Math.round(pctDiff(declaredKg, actualNetKg) * 100) / 100;
++    if (qtyVariancePct > QUANTITY_VARIANCE_WARN_PCT) {
++      result.issues.push(
++        `Declared quantity (${declaredQuantityMt} MT = ${declaredKg} kg) differs from the ` +
++          `weighbridge net weight (${actualNetKg} kg) by ${qtyVariancePct}% ` +
++          `— above the ${QUANTITY_VARIANCE_WARN_PCT}% tolerance.`,
++      );
++    }
++  }
++
++  await db.lr.update({
++    where: { id: lrId },
++    data: {
++      autoTollAmount: result.autoTollAmount,
++      originNetWeightKg: result.originNetWeightKg,
++      destinationNetWeightKg: result.destinationNetWeightKg,
++      weightVariancePct: result.weightVariancePct,
++      reconciliationIssues: result.issues.length > 0 ? JSON.stringify(result.issues) : null,
++      reconciledAt: new Date(),
++    },
++  });
++
++  return result;
++}
+diff --git a/backend/src/tests/reconciliation.test.ts b/backend/src/tests/reconciliation.test.ts
+new file mode 100644
+index 0000000..0e125ba
+--- /dev/null
++++ b/backend/src/tests/reconciliation.test.ts
+@@ -0,0 +1,156 @@
++/**
++ * Unit tests for reconciliationService.ts — the rollup/cross-check logic
++ * that turns isolated TOLL/WEIGHMENT ExtractedData rows into totals and
++ * mismatch flags on the Lr record.
++ */
++
++import { describe, it, expect, vi, beforeEach } from 'vitest';
++import { parseAmount, parseNetWeightKg } from '../services/reconciliationService.js';
++
++// ── Pure parsing helpers ─────────────────────────────────────────────────────
++
++describe('parseAmount', () => {
++  it('parses a rupee-symbol amount', () => {
++    expect(parseAmount('₹205.50')).toBe(205.5);
++  });
++  it('parses an "Rs." prefixed amount', () => {
++    expect(parseAmount('Rs.150')).toBe(150);
++  });
++  it('parses a bare number', () => {
++    expect(parseAmount('411')).toBe(411);
++  });
++  it('strips thousands separators', () => {
++    expect(parseAmount('₹1,205.50')).toBe(1205.5);
++  });
++  it('returns null for null/undefined/empty', () => {
++    expect(parseAmount(null)).toBeNull();
++    expect(parseAmount(undefined)).toBeNull();
++    expect(parseAmount('')).toBeNull();
++  });
++  it('returns null when there is no number', () => {
++    expect(parseAmount('no amount here')).toBeNull();
++  });
++});
++
++describe('parseNetWeightKg', () => {
++  it('extracts a labelled Net weight', () => {
++    expect(parseNetWeightKg('Gross: 50180 kg, Tare: 15490 kg, Net: 34690 kg')).toBe(34690);
++  });
++  it('extracts Net regardless of label order', () => {
++    expect(parseNetWeightKg('Net: 28040 kg, Gross: 41620 kg, Empty: 13580 kg')).toBe(28040);
++  });
++  it('falls back to gross-minus-tare when Net is not labelled', () => {
++    expect(parseNetWeightKg('Gross: 50130 kg, Tare: 15450 kg')).toBe(50130 - 15450);
++  });
++  it('returns null when nothing usable is present', () => {
++    expect(parseNetWeightKg('no weight data')).toBeNull();
++    expect(parseNetWeightKg(null)).toBeNull();
++    expect(parseNetWeightKg(undefined)).toBeNull();
++  });
++});
++
++// ── reconcileLr — mocked DB ──────────────────────────────────────────────────
++
++vi.mock('../lib/db.js', () => {
++  const mockDb = {
++    lr: {
++      findUnique: vi.fn(),
++      update: vi.fn(),
++    },
++    documentLinkRecord: {
++      findMany: vi.fn(),
++    },
++  };
++  return { db: mockDb };
++});
++
++import { db } from '../lib/db.js';
++import { reconcileLr } from '../services/reconciliationService.js';
++
++// eslint-disable-next-line @typescript-eslint/no-explicit-any
++const mockDb = db as any;
++
++function link(type: string, extracted: Record<string, unknown> | null) {
++  return { document: { type, extractedData: extracted } };
++}
++
++beforeEach(() => {
++  vi.clearAllMocks();
++  mockDb.lr.update.mockResolvedValue({});
++});
++
++describe('reconcileLr', () => {
++  it('returns an empty result when the Lr does not exist', async () => {
++    mockDb.lr.findUnique.mockResolvedValue(null);
++    mockDb.documentLinkRecord.findMany.mockResolvedValue([]);
++    const result = await reconcileLr('missing-lr');
++    expect(result.autoTollAmount).toBeNull();
++    expect(mockDb.lr.update).not.toHaveBeenCalled();
++  });
++
++  it('sums multiple linked TOLL documents into autoTollAmount', async () => {
++    mockDb.lr.findUnique.mockResolvedValue({ quantityInMt: null });
++    mockDb.documentLinkRecord.findMany.mockResolvedValue([
++      link('TOLL', { tollAmount: '₹205.50', weightInfo: null, quantityInMt: null }),
++      link('TOLL', { tollAmount: '₹411', weightInfo: null, quantityInMt: null }),
++    ]);
++
++    const result = await reconcileLr('lr-1');
++
++    expect(result.autoTollAmount).toBe(616.5);
++    expect(mockDb.lr.update).toHaveBeenCalledWith({
++      where: { id: 'lr-1' },
++      data: expect.objectContaining({ autoTollAmount: 616.5 }),
++    });
++  });
++
++  it('does not flag a variance for two closely-matching weighments (real-world tolerance)', async () => {
++    // Matches doc MHQS001701: 34690 kg origin vs 34680 kg destination (~0.03%)
++    mockDb.lr.findUnique.mockResolvedValue({ quantityInMt: 34.69 });
++    mockDb.documentLinkRecord.findMany.mockResolvedValue([
++      link('WEIGHMENT_PARTY', { tollAmount: null, weightInfo: 'Gross: 50180 kg, Tare: 15490 kg, Net: 34690 kg', quantityInMt: null }),
++      link('WEIGHMENT_SITE', { tollAmount: null, weightInfo: 'Gross: 50130 kg, Tare: 15450 kg, Net: 34680 kg', quantityInMt: null }),
++    ]);
++
++    const result = await reconcileLr('lr-2');
++
++    expect(result.originNetWeightKg).toBe(34690);
++    expect(result.destinationNetWeightKg).toBe(34680);
++    expect(result.weightVariancePct).toBeLessThan(0.5);
++    expect(result.issues).toHaveLength(0);
++  });
++
++  it('flags a weight variance above the 0.5% tolerance', async () => {
++    mockDb.lr.findUnique.mockResolvedValue({ quantityInMt: null });
++    mockDb.documentLinkRecord.findMany.mockResolvedValue([
++      link('WEIGHMENT_PARTY', { tollAmount: null, weightInfo: 'Net: 34690 kg', quantityInMt: null }),
++      link('WEIGHMENT_SITE', { tollAmount: null, weightInfo: 'Net: 33000 kg', quantityInMt: null }),
++    ]);
++
++    const result = await reconcileLr('lr-3');
++
++    expect(result.weightVariancePct).toBeGreaterThan(0.5);
++    expect(result.issues.some((i) => i.includes('weighment'))).toBe(true);
++  });
++
++  it('flags a quantity-vs-weighbridge mismatch above the 2% tolerance', async () => {
++    // Declared 34.69 MT (34690 kg) but the weighbridge shows a real short-load
++    mockDb.lr.findUnique.mockResolvedValue({ quantityInMt: 34.69 });
++    mockDb.documentLinkRecord.findMany.mockResolvedValue([
++      link('WEIGHMENT_SITE', { tollAmount: null, weightInfo: 'Net: 32000 kg', quantityInMt: null }),
++    ]);
++
++    const result = await reconcileLr('lr-4');
++
++    expect(result.issues.some((i) => i.includes('Declared quantity'))).toBe(true);
++  });
++
++  it('ignores documents with no ExtractedData', async () => {
++    mockDb.lr.findUnique.mockResolvedValue({ quantityInMt: null });
++    mockDb.documentLinkRecord.findMany.mockResolvedValue([link('TOLL', null)]);
++
++    const result = await reconcileLr('lr-5');
++
++    expect(result.autoTollAmount).toBeNull();
++  });
++});
+diff --git a/backend/prisma/schema.prisma b/backend/prisma/schema.prisma
+index db1d728..44b24ce 100644
+--- a/backend/prisma/schema.prisma
++++ b/backend/prisma/schema.prisma
+@@ -172,6 +172,15 @@ model Lr {
+   source              String               @default("INTERNAL")
+   sealNo              String?
+   outTime             String?
++  // ── Auto-reconciliation (computed from linked TOLL / WEIGHMENT documents) ──
++  // Never hand-edited by users; recomputed every time a document is linked
++  // or unlinked. See services/reconciliationService.ts.
++  autoTollAmount        Float?
++  originNetWeightKg     Float?
++  destinationNetWeightKg Float?
++  weightVariancePct     Float?
++  reconciliationIssues  String?
++  reconciledAt          DateTime?
+   documentLinks       DocumentLinkRecord[]
+   uploadedDocuments   Document[]
+   branch              Branch               @relation(fields: [branchId], references: [id])
+diff --git a/backend/src/routes/documents.ts b/backend/src/routes/documents.ts
+index 6845f7c..0b5dd2b 100644
+--- a/backend/src/routes/documents.ts
++++ b/backend/src/routes/documents.ts
+@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from 'express';
+ import * as path from 'path';
+ import { upload } from '../middleware/upload.js';
+ import { processDocumentOcr } from '../services/ocrService.js';
+-import { getOcrMetrics, prisma, saveOcrResults, saveReviewedData } from '../services/documentService.js';
++import { getOcrMetrics, prisma, saveOcrResults, saveReviewedData, createSiblingDocumentsForAdditionalEntries } from '../services/documentService.js';
+ import type { DocumentType, ReviewPayload } from '../types/index.js';
+ import { LrDocumentCategory } from '@prisma/client';
+ import { getPdfPageCount, splitPdfToPageImages, MAX_PDF_PAGES } from '../services/pdfSplitService.js';
+@@ -189,14 +189,26 @@ router.post('/:id/ocr', async (req: Request, res: Response): Promise<void> => {
+
+     const ocrResult = await processDocumentOcr(document.rawFilePath, document.mimeType);
+
+-    await saveOcrResults(
++    const rawOcrResponse = JSON.stringify({
++      providerResponse: ocrResult.rawResponse,
++      metadata: ocrResult.metadata,
++    });
++
++    await saveOcrResults(id, ocrResult.fields, ocrResult.documentType, rawOcrResponse);
++
++    // The source image may contain more than one toll swipe or weighment
++    // slip (see additionalTollEntries/additionalWeighments in the OCR
++    // prompt). Spin those off into their own sibling documents instead of
++    // dropping them, and let each be reviewed/linked independently.
++    const siblingIds = await createSiblingDocumentsForAdditionalEntries(
+       id,
+-      ocrResult.fields,
+-      ocrResult.documentType,
+-      JSON.stringify({
+-        providerResponse: ocrResult.rawResponse,
+-        metadata: ocrResult.metadata,
+-      }),
++      {
++        vehicleNo: ocrResult.fields.vehicleNo,
++        date: ocrResult.fields.date,
++        additionalTollEntries: ocrResult.fields.additionalTollEntries,
++        additionalWeighments: ocrResult.fields.additionalWeighments,
++      },
++      rawOcrResponse,
+     );
+
+     const updated = await prisma.document.findUnique({
+@@ -205,8 +217,11 @@ router.post('/:id/ocr', async (req: Request, res: Response): Promise<void> => {
+     });
+
+     res.json({
+-      message: 'OCR processing complete',
++      message: siblingIds.length > 0
++        ? `OCR processing complete. Detected ${siblingIds.length} additional entry(ies) on this page — created as separate documents for review.`
++        : 'OCR processing complete',
+       document: formatDocument(updated),
++      additionalDocumentIds: siblingIds,
+     });
+   } catch (err) {
+   console.error('OCR ERROR:', err);
+diff --git a/backend/src/services/autoLinkService.ts b/backend/src/services/autoLinkService.ts
+index 7ad32f0..2e9c09e 100644
+--- a/backend/src/services/autoLinkService.ts
++++ b/backend/src/services/autoLinkService.ts
+@@ -30,6 +30,7 @@
+
+ import { db } from '../lib/db.js';
+ import type { Prisma } from '@prisma/client';
++import { reconcileLr } from './reconciliationService.js';
+
+ // ── Types ─────────────────────────────────────────────────────────────────────
+
+@@ -368,6 +369,14 @@ export async function unlinkDocumentFromLr(
+     .catch(() => {
+       // Record didn't exist — that's fine
+     });
++
++  // The linked-document set changed — recompute rollups so a removed TOLL/
++  // WEIGHMENT link doesn't leave stale totals on the Lr.
++  try {
++    await reconcileLr(lrId);
++  } catch (err) {
++    console.error(`reconcileLr failed for lrId=${lrId}:`, err);
++  }
+ }
+
+ /**
+@@ -417,6 +426,16 @@ export async function autoLinkDocument(
+     false,
+   );
+
++  // Roll up TOLL/WEIGHMENT data and cross-check quantities onto the Lr now
++  // that its set of linked documents has changed. Never let a reconciliation
++  // failure (e.g. a transient DB hiccup) fail the link itself — the link is
++  // the important part and reconciliation can be re-run later.
++  try {
++    await reconcileLr(match.lrId);
++  } catch (err) {
++    console.error(`reconcileLr failed for lrId=${match.lrId}:`, err);
++  }
++
+   return {
+     linked: true,
+     lrId: match.lrId,
+diff --git a/backend/src/services/documentService.ts b/backend/src/services/documentService.ts
+index 33f598b..e01fb00 100644
+--- a/backend/src/services/documentService.ts
++++ b/backend/src/services/documentService.ts
+@@ -779,6 +779,110 @@ export async function saveOcrResults(
+   }
+ }
+
++/**
++ * When OCR finds MORE THAN ONE toll swipe or weighment slip on a single
++ * source image (see `ExtractedFields.additionalTollEntries` /
++ * `additionalWeighments`), the primary document/ExtractedData row can only
++ * describe the first one. This creates one sibling Document + ExtractedData
++ * row per additional entry so each becomes independently reviewable,
++ * linkable to an Lr, and included in reconciliation — instead of being
++ * silently dropped, which was the previous behaviour.
++ *
++ * Siblings share the same underlying file (rawFilePath/pageNumber) as the
++ * primary document; they are distinguished only by their extracted fields.
++ */
++export async function createSiblingDocumentsForAdditionalEntries(
++  primaryDocumentId: string,
++  fields: {
++    vehicleNo?: string;
++    date?: string;
++    additionalTollEntries?: Array<{ tollAmount?: string; documentTime?: string; vehicleNo?: string; date?: string }>;
++    additionalWeighments?: Array<{ vehicleNo?: string; date?: string; weightInfo?: string; sealNo?: string; documentTime?: string; documentType?: DocumentType }>;
++  },
++  rawOcrResponse: string,
++): Promise<string[]> {
++  const additionalTollEntries = fields.additionalTollEntries ?? [];
++  const additionalWeighments = fields.additionalWeighments ?? [];
++  if (additionalTollEntries.length === 0 && additionalWeighments.length === 0) {
++    return [];
++  }
++
++  const primary = await prisma.document.findUnique({ where: { id: primaryDocumentId } });
++  if (!primary) return [];
++
++  const createdIds: string[] = [];
++
++  const finishSibling = async (
++    documentId: string,
++    entryVehicleNo?: string,
++    entryDate?: string,
++  ): Promise<void> => {
++    const vehicleNo = entryVehicleNo ?? fields.vehicleNo;
++    const date = entryDate ?? fields.date;
++    if (!vehicleNo) return; // nothing to link/group by
++    await autoLinkDocument(documentId);
++    await autoLinkDocumentToGroup(documentId, { vehicleNo, date });
++  };
++
++  for (const entry of additionalTollEntries) {
++    const sibling = await prisma.document.create({
++      data: {
++        type: 'TOLL',
++        status: 'PENDING_REVIEW',
++        originalFilename: primary.originalFilename,
++        rawFilePath: primary.rawFilePath,
++        mimeType: primary.mimeType,
++        groupId: primary.groupId,
++        sourceDocumentId: primary.sourceDocumentId ?? primary.id,
++        pageNumber: primary.pageNumber,
++      },
++    });
++    await prisma.extractedData.create({
++      data: {
++        documentId: sibling.id,
++        vehicleNo: entry.vehicleNo ?? fields.vehicleNo ?? null,
++        date: entry.date ?? fields.date ?? null,
++        tollAmount: entry.tollAmount ?? null,
++        documentTime: entry.documentTime ?? null,
++        rawOcrResponse,
++      },
++    });
++    createdIds.push(sibling.id);
++    await finishSibling(sibling.id, entry.vehicleNo, entry.date);
++  }
++
++  for (const entry of additionalWeighments) {
++    const docType: DocumentType = entry.documentType ?? 'WEIGHMENT';
++    const sibling = await prisma.document.create({
++      data: {
++        type: docType,
++        status: 'PENDING_REVIEW',
++        originalFilename: primary.originalFilename,
++        rawFilePath: primary.rawFilePath,
++        mimeType: primary.mimeType,
++        groupId: primary.groupId,
++        sourceDocumentId: primary.sourceDocumentId ?? primary.id,
++        pageNumber: primary.pageNumber,
++      },
++    });
++    await prisma.extractedData.create({
++      data: {
++        documentId: sibling.id,
++        vehicleNo: entry.vehicleNo ?? fields.vehicleNo ?? null,
++        date: entry.date ?? fields.date ?? null,
++        weightInfo: entry.weightInfo ?? null,
++        sealNo: entry.sealNo ?? null,
++        documentTime: entry.documentTime ?? null,
++        rawOcrResponse,
++      },
++    });
++    createdIds.push(sibling.id);
++    await finishSibling(sibling.id, entry.vehicleNo, entry.date);
++  }
++
++  return createdIds;
++}
++
+ /**
+  * Save user-reviewed/edited data and mark document as REVIEWED.
+  */
+diff --git a/backend/src/services/ocrService.ts b/backend/src/services/ocrService.ts
+index 7f0b605..93b34cd 100644
+--- a/backend/src/services/ocrService.ts
++++ b/backend/src/services/ocrService.ts
+@@ -38,9 +38,42 @@ function restrictToWeighmentFields(fields: ExtractedFields): ExtractedFields {
+     processingNotes: fields.processingNotes,
+     fieldConfidence: fields.fieldConfidence,
+     validationIssues: fields.validationIssues,
++    additionalWeighments: fields.additionalWeighments,
+   };
+ }
+
++function parseAdditionalTollEntries(raw: unknown): ExtractedFields['additionalTollEntries'] {
++  if (!Array.isArray(raw)) return undefined;
++  const entries = raw
++    .filter((e): e is Record<string, unknown> => typeof e === 'object' && e !== null)
++    .map((e) => ({
++      tollAmount: typeof e.tollAmount === 'string' ? e.tollAmount : undefined,
++      documentTime: typeof e.documentTime === 'string' ? e.documentTime : undefined,
++      vehicleNo: typeof e.vehicleNo === 'string' ? e.vehicleNo : undefined,
++      date: typeof e.date === 'string' ? e.date : undefined,
++    }))
++    .filter((e) => e.tollAmount || e.documentTime);
++  return entries.length > 0 ? entries : undefined;
++}
++
++function parseAdditionalWeighments(raw: unknown): ExtractedFields['additionalWeighments'] {
++  if (!Array.isArray(raw)) return undefined;
++  const entries = raw
++    .filter((e): e is Record<string, unknown> => typeof e === 'object' && e !== null)
++    .map((e) => ({
++      vehicleNo: typeof e.vehicleNo === 'string' ? e.vehicleNo : undefined,
++      date: typeof e.date === 'string' ? e.date : undefined,
++      weightInfo: typeof e.weightInfo === 'string' ? e.weightInfo : undefined,
++      sealNo: typeof e.sealNo === 'string' ? e.sealNo : undefined,
++      documentTime: typeof e.documentTime === 'string' ? e.documentTime : undefined,
++      documentType: (WEIGHMENT_TYPES.includes(e.documentType as DocumentType)
++        ? (e.documentType as DocumentType)
++        : undefined),
++    }))
++    .filter((e) => e.weightInfo);
++  return entries.length > 0 ? entries : undefined;
++}
++
+ function parseExtractedFields(parsed: Record<string, unknown>, documentType: DocumentType, defaultConfidence = 0.5): ExtractedFields {
+   const partyNames = Array.isArray(parsed.partyNames)
+     ? parsed.partyNames.filter((p): p is string => typeof p === 'string')
+@@ -96,6 +129,8 @@ function parseExtractedFields(parsed: Record<string, unknown>, documentType: Doc
+       : typeof parsed.confidence === 'number'
+         ? parsed.confidence
+         : defaultConfidence,
++    additionalTollEntries: parseAdditionalTollEntries(parsed.additionalTollEntries),
++    additionalWeighments: parseAdditionalWeighments(parsed.additionalWeighments),
+   };
+   const normalized = normalizeExtractedFields(fields);
+   if (WEIGHMENT_TYPES.includes(documentType)) {
+@@ -173,6 +208,7 @@ Extract ONLY the five fields below. Set every other field to null.
+ - If the slip explicitly indicates PARTY / LOADING / PLANT / ORIGIN weighment, classify as WEIGHMENT_PARTY.
+ - If the slip explicitly indicates SITE / DESTINATION / DELIVERY / UNLOADING weighment, classify as WEIGHMENT_SITE.
+ - Otherwise classify as WEIGHMENT.
++- IMPORTANT — MULTIPLE SLIPS ON ONE IMAGE: source documents are frequently a single sheet with TWO weighbridge slips stacked on it (e.g. an origin/party slip printed above a destination/site slip, or two separate weighbridge dockets pasted one under the other). Extract the FIRST (topmost) slip into the main vehicleNo/date/weightInfo/sealNo/documentTime/documentType fields as usual. If a SECOND, clearly distinct weighment slip is visible lower on the same image, extract it into "additionalWeighments" as an array with one object per extra slip using the same field names (vehicleNo, date, weightInfo, sealNo, documentTime, documentType). Do not merge the two slips' weight readings into one string. If there is only one slip on the image, omit "additionalWeighments" or return an empty array.
+
+ === FOR INVOICE (Tax Invoice / GST Invoice) ===
+ - invoiceNo: Invoice number — look for "Invoice No", "Invoice No."
+@@ -196,6 +232,7 @@ Extract ONLY the five fields below. Set every other field to null.
+ - date: Date in YYYY-MM-DD
+ - tollAmount: Amount collected with currency symbol, e.g. "₹120" or "Rs.150"
+ - documentTime: The time the toll was debited — look for "Debited at", e.g. "03:05 PM". Convert to 24-hour HH:MM. Return null if not present.
++- IMPORTANT — MULTIPLE TOLL ENTRIES ON ONE IMAGE: toll documents are very often phone screenshots of a FASTag/toll app showing a LIST of swipes (e.g. two or more "FASTag Swipe" entries for the same trip, sometimes at different plazas or times, occasionally for different vehicles if the driver's phone is shared across a fleet). Extract the FIRST (topmost) entry into the main tollAmount/documentTime/vehicleNo/date fields as usual. For every ADDITIONAL entry visible in the same screenshot, add one object to "additionalTollEntries" with tollAmount, documentTime, and — only if it differs from the first entry's vehicle — vehicleNo and date. Never sum multiple entries into a single tollAmount string; report each one separately. If there is only one entry, omit "additionalTollEntries" or return an empty array.
+
+ Always respond with a valid JSON object with EXACTLY these fields:
+ {
+@@ -235,9 +272,13 @@ Always respond with a valid JSON object with EXACTLY these fields:
+   "source": "<source location from sender/company header for LR and INVOICE (use explicit 'Source:' label when present, otherwise infer city/location from address block) or null>",
+   "sealNo": "<seal number — printed 'Seal No.' on an LR, or a labelled handwritten seal number on a weighment slip — or null>",
+   "documentTime": "<time-of-day this document records (LR Out Time, weighment in/out time, or toll debited time) in HH:MM or HH:MM:SS 24-hour format, or null>",
++  "additionalTollEntries": [{"tollAmount": "<amount or null>", "documentTime": "<HH:MM or null>", "vehicleNo": "<only if different from main vehicleNo, else null>", "date": "<only if different from main date, else null>"}],
++  "additionalWeighments": [{"vehicleNo": "<or null>", "date": "<or null>", "weightInfo": "<or null>", "sealNo": "<or null>", "documentTime": "<or null>", "documentType": "<WEIGHMENT|WEIGHMENT_PARTY|WEIGHMENT_SITE>"}],
+   "rawText": "<full text extracted from document>"
+ }
+
++"additionalTollEntries" and "additionalWeighments" should be omitted or empty arrays when the image contains only a single toll entry / single weighment slip — most documents. Only populate them when you can clearly see a second, distinct entry on the same image.
++
+ Important rules:
+ - Indian vehicle registration format: MH46CL9571, GJ05CD5678, MH12AB1234 — always uppercase, no spaces.
+ - LR numbers may contain slashes, e.g. "SP/DR/LR/25-26/1433" — capture the full value exactly.
+diff --git a/backend/src/types/index.ts b/backend/src/types/index.ts
+index eb78aee..9f3135d 100644
+--- a/backend/src/types/index.ts
++++ b/backend/src/types/index.ts
+@@ -53,6 +53,28 @@ export interface ExtractedFields {
+   processingNotes?: string[];
+   fieldConfidence?: Record<string, number>;
+   validationIssues?: string[];
++  // ── Multi-document-per-page support ──────────────────────────────────────
++  // Some source documents are photographed/scanned with more than one
++  // physical slip on a single page image (e.g. two FASTag toll-swipe
++  // screenshots stitched together, or an origin + destination weighment
++  // slip on the same sheet). The primary fields above always describe the
++  // FIRST/most prominent entry; any further entries the model can identify
++  // on the same image are captured here so they aren't silently dropped.
++  // The OCR route turns each of these into its own sibling Document record.
++  additionalTollEntries?: Array<{
++    tollAmount?: string;
++    documentTime?: string;
++    vehicleNo?: string;
++    date?: string;
++  }>;
++  additionalWeighments?: Array<{
++    vehicleNo?: string;
++    date?: string;
++    weightInfo?: string;
++    sealNo?: string;
++    documentTime?: string;
++    documentType?: DocumentType;
++  }>;
+ }
+
+ export interface OcrResult {
