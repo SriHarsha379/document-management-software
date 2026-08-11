@@ -12,6 +12,9 @@
  */
 
 import { Router, type Request, type Response } from 'express';
+import { requireAuth } from '../modules/auth/auth.routes.js';
+import { requirePermission } from '../modules/rbac/rbac.middleware.js';
+import { PERMISSIONS } from '../modules/rbac/permissions.js';
 import { db } from '../lib/db.js';
 import {
   autoLinkDocument,
@@ -27,7 +30,7 @@ const adminRouter = Router();
 // ── GET /api/documents/:id/links ──────────────────────────────────────────────
 // Returns all LR link records for the given document, sorted by confidence desc.
 
-router.get('/:id/links', async (req: Request, res: Response): Promise<void> => {
+router.get('/:id/links', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_READ), async (req: Request, res: Response): Promise<void> => {
   try {
     const doc = await db.document.findUnique({ where: { id: req.params['id'] as string } });
     if (!doc) {
@@ -46,7 +49,7 @@ router.get('/:id/links', async (req: Request, res: Response): Promise<void> => {
 // (Re-)runs the auto-link algorithm for the given document.
 // Accepts an optional `companyId` body field to scope the LR search.
 
-router.post('/:id/links/auto', async (req: Request, res: Response): Promise<void> => {
+router.post('/:id/links/auto', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_UPLOAD), async (req: Request, res: Response): Promise<void> => {
   try {
     const documentId = req.params['id'] as string;
     const doc = await db.document.findUnique({ where: { id: documentId } });
@@ -68,7 +71,7 @@ router.post('/:id/links/auto', async (req: Request, res: Response): Promise<void
 // Manually link a document to a specific LR.
 // Body: { lrId: string }
 
-router.post('/:id/links', async (req: Request, res: Response): Promise<void> => {
+router.post('/:id/links', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_UPLOAD), async (req: Request, res: Response): Promise<void> => {
   try {
     const documentId = req.params['id'] as string;
     const { lrId } = req.body as { lrId?: string };
@@ -102,7 +105,7 @@ router.post('/:id/links', async (req: Request, res: Response): Promise<void> => 
 // ── DELETE /api/documents/:id/links/:lrId ─────────────────────────────────────
 // Removes the link between a document and an LR.
 
-router.delete('/:id/links/:lrId', async (req: Request, res: Response): Promise<void> => {
+router.delete('/:id/links/:lrId', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_DELETE), async (req: Request, res: Response): Promise<void> => {
   try {
     await unlinkDocumentFromLr(
       req.params['id'] as string,

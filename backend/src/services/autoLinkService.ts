@@ -31,18 +31,59 @@
 import { db } from '../lib/db.js';
 import type { Prisma } from '@prisma/client';
 import { reconcileLr } from './reconciliationService.js';
+import { canonicalVehicleNo } from './vehicleNormalization.js';
+import { selectByWeightInfo, type WeightCandidate } from './weightMatching.js';
+import type { WeighmentPoint } from './weighmentClassifier.js';
+
+export { normalizeVehicleNo } from './vehicleNormalization.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Identifier for the rule that produced a link, ordered strongest first.
+ * Persisted alongside the link so the UI can explain *why* a document was
+ * attached, and so a review queue can be filtered by trustworthiness.
+ */
+export type MatchStrategy =
+  | 'lrNo'
+  | 'invoiceNo'
+  | 'sealNo'
+  | 'challanNo'
+  | 'netWeight'
+  | 'vehicleDateTime'
+  | 'vehicleDate';
+
+/**
+ * Confidence assigned to each strategy. These are the values written to
+ * `document_link_records.confidence`; anything below REVIEW_THRESHOLD should
+ * surface in the manual-review queue rather than being dispatched blind.
+ */
+export const STRATEGY_CONFIDENCE: Record<MatchStrategy, number> = {
+  lrNo: 1.0,
+  invoiceNo: 1.0,
+  sealNo: 0.95,
+  challanNo: 1.0,
+  netWeight: 0.92,
+  vehicleDateTime: 0.7,
+  vehicleDate: 0.5,
+};
+
+/** Links at or above this confidence are safe to auto-dispatch. */
+export const REVIEW_THRESHOLD = 0.8;
 
 export interface MatchResult {
   lrId: string;
   matchedFields: string[];
+  strategy: MatchStrategy;
+  confidence: number;
 }
 
 export interface LinkResult {
   linked: boolean;
   lrId?: string;
   matchedFields?: string[];
+  strategy?: MatchStrategy;
+  confidence?: number;
 }
 
 export interface RelinkSummary {
@@ -51,11 +92,6 @@ export interface RelinkSummary {
 }
 
 // ── Normalisation helpers ─────────────────────────────────────────────────────
-
-/** Normalise a vehicle number: uppercase, strip all whitespace. */
-export function normalizeVehicleNo(v: string): string {
-  return v.trim().toUpperCase().replace(/\s+/g, '');
-}
 
 /** Normalise an LR / invoice number: uppercase, strip leading/trailing space. */
 export function normalizeRefNo(s: string): string {
@@ -140,6 +176,14 @@ export function combineDateTimeMs(dateStr: string, timeStr?: string | null): num
 const SEAL_MATCH_TYPES = new Set(['WEIGHMENT', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE']);
 
 /**
+ * Document types whose extracted `weightInfo` can be compared against the
+ * LR's declared `quantityInMt`. Only weighbridge tickets carry a gross/tare/
+ * net triple; anything else that happens to mention a weight is not a
+ * calibrated reading and must not drive a link.
+ */
+const WEIGHT_MATCH_TYPES = new Set(['WEIGHMENT', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE']);
+
+/**
  * Maximum number of days AFTER the LR date that a document of this type is
  * allowed to be dated and still auto-link via the vehicleNo+date fallback.
  *
@@ -202,18 +246,34 @@ export async function findBestMatchingLr(
     date?: string | null;
     sealNo?: string | null;
     documentTime?: string | null;
+    weightInfo?: string | null;
+    challanNo?: string | null;
+    weighmentPoint?: string | null;
   },
   companyId?: string,
   documentType?: string | null,
 ): Promise<MatchResult | null> {
   const scope: Prisma.LrWhereInput = companyId ? { companyId } : {};
 
+  /** Build a MatchResult, stamping the strategy's default confidence. */
+  const result = (
+    lrId: string,
+    matchedFields: string[],
+    strategy: MatchStrategy,
+    confidenceOverride?: number,
+  ): MatchResult => ({
+    lrId,
+    matchedFields,
+    strategy,
+    confidence: confidenceOverride ?? STRATEGY_CONFIDENCE[strategy],
+  });
+
   // ── 1. lrNo exact match ───────────────────────────────────────────────────
   if (extracted.lrNo?.trim()) {
     const lr = await db.lr.findFirst({
       where: { lrNo: normalizeRefNo(extracted.lrNo), ...scope },
     });
-    if (lr) return { lrId: lr.id, matchedFields: ['lrNo'] };
+    if (lr) return result(lr.id, ['lrNo'], 'lrNo');
   }
 
   // ── 2. invoiceNo exact match (check both invoiceNo and companyInvoiceNo) ──
@@ -228,7 +288,32 @@ export async function findBestMatchingLr(
         ...scope,
       },
     });
-    if (lr) return { lrId: lr.id, matchedFields: ['invoiceNo'] };
+    if (lr) return result(lr.id, ['invoiceNo'], 'invoiceNo');
+  }
+
+  // ── 2b. challanNo exact match against the invoice number ──────────────────
+  //
+  // Some weighbridge slips print the invoice number in their Challan No field
+  // verbatim — the ACM Readymix slip for LR MH/DR/LR/25-26/2532 carries
+  // "MHPS003248", which is exactly the tax invoice number. That turns an
+  // otherwise weight-only document into an exact match.
+  //
+  // Strictly equality, never fuzzy. Gate challans often use a DIFFERENT number
+  // series that merely resembles the invoice's OA number (801665599 vs
+  // 801665638 in an earlier bundle), so a near-miss must fall through silently
+  // rather than produce a confident wrong link.
+  if (extracted.challanNo?.trim()) {
+    const normalizedChallan = normalizeRefNo(extracted.challanNo);
+    const lr = await db.lr.findFirst({
+      where: {
+        OR: [
+          { invoiceNo: normalizedChallan },
+          { companyInvoiceNo: normalizedChallan },
+        ],
+        ...scope,
+      },
+    });
+    if (lr) return result(lr.id, ['challanNo'], 'challanNo');
   }
 
   // ── 3. sealNo exact match (weighment documents only) ──────────────────────
@@ -241,20 +326,84 @@ export async function findBestMatchingLr(
     const lr = await db.lr.findFirst({
       where: { sealNo: normalizedSeal, ...scope },
     });
-    if (lr) return { lrId: lr.id, matchedFields: ['sealNo'] };
+    if (lr) return result(lr.id, ['sealNo'], 'sealNo');
   }
 
-  // ── 4. vehicleNo + date within tolerance, with same-vehicle ambiguity guard ─
+  // ── 4/5. vehicle-scoped candidate set ─────────────────────────────────────
+  //
+  // Both the weight tier and the date fallback need the same candidate list:
+  // every LR for this vehicle. The lookup is done on the CANONICAL vehicle
+  // number so that an OCR confusion (S↔5, O↔0, B↔8) on a thermal-printed
+  // weighbridge ticket doesn't hide the correct LR. Because the canonical
+  // form is lossy, the DB query fetches a slightly wider set by vehicle and
+  // the exact canonical comparison is applied in memory.
   if (extracted.vehicleNo?.trim() && extracted.date?.trim()) {
-    const normalizedVehicle = normalizeVehicleNo(extracted.vehicleNo);
+    const canonicalVehicle = canonicalVehicleNo(extracted.vehicleNo);
     const extractedDateMs = parseDateMs(extracted.date);
     const toleranceDays = getForwardToleranceDays(documentType);
 
     if (extractedDateMs !== null) {
-      const candidates = await db.lr.findMany({
-        where: { vehicleNo: normalizedVehicle, ...scope },
+      const rawCandidates = await db.lr.findMany({
+        where: { vehicleNoCanonical: canonicalVehicle, ...scope },
         take: 20,
       });
+
+      // Defensive: rows written before the canonical column was backfilled
+      // may hold a null/stale value, so re-verify in memory.
+      const candidates = rawCandidates.filter(
+        (lr) => !lr.vehicleNo || canonicalVehicleNo(lr.vehicleNo) === canonicalVehicle,
+      );
+
+      // ── 4. Net weight vs declared quantity (weighment slips) ──────────────
+      //
+      // A weighbridge ticket carries no LR or invoice number, but its net
+      // weight IS the consignment quantity. This is the only tier that can
+      // separate two same-day trips by the same vehicle on real evidence
+      // rather than on a time heuristic, so it runs BEFORE the date fallback.
+      if (WEIGHT_MATCH_TYPES.has(documentType ?? '') && extracted.weightInfo?.trim()) {
+        // Restrict to LRs whose own date is inside the forward window before
+        // comparing weights — two trips a month apart can share a load size.
+        const datedCandidates: WeightCandidate[] = [];
+        for (const lr of candidates) {
+          const lrDateStr = lr.lrDate ?? lr.date;
+          if (!lrDateStr) continue;
+          const lrDateMs = parseDateMs(lrDateStr);
+          if (lrDateMs === null) continue;
+          const diffDays = (extractedDateMs - lrDateMs) / (1000 * 60 * 60 * 24);
+          if (diffDays >= 0 && diffDays <= toleranceDays) {
+            datedCandidates.push({
+              lrId: lr.id,
+              quantityInMt: lr.quantityInMt,
+              // Lets a destination slip be compared against the actual loaded
+              // weight rather than the declared quantity.
+              originNetWeightKg: lr.originNetWeightKg,
+            });
+          }
+        }
+
+        // A destination reading gets the wider transit-loss tolerance, so a
+        // genuine shortage still links instead of being silently dropped.
+        const point: WeighmentPoint =
+          extracted.weighmentPoint === 'DESTINATION'
+            ? 'DESTINATION'
+            : extracted.weighmentPoint === 'ORIGIN'
+              ? 'ORIGIN'
+              : documentType === 'WEIGHMENT_SITE'
+                ? 'DESTINATION'
+                : 'ORIGIN';
+
+        const byWeight = selectByWeightInfo(extracted.weightInfo, datedCandidates, point);
+        if (byWeight) {
+          return result(
+            byWeight.lrId,
+            ['vehicleNo', 'netWeight'],
+            'netWeight',
+            // A contested win (another LR also inside tolerance, but further
+            // away) is still a win, just a less certain one.
+            byWeight.contested ? STRATEGY_CONFIDENCE.netWeight - 0.07 : undefined,
+          );
+        }
+      }
 
       // A document can only be dated on/after its LR (the LR is always
       // created first), and never more than `toleranceDays` after it.
@@ -272,7 +421,7 @@ export async function findBestMatchingLr(
 
       if (withinWindow.length === 1) {
         // Unambiguous — only one trip for this vehicle falls in the window.
-        return { lrId: withinWindow[0].lrId, matchedFields: ['vehicleNo', 'date'] };
+        return result(withinWindow[0].lrId, ['vehicleNo', 'date'], 'vehicleDate');
       }
 
       if (withinWindow.length > 1) {
@@ -306,7 +455,11 @@ export async function findBestMatchingLr(
               const isUnambiguous =
                 withTimeDiff.length === 1 || withTimeDiff[0]!.diffMinutes < withTimeDiff[1]!.diffMinutes;
               if (isUnambiguous) {
-                return { lrId: withTimeDiff[0]!.lrId, matchedFields: ['vehicleNo', 'date', 'documentTime'] };
+                return result(
+                  withTimeDiff[0]!.lrId,
+                  ['vehicleNo', 'date', 'documentTime'],
+                  'vehicleDateTime',
+                );
               }
             }
           }
@@ -316,7 +469,7 @@ export async function findBestMatchingLr(
         // resolved it (older documents, or LRs without a recorded outTime).
         const tight = withinWindow.filter((c) => c.diffDays <= 1);
         if (tight.length === 1) {
-          return { lrId: tight[0].lrId, matchedFields: ['vehicleNo', 'date'] };
+          return result(tight[0].lrId, ['vehicleNo', 'date'], 'vehicleDate');
         }
         // Still ambiguous — leave unlinked for manual review.
       }
@@ -409,6 +562,9 @@ export async function autoLinkDocument(
       date: extracted.date,
       sealNo: extracted.sealNo,
       documentTime: extracted.documentTime,
+      weightInfo: extracted.weightInfo,
+      challanNo: extracted.challanNo,
+      weighmentPoint: extracted.weighmentPoint,
     },
     companyId,
     document?.type,
@@ -422,7 +578,7 @@ export async function autoLinkDocument(
     documentId,
     match.lrId,
     match.matchedFields,
-    1.0,
+    match.confidence,
     false,
   );
 
@@ -440,6 +596,8 @@ export async function autoLinkDocument(
     linked: true,
     lrId: match.lrId,
     matchedFields: match.matchedFields,
+    strategy: match.strategy,
+    confidence: match.confidence,
   };
 }
 

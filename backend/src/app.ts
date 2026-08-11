@@ -4,6 +4,7 @@ import cors from 'cors';
 import * as path from 'path';
 import * as fs from 'fs';
 import documentRoutes from './routes/documents.js';
+import fileRoutes from './routes/files.js';
 import bundleRoutes from './routes/bundles.js';
 import searchRoutes from './routes/search.js';
 import dispatchRoutes from './routes/dispatch.js';
@@ -35,7 +36,11 @@ const uploadDir = process.env.UPLOAD_DIR ?? './uploads';
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
-app.use('/uploads', express.static(path.resolve(uploadDir)));
+// SECURITY: this was previously `express.static(path.resolve(uploadDir))`,
+// which served every scanned document in the system with no authentication.
+// fileRoutes enforces requireAuth + document.read and checks that the caller's
+// company actually owns the document. See routes/files.ts.
+app.use('/uploads', fileRoutes);
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/documents', documentRoutes);

@@ -1,4 +1,7 @@
 import { Router, type Request, type Response } from 'express';
+import { requireAuth } from '../modules/auth/auth.routes.js';
+import { requirePermission } from '../modules/rbac/rbac.middleware.js';
+import { PERMISSIONS } from '../modules/rbac/permissions.js';
 import { dispatchBundle, listDispatchLogs } from '../services/dispatchService.js';
 import type { DispatchChannel } from '../services/dispatchService.js';
 
@@ -15,7 +18,7 @@ const router = Router();
 //   ccRecipient?: string
 // }
 // ──────────────────────────────────────────────────────────────────────────────
-router.post('/send', async (req: Request, res: Response): Promise<void> => {
+router.post('/send', requireAuth, requirePermission(PERMISSIONS.COMMUNICATION_SEND), async (req: Request, res: Response): Promise<void> => {
   try {
     const { bundleId, channel, recipient, ccRecipient } = req.body as {
       bundleId?: string;
@@ -70,7 +73,7 @@ router.post('/send', async (req: Request, res: Response): Promise<void> => {
 // List dispatch history across all bundles.
 // Query params: page, limit
 // ──────────────────────────────────────────────────────────────────────────────
-router.get('/logs', async (req: Request, res: Response): Promise<void> => {
+router.get('/logs', requireAuth, requirePermission(PERMISSIONS.COMMUNICATION_READ), async (req: Request, res: Response): Promise<void> => {
   try {
     const { page = '1', limit = '50' } = req.query as Record<string, string>;
     const result = await listDispatchLogs({
@@ -88,7 +91,7 @@ router.get('/logs', async (req: Request, res: Response): Promise<void> => {
 // GET /api/dispatch/logs/:bundleId
 // Dispatch history for a specific bundle.
 // ──────────────────────────────────────────────────────────────────────────────
-router.get('/logs/:bundleId', async (req: Request, res: Response): Promise<void> => {
+router.get('/logs/:bundleId', requireAuth, requirePermission(PERMISSIONS.COMMUNICATION_READ), async (req: Request, res: Response): Promise<void> => {
   try {
     const bundleId = req.params['bundleId'] as string;
     const result = await listDispatchLogs({ bundleId });

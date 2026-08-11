@@ -8,3 +8,8 @@ backend/prisma/prisma/dev.db
 backend/prisma/prisma/dev.db-journal
 frontend/node_modules/
 frontend/dist/
+node_modules/
+dist/
+.env
+backend/uploads/
+.DS_Store

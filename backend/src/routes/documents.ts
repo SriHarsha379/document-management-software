@@ -1,4 +1,7 @@
 import { Router, type Request, type Response } from 'express';
+import { requireAuth } from '../modules/auth/auth.routes.js';
+import { requirePermission } from '../modules/rbac/rbac.middleware.js';
+import { PERMISSIONS } from '../modules/rbac/permissions.js';
 import * as path from 'path';
 import { upload } from '../middleware/upload.js';
 import { processDocumentOcr } from '../services/ocrService.js';
@@ -37,7 +40,7 @@ const router = Router();
 //   type    – DocumentType applied to all created document(s)
 //   groupId – link all created document(s) to an existing DocumentGroup
 // ──────────────────────────────────────────────────────────────────────────────
-router.post('/upload', upload.single('file'), async (req: Request, res: Response): Promise<void> => {
+router.post('/upload', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_UPLOAD), upload.single('file'), async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.file) {
       res.status(400).json({ error: 'No file uploaded' });
@@ -177,7 +180,7 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
 // POST /api/documents/:id/ocr
 // Trigger OCR processing on an uploaded document.
 // ──────────────────────────────────────────────────────────────────────────────
-router.post('/:id/ocr', async (req: Request, res: Response): Promise<void> => {
+router.post('/:id/ocr', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_UPLOAD), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params['id'] as string;
 
@@ -194,22 +197,20 @@ router.post('/:id/ocr', async (req: Request, res: Response): Promise<void> => {
       metadata: ocrResult.metadata,
     });
 
-    await saveOcrResults(id, ocrResult.fields, ocrResult.documentType, rawOcrResponse);
+    await saveOcrResults(id, ocrResult.fields, ocrResult.documentType, rawOcrResponse, req.user!.companyId);
 
     // The source image may contain more than one toll swipe or weighment
     // slip (see additionalTollEntries/additionalWeighments in the OCR
     // prompt). Spin those off into their own sibling documents instead of
     // dropping them, and let each be reviewed/linked independently.
-    const siblingIds = await createSiblingDocumentsForAdditionalEntries(
-      id,
+    const siblingIds = await createSiblingDocumentsForAdditionalEntries(id,
       {
         vehicleNo: ocrResult.fields.vehicleNo,
         date: ocrResult.fields.date,
         additionalTollEntries: ocrResult.fields.additionalTollEntries,
         additionalWeighments: ocrResult.fields.additionalWeighments,
       },
-      rawOcrResponse,
-    );
+      rawOcrResponse, req.user!.companyId);
 
     const updated = await prisma.document.findUnique({
       where: { id },
@@ -238,7 +239,7 @@ router.post('/:id/ocr', async (req: Request, res: Response): Promise<void> => {
 // PUT /api/documents/:id/review
 // Save user-reviewed/edited data and mark document as SAVED.
 // ──────────────────────────────────────────────────────────────────────────────
-router.put('/:id/review', async (req: Request, res: Response): Promise<void> => {
+router.put('/:id/review', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_UPLOAD), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params['id'] as string;
     const payload = req.body as ReviewPayload;
@@ -249,7 +250,7 @@ router.put('/:id/review', async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    await saveReviewedData(id, payload);
+    await saveReviewedData(id, payload, req.user!.companyId);
 
     const updated = await prisma.document.findUnique({
       where: { id },
@@ -271,7 +272,7 @@ router.put('/:id/review', async (req: Request, res: Response): Promise<void> => 
 // List all documents with optional filters.
 // Query params: type, status, vehicleNo, ungrouped, page, limit
 // ──────────────────────────────────────────────────────────────────────────────
-router.get('/', async (req: Request, res: Response): Promise<void> => {
+router.get('/', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_READ), async (req: Request, res: Response): Promise<void> => {
   try {
     const { type, status, vehicleNo, ungrouped, page = '1', limit = '20' } = req.query as Record<string, string>;
 
@@ -321,7 +322,7 @@ const parsePositiveInt = (value: unknown, defaultVal: number, max?: number): num
   return max !== undefined ? Math.min(max, clamped) : clamped;
 };
 
-router.get('/groups', async (req: Request, res: Response): Promise<void> => {
+router.get('/groups', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_READ), async (req: Request, res: Response): Promise<void> => {
   try {
     const page  = parsePositiveInt(req.query['page'],  1);
     const limit = parsePositiveInt(req.query['limit'], 25, 100);
@@ -378,7 +379,7 @@ router.get('/groups', async (req: Request, res: Response): Promise<void> => {
 // GET /api/documents/ocr-metrics
 // OCR quality metrics for continuous improvement.
 // ──────────────────────────────────────────────────────────────────────────────
-router.get('/ocr-metrics', async (_req: Request, res: Response): Promise<void> => {
+router.get('/ocr-metrics', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_READ), async (_req: Request, res: Response): Promise<void> => {
   try {
     const metrics = await getOcrMetrics();
     res.json({ metrics });
@@ -392,7 +393,7 @@ router.get('/ocr-metrics', async (_req: Request, res: Response): Promise<void> =
 // GET /api/documents/groups/:groupId
 // Get all documents in a linked group.
 // ──────────────────────────────────────────────────────────────────────────────
-router.get('/groups/:groupId', async (req: Request, res: Response): Promise<void> => {
+router.get('/groups/:groupId', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_READ), async (req: Request, res: Response): Promise<void> => {
   try {
     const groupId = req.params['groupId'] as string;
 
@@ -425,7 +426,7 @@ router.get('/groups/:groupId', async (req: Request, res: Response): Promise<void
 // DELETE /api/documents/:id
 // Delete a document and its associated data.
 // ──────────────────────────────────────────────────────────────────────────────
-router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
+router.delete('/:id', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_DELETE), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params['id'] as string;
 
@@ -452,7 +453,7 @@ router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
 // GET /api/documents/:id
 // Get a single document by ID.
 // ──────────────────────────────────────────────────────────────────────────────
-router.get('/:id', async (req: Request, res: Response): Promise<void> => {
+router.get('/:id', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_READ), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params['id'] as string;
 

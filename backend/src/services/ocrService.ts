@@ -14,6 +14,14 @@ import {
   shouldRetryOcr,
   VEHICLE_NO_PATTERN,
 } from './ocrLearningService.js';
+import { splitPdfToPageImages, getPdfPageCount, MAX_PDF_PAGES } from './pdfSplitService.js';
+
+/** One page's OCR outcome. `result` is null when that page failed to read. */
+export interface PageOcrResult {
+  pageNumber: number;
+  result: OcrResult | null;
+  error?: string;
+}
 
 const WEIGHMENT_TYPES: DocumentType[] = ['WEIGHMENT', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE'];
 const VALID_TYPES: DocumentType[] = ['LR', 'INVOICE', 'TOLL', 'WEIGHMENT', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE', 'EWAYBILL', 'RECEIVING', 'UNKNOWN'];
@@ -208,6 +216,10 @@ Extract ONLY the five fields below. Set every other field to null.
 - If the slip explicitly indicates PARTY / LOADING / PLANT / ORIGIN weighment, classify as WEIGHMENT_PARTY.
 - If the slip explicitly indicates SITE / DESTINATION / DELIVERY / UNLOADING weighment, classify as WEIGHMENT_SITE.
 - Otherwise classify as WEIGHMENT.
+- WEIGHBRIDGE READING LABELS: bridges use two different conventions and you must capture whichever is present, without converting between them. (a) Some label "Gross weight" and "Tare weight" — put these in grossWeightKg / tareWeightKg. (b) Others (e.g. PROCON RMC) label "First Weight" and "Second Weight" and never print the words gross or tare — put these in firstWeightKg / secondWeightKg IN THE ORDER PRINTED. The order matters: it records whether the truck arrived loaded or empty, which is how origin is told from destination. Never relabel a "First Weight" as gross.
+- WEIGHBRIDGE TIMESTAMPS: capture the timestamp of EACH reading separately when the slip prints them ("Gross Weight Date Time" / "Tare Weight Date Time", or "First Weight Date Time" / "Second Weight Date Time") into grossWeightAtMs / tareWeightAtMs / firstWeightAtMs / secondWeightAtMs as ISO 8601 strings. These readings routinely straddle midnight (e.g. first at 13 May 23:23, second at 14 May 00:50) so ALWAYS include the date with the time, never the time alone. A gate slip's "Date time In / Out" is the visit as a whole, not a per-reading timestamp — do not put it in these fields.
+- CHALLAN / GRN NUMBER: weighbridge slips print a "Challan No" or "GRN No". Extract it verbatim into challanNo. It is sometimes exactly the tax invoice number and sometimes a completely different series — report what is printed and never adjust it to match another document.
+- WEIGHBRIDGE NAME: extract the weighbridge or company name from the slip's letterhead into bridgeName.
 - IMPORTANT — MULTIPLE SLIPS ON ONE IMAGE: source documents are frequently a single sheet with TWO weighbridge slips stacked on it (e.g. an origin/party slip printed above a destination/site slip, or two separate weighbridge dockets pasted one under the other). Extract the FIRST (topmost) slip into the main vehicleNo/date/weightInfo/sealNo/documentTime/documentType fields as usual. If a SECOND, clearly distinct weighment slip is visible lower on the same image, extract it into "additionalWeighments" as an array with one object per extra slip using the same field names (vehicleNo, date, weightInfo, sealNo, documentTime, documentType). Do not merge the two slips' weight readings into one string. If there is only one slip on the image, omit "additionalWeighments" or return an empty array.
 
 === FOR INVOICE (Tax Invoice / GST Invoice) ===
@@ -273,6 +285,17 @@ Always respond with a valid JSON object with EXACTLY these fields:
   "sealNo": "<seal number — printed 'Seal No.' on an LR, or a labelled handwritten seal number on a weighment slip — or null>",
   "documentTime": "<time-of-day this document records (LR Out Time, weighment in/out time, or toll debited time) in HH:MM or HH:MM:SS 24-hour format, or null>",
   "additionalTollEntries": [{"tollAmount": "<amount or null>", "documentTime": "<HH:MM or null>", "vehicleNo": "<only if different from main vehicleNo, else null>", "date": "<only if different from main date, else null>"}],
+  "grossWeightKg": <number or null>,
+  "tareWeightKg": <number or null>,
+  "firstWeightKg": <number or null>,
+  "secondWeightKg": <number or null>,
+  "grossWeightAt": "<ISO 8601 datetime or null>",
+  "tareWeightAt": "<ISO 8601 datetime or null>",
+  "firstWeightAt": "<ISO 8601 datetime or null>",
+  "secondWeightAt": "<ISO 8601 datetime or null>",
+  "challanNo": "<or null>",
+  "bridgeName": "<or null>",
+  "statedWeightDiffKg": <number or null>,
   "additionalWeighments": [{"vehicleNo": "<or null>", "date": "<or null>", "weightInfo": "<or null>", "sealNo": "<or null>", "documentTime": "<or null>", "documentType": "<WEIGHMENT|WEIGHMENT_PARTY|WEIGHMENT_SITE>"}],
   "rawText": "<full text extracted from document>"
 }
@@ -326,35 +349,33 @@ function detectDocumentTypeFromText(text: string): DocumentType {
  *   Ubuntu: apt install poppler-utils
  */
 function convertPdfToImage(pdfPath: string): { imagePath: string; tempDir: string } {
+  // FIRST PAGE ONLY. Correct for single-page PDFs, which is what the upload
+  // route sends here — routes/documents.ts already splits multi-page PDFs into
+  // one Document per page via pdfSplitService before OCR runs.
+  //
+  // Callers that may receive a multi-page PDF (e.g. the driver portal) must use
+  // processDocumentOcrAllPages instead, or they will silently lose every page
+  // after the first.
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ocr-pdf-'));
   const outPrefix = path.join(tempDir, 'page');
 
   try {
-    // -r 200  → 200 DPI (good balance of quality vs size for OCR)
-    // -png    → output as PNG
-    // -f 1 -l 1 → only convert the first page
-    execSync(`pdftoppm -r 200 -png -f 1 -l 1 "${pdfPath}" "${outPrefix}"`, {
-      stdio: 'pipe',
-    });
+    execSync(`pdftoppm -r 200 -png -f 1 -l 1 "${pdfPath}" "${outPrefix}"`, { stdio: 'pipe' });
   } catch (err) {
     fs.rmSync(tempDir, { recursive: true, force: true });
     const msg = err instanceof Error ? err.message : String(err);
     throw new Error(
       `PDF conversion failed. Make sure poppler is installed.\n` +
-      `  macOS:  brew install poppler\n` +
-      `  Ubuntu: apt install poppler-utils\n\nOriginal error: ${msg}`
+        `  macOS:  brew install poppler\n` +
+        `  Ubuntu: apt install poppler-utils\n\nOriginal error: ${msg}`,
     );
   }
 
-  const pages = fs.readdirSync(tempDir)
-    .filter((f) => f.endsWith('.png'))
-    .sort();
-
+  const pages = fs.readdirSync(tempDir).filter((f) => f.endsWith('.png')).sort();
   if (pages.length === 0) {
     fs.rmSync(tempDir, { recursive: true, force: true });
     throw new Error('PDF to image conversion produced no output pages.');
   }
-
   return { imagePath: path.join(tempDir, pages[0]!), tempDir };
 }
 
@@ -418,6 +439,64 @@ function scoreOcrCandidate(
   ocrConfidence: number,
 ): number {
   return classificationConfidence * CLASSIFICATION_WEIGHT + ocrConfidence * OCR_WEIGHT - issues.length * ISSUE_PENALTY_WEIGHT;
+}
+
+/**
+ * OCR every page of a document.
+ *
+ * For a PDF this rasterises ALL pages and runs a full OCR pass per page,
+ * returning one OcrResult each. For a single image it returns one result, so
+ * callers can use this uniformly.
+ *
+ * This is the entry point uploads should use. `processDocumentOcr` reads only
+ * the first page and is kept for callers that specifically want that.
+ */
+export async function processDocumentOcrAllPages(
+  filePath: string,
+  mimeType: string,
+): Promise<PageOcrResult[]> {
+  if (mimeType !== 'application/pdf') {
+    const single = await processDocumentOcr(filePath, mimeType);
+    return [{ pageNumber: 1, result: single }];
+  }
+
+  const pageCount = await getPdfPageCount(filePath);
+  if (pageCount <= 1) {
+    const single = await processDocumentOcr(filePath, mimeType);
+    return [{ pageNumber: 1, result: single }];
+  }
+  if (pageCount > MAX_PDF_PAGES) {
+    throw new Error(
+      `PDF has ${pageCount} pages which exceeds the maximum of ${MAX_PDF_PAGES}.`,
+    );
+  }
+
+  // Reuses the same splitter the upload route uses, so both ingestion paths
+  // produce identical page images.
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ocr-allpages-'));
+  const results: PageOcrResult[] = [];
+
+  try {
+    const pages = await splitPdfToPageImages(filePath, tempDir);
+    for (const page of pages) {
+      try {
+        const result = await processDocumentOcr(page.filePath, page.mimeType);
+        results.push({ pageNumber: page.pageNumber, result });
+      } catch (err) {
+        // One unreadable page must never cost the rest of the bundle.
+        console.error(`OCR failed for page ${page.pageNumber} of ${filePath}:`, err);
+        results.push({
+          pageNumber: page.pageNumber,
+          result: null,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+
+  return results;
 }
 
 export async function processDocumentOcr(filePath: string, mimeType: string): Promise<OcrResult> {

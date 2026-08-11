@@ -1,6 +1,8 @@
 import { PrismaClient } from '@prisma/client';
 import type { DocumentType, ReviewPayload } from '../types/index.js';
-import { autoLinkDocument, relinkPendingDocuments, normalizeVehicleNo, backfillLrFromLinkedInvoice, daysBetween } from './autoLinkService.js';
+import { autoLinkDocument, relinkPendingDocuments, normalizeVehicleNo, normalizeRefNo, backfillLrFromLinkedInvoice, daysBetween } from './autoLinkService.js';
+import { canonicalVehicleNo } from './vehicleNormalization.js';
+import { mergeGroupsForLr } from './groupMergeService.js';
 import { getTrackedReviewFields, getOcrQualityMetrics, learnFromDocumentReview, shouldAutoAccept } from './ocrLearningService.js';
 
 const prisma = new PrismaClient();
@@ -119,17 +121,15 @@ function mapExtractedRecordToLearnedFields(
  * Auto-link a document to a DocumentGroup based on common fields.
  *
  * Matching strategy (in priority order):
- *  1. vehicleNo + date   — fuzzy match: if an existing group for the same
- *                          vehicleNo has a date within 3 days of the document's
- *                          date, the document joins that group (handles
- *                          late-arriving docs like site weighment slips and
- *                          acknowledgements that arrive 1-3 days after trip
- *                          start).  If no nearby group exists, a new group is
- *                          created with the document's exact date.
- *  2. lrNo               — joins an existing group that contains a document
- *                          with the same lrNo in its extracted data
- *  3. invoiceNo          — joins an existing group that contains a document
- *                          with the same invoiceNo in its extracted data
+ *  1. lrNo      — joins the group already containing a document with the same
+ *                 LR number. The LR number identifies a trip exactly, so it
+ *                 outranks every heuristic.
+ *  2. invoiceNo — joins the group containing a document with the same invoice
+ *                 number. Bridges the tax invoice and the lorry receipt.
+ *  3. vehicleNo + canonical match + date within ±3 days — last resort for
+ *                 documents carrying no reference number (weighbridge tickets,
+ *                 FASTag receipts). Uses the OCR-confusion-tolerant canonical
+ *                 plate key, not the raw string.
  *
  * Returns the groupId when a match is made, null otherwise.
  */
@@ -144,56 +144,16 @@ async function autoLinkDocumentToGroup(
 ): Promise<string | null> {
   const { vehicleNo, date, lrNo, invoiceNo } = fields;
 
-  // ── Strategy 1: vehicleNo + date (fuzzy match within 3 days, else create) ──
+  // ── Strategy 1: lrNo — the true trip identifier ───────────────────────────
   //
-  // Business rule: a lorry trip typically starts on the day the LR and party
-  // weighment slip are generated.  The driver may take up to ~3 days to deliver
-  // the goods and return; late-arriving documents (site weighment slip,
-  // acknowledgement) therefore carry dates 1–3 days after the trip start date.
-  // Rather than creating a separate DocumentGroup for those later documents,
-  // we link them into the existing group for the same vehicle whose date is
-  // closest within a 3-day window.
-  if (vehicleNo?.trim() && date?.trim()) {
-    const normalizedVehicle = vehicleNo.trim().toUpperCase().replace(/\s+/g, '');
-    const normalizedDate = date.trim();
-
-    // Look for an existing group for the same vehicle within the trip tolerance.
-    //
-    // The window is intentionally bidirectional (absolute diff): a party
-    // weighment tare reading can be taken the day *before* the trip start, so
-    // a doc dated 1 day prior to an existing group should still join it.
-    // 3 days = the allowed ±3 day matching window across Invoice/LR/Weighment
-    // documents for the same vehicle.
-    const TRIP_TOLERANCE_DAYS = 3;
-    const candidateGroups = await prisma.documentGroup.findMany({
-      where: { vehicleNo: normalizedVehicle },
-    });
-
-    const nearbyGroup =
-      candidateGroups
-        .map((g) => ({ g, diff: daysBetween(g.date, normalizedDate) }))
-        .filter(({ diff }) => diff !== null && (diff as number) <= TRIP_TOLERANCE_DAYS)
-        .sort((a, b) => (a.diff as number) - (b.diff as number))[0]?.g ?? null;
-
-    const group =
-      nearbyGroup ??
-      (await prisma.documentGroup.upsert({
-        where: { vehicleNo_date: { vehicleNo: normalizedVehicle, date: normalizedDate } },
-        update: {},
-        create: { vehicleNo: normalizedVehicle, date: normalizedDate },
-      }));
-
-    await prisma.document.update({
-      where: { id: documentId },
-      data: { groupId: group.id },
-    });
-
-    return group.id;
-  }
-
-  // ── Strategy 2: lrNo match in existing extracted data ─────────────────────
+  // The LR number is the only field that identifies a trip exactly. It used to
+  // sit BELOW vehicleNo+date, which meant it was dead code for any document
+  // carrying both a vehicle and a date — i.e. almost all of them. The result
+  // was that a single OCR confusion in the plate string created a second
+  // DocumentGroup, and the Bundle table showed the same LR number on two rows
+  // with the documents split between them.
   if (lrNo?.trim()) {
-    const normalizedLrNo = lrNo.trim().toUpperCase();
+    const normalizedLrNo = normalizeRefNo(lrNo);
     const match = await prisma.extractedData.findFirst({
       where: {
         lrNo: normalizedLrNo,
@@ -210,9 +170,12 @@ async function autoLinkDocumentToGroup(
     }
   }
 
-  // ── Strategy 3: invoiceNo match in existing extracted data ────────────────
+  // ── Strategy 2: invoiceNo ─────────────────────────────────────────────────
+  //
+  // The invoice number appears on both the tax invoice and the lorry receipt,
+  // so it bridges those two reliably without touching the plate string.
   if (invoiceNo?.trim()) {
-    const normalizedInvoiceNo = invoiceNo.trim().toUpperCase();
+    const normalizedInvoiceNo = normalizeRefNo(invoiceNo);
     const match = await prisma.extractedData.findFirst({
       where: {
         invoiceNo: normalizedInvoiceNo,
@@ -227,6 +190,54 @@ async function autoLinkDocumentToGroup(
       });
       return match.document.groupId;
     }
+  }
+
+  // ── Strategy 3: vehicleNo + date (fuzzy ±3 days) ──────────────────────────
+  //
+  // Last resort, for documents that carry no reference number at all —
+  // weighbridge tickets and FASTag receipts. The candidate lookup now uses the
+  // CANONICAL vehicle number so an S↔5 or O↔0 misread on a thermal print no
+  // longer forks the group.
+  //
+  // Business rule: a lorry trip typically starts on the day the LR and party
+  // weighment slip are generated. The driver may take up to ~3 days to deliver
+  // and return, so late-arriving documents (site weighment, acknowledgement)
+  // carry dates 1–3 days after trip start. The window is bidirectional because
+  // a party weighment tare reading can be taken the day before trip start.
+  if (vehicleNo?.trim() && date?.trim()) {
+    const normalizedVehicle = normalizeVehicleNo(vehicleNo);
+    const canonicalVehicle = canonicalVehicleNo(vehicleNo);
+    const normalizedDate = date.trim();
+
+    const TRIP_TOLERANCE_DAYS = 3;
+    const candidateGroups = await prisma.documentGroup.findMany({
+      where: { vehicleNoCanonical: canonicalVehicle },
+    });
+
+    const nearbyGroup =
+      candidateGroups
+        .map((g) => ({ g, diff: daysBetween(g.date, normalizedDate) }))
+        .filter(({ diff }) => diff !== null && (diff as number) <= TRIP_TOLERANCE_DAYS)
+        .sort((a, b) => (a.diff as number) - (b.diff as number))[0]?.g ?? null;
+
+    const group =
+      nearbyGroup ??
+      (await prisma.documentGroup.upsert({
+        where: { vehicleNo_date: { vehicleNo: normalizedVehicle, date: normalizedDate } },
+        update: {},
+        create: {
+          vehicleNo: normalizedVehicle,
+          vehicleNoCanonical: canonicalVehicle,
+          date: normalizedDate,
+        },
+      }));
+
+    await prisma.document.update({
+      where: { id: documentId },
+      data: { groupId: group.id },
+    });
+
+    return group.id;
   }
 
   return null;
@@ -387,6 +398,11 @@ async function autoCreateLrRecord(
   const vehicleNo = fields.vehicleNo?.trim()
     ? normalizeVehicleNo(fields.vehicleNo)
     : undefined;
+  // Lossy matching key, written alongside the raw value. Keeps the auto-link
+  // candidate lookup immune to S↔5 / O↔0 / B↔8 misreads on the plate.
+  const vehicleNoCanonical = fields.vehicleNo?.trim()
+    ? canonicalVehicleNo(fields.vehicleNo)
+    : undefined;
 
   await prisma.lr.create({
     data: {
@@ -398,6 +414,7 @@ async function autoCreateLrRecord(
       lrDate,
       date: lrDate,
       vehicleNo,
+      vehicleNoCanonical,
       invoiceNo: fields.invoiceNo?.trim() || undefined,
       consignor: consignor || undefined,
       consignee: consignee || undefined,
@@ -614,7 +631,18 @@ export async function saveOcrResults(
     documentTime?: string;
   },
   documentType: DocumentType,
-  rawOcrResponse: string
+  rawOcrResponse: string,
+  /**
+   * Company of the uploading user. REQUIRED for correct behaviour: without it
+   * the auto-link candidate search is unscoped and a document can attach to
+   * ANOTHER TENANT'S Lr whenever the LR number, invoice number or vehicle+date
+   * happens to match. LR numbering is per-company and sequential, so those
+   * collisions are likely rather than exotic.
+   *
+   * Optional in the signature only so existing callers keep compiling; every
+   * caller that has a user context must pass it.
+   */
+  companyId?: string,
 ): Promise<void> {
   await prisma.$transaction(async (tx) => {
     await tx.extractedData.upsert({
@@ -758,7 +786,7 @@ export async function saveOcrResults(
       sealNo: fields.sealNo,
       outTime: fields.documentTime,
     });
-    const linkResult = await autoLinkDocument(documentId);
+    const linkResult = await autoLinkDocument(documentId, companyId);
     // When an invoice arrives after the LR (e.g. from a remote office), back-fill
     // the Lr row's invoice fields so the dashboard columns show the correct values.
     if (linkResult.linked && linkResult.lrId && documentType === 'INVOICE') {
@@ -776,6 +804,19 @@ export async function saveOcrResults(
       lrNo: fields.lrNo,
       invoiceNo: fields.invoiceNo,
     });
+
+    // Heal any pre-existing split: if this LR's documents now span more than
+    // one DocumentGroup (because an earlier upload forked on a misread plate),
+    // collapse them so the Bundle table shows one row per trip. Never let a
+    // merge failure fail the upload — it's a cleanup step and the nightly
+    // sweep will catch it.
+    if (linkResult.linked && linkResult.lrId) {
+      try {
+        await mergeGroupsForLr(linkResult.lrId);
+      } catch (err) {
+        console.error(`mergeGroupsForLr failed for lrId=${linkResult.lrId}:`, err);
+      }
+    }
   }
 }
 
@@ -800,6 +841,8 @@ export async function createSiblingDocumentsForAdditionalEntries(
     additionalWeighments?: Array<{ vehicleNo?: string; date?: string; weightInfo?: string; sealNo?: string; documentTime?: string; documentType?: DocumentType }>;
   },
   rawOcrResponse: string,
+  /** Company of the uploading user — scopes the auto-link search. */
+  companyId?: string,
 ): Promise<string[]> {
   const additionalTollEntries = fields.additionalTollEntries ?? [];
   const additionalWeighments = fields.additionalWeighments ?? [];
@@ -820,7 +863,7 @@ export async function createSiblingDocumentsForAdditionalEntries(
     const vehicleNo = entryVehicleNo ?? fields.vehicleNo;
     const date = entryDate ?? fields.date;
     if (!vehicleNo) return; // nothing to link/group by
-    await autoLinkDocument(documentId);
+    await autoLinkDocument(documentId, companyId);
     await autoLinkDocumentToGroup(documentId, { vehicleNo, date });
   };
 
@@ -886,7 +929,12 @@ export async function createSiblingDocumentsForAdditionalEntries(
 /**
  * Save user-reviewed/edited data and mark document as REVIEWED.
  */
-export async function saveReviewedData(documentId: string, payload: ReviewPayload): Promise<void> {
+export async function saveReviewedData(
+  documentId: string,
+  payload: ReviewPayload,
+  /** Company of the reviewing user — scopes the auto-link search. See saveOcrResults. */
+  companyId?: string,
+): Promise<void> {
   const existing = await prisma.extractedData.findUnique({ where: { documentId } });
   if (!existing) {
     throw new Error(`No extracted data found for document ${documentId}`);
@@ -1044,7 +1092,7 @@ export async function saveReviewedData(documentId: string, payload: ReviewPayloa
         source: updatedExtracted.source,
       });
     }
-    const reviewLinkResult = await autoLinkDocument(documentId);
+    const reviewLinkResult = await autoLinkDocument(documentId, companyId);
     if (reviewLinkResult.linked && reviewLinkResult.lrId && updatedDoc?.type === 'INVOICE') {
       await backfillLrFromLinkedInvoice(reviewLinkResult.lrId, {
         invoiceNo: updatedExtracted.invoiceNo,

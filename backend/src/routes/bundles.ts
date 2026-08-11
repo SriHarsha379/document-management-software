@@ -1,4 +1,7 @@
 import { Router, type Request, type Response } from 'express';
+import { requireAuth } from '../modules/auth/auth.routes.js';
+import { requirePermission } from '../modules/rbac/rbac.middleware.js';
+import { PERMISSIONS } from '../modules/rbac/permissions.js';
 import { prisma } from '../services/documentService.js';
 import {
   previewBundle,
@@ -16,7 +19,7 @@ const router = Router();
 // Given groupId + recipientType, return auto-selected documents and missing types.
 // Does NOT persist anything.
 // ──────────────────────────────────────────────────────────────────────────────
-router.post('/preview', async (req: Request, res: Response): Promise<void> => {
+router.post('/preview', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_READ), async (req: Request, res: Response): Promise<void> => {
   try {
     const { groupId, recipientType } = req.body as BundlePreviewRequest;
 
@@ -54,7 +57,7 @@ router.post('/preview', async (req: Request, res: Response): Promise<void> => {
 // Create and persist a new bundle.
 // Body: { groupId, recipientType, documentIds, notes? }
 // ──────────────────────────────────────────────────────────────────────────────
-router.post('/', async (req: Request, res: Response): Promise<void> => {
+router.post('/', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_UPLOAD), async (req: Request, res: Response): Promise<void> => {
   try {
     const { groupId, recipientType, documentIds, notes } = req.body as CreateBundlePayload;
 
@@ -89,7 +92,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
 // List all bundles with optional filters.
 // Query params: recipientType, status, groupId, page, limit
 // ──────────────────────────────────────────────────────────────────────────────
-router.get('/', async (req: Request, res: Response): Promise<void> => {
+router.get('/', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_READ), async (req: Request, res: Response): Promise<void> => {
   try {
     const { recipientType, status, groupId, page = '1', limit = '20' } = req.query as Record<string, string>;
 
@@ -129,7 +132,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 // GET /api/bundles/:id
 // Get a single bundle with all items.
 // ──────────────────────────────────────────────────────────────────────────────
-router.get('/:id', async (req: Request, res: Response): Promise<void> => {
+router.get('/:id', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_READ), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params['id'] as string;
 
@@ -158,7 +161,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
 // Update a bundle's document list and/or status.
 // Body: { documentIds?, status?, notes? }
 // ──────────────────────────────────────────────────────────────────────────────
-router.put('/:id', async (req: Request, res: Response): Promise<void> => {
+router.put('/:id', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_UPLOAD), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params['id'] as string;
     const payload = req.body as UpdateBundlePayload;
@@ -182,7 +185,7 @@ router.put('/:id', async (req: Request, res: Response): Promise<void> => {
 // ──────────────────────────────────────────────────────────────────────────────
 // DELETE /api/bundles/:id
 // ──────────────────────────────────────────────────────────────────────────────
-router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
+router.delete('/:id', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_DELETE), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params['id'] as string;
 

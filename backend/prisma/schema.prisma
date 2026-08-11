@@ -134,6 +134,9 @@ model Lr {
   orderType           String?
   productName         String?
   vehicleNo           String?
+  /// OCR-confusion-tolerant matching key (see vehicleNormalization.ts).
+  /// MATCHING ONLY — lossy, never display this value.
+  vehicleNoCanonical  String?
   quantityInBags      Float?
   quantityInMt        Float?
   tollCharges         Float?
@@ -192,12 +195,16 @@ model Lr {
   @@index([date])
   @@index([serialNo])
   @@index([sealNo])
+  @@index([vehicleNoCanonical])
   @@map("lrs")
 }
 
 model DocumentGroup {
   id                 String                 @id @default(uuid())
   vehicleNo          String
+  /// OCR-confusion-tolerant matching key (see vehicleNormalization.ts).
+  /// MATCHING ONLY — lossy, never display this value.
+  vehicleNoCanonical String?
   date               String
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
@@ -206,6 +213,7 @@ model DocumentGroup {
   driverUploadedDocs DriverUploadDocument[]
 
   @@unique([vehicleNo, date])
+  @@index([vehicleNoCanonical])
   @@map("document_groups")
 }
 
@@ -278,6 +286,35 @@ model ExtractedData {
   source              String?
   sealNo              String?
   documentTime        String?
+  /// Challan / GRN number printed on weighbridge slips. Sometimes equals the
+  /// invoice number verbatim, which makes the slip an exact-match link.
+  challanNo           String?
+  /// Weighbridge / letterhead name printed on the slip.
+  bridgeName          String?
+  /// ORIGIN | DESTINATION | UNKNOWN — which end of the trip this was weighed
+  /// at. Drives the shortage arithmetic. See weighmentClassifier.ts.
+  weighmentPoint      String?
+  /// OWN | PARTY | THIRD_PARTY | UNKNOWN — whose weighbridge produced this
+  /// reading. Commercial/dispute metadata only; never affects arithmetic.
+  weighmentOwner      String?
+  /// 0-1 confidence in `weighmentPoint`. Below 0.7 -> manual review.
+  weighmentPointConfidence Float?
+  /// Gross reading timestamp (ms epoch), when the slip prints one.
+  grossWeightAtMs     BigInt?
+  /// Tare reading timestamp (ms epoch), when the slip prints one.
+  tareWeightAtMs      BigInt?
+  /// Gross / tare / net in kg, parsed out individually.
+  grossWeightKg       Float?
+  tareWeightKg        Float?
+  /// Some bridges (e.g. PROCON RMC) label readings "First Weight" / "Second
+  /// Weight" and never print gross/tare. The ORDER is the signal: first
+  /// heavier than second means the truck arrived loaded -> DESTINATION.
+  firstWeightKg       Float?
+  secondWeightKg      Float?
+  netWeightKg         Float?
+  /// Shortage figure as PRINTED on the slip (e.g. ACM's "Weight Diff. Qty").
+  /// Stored verbatim because this is the number that appears on a debit note.
+  statedWeightDiffKg  Float?
   rawOcrResponse      String
   confidence          Float?
   ocrProcessedAt      DateTime  @default(now())
@@ -295,6 +332,8 @@ model ExtractedData {
   @@index([transporter])
   @@index([reviewedAt])
   @@index([sealNo])
+  @@index([challanNo])
+  @@index([weighmentPoint])
   @@map("extracted_data")
 }
 

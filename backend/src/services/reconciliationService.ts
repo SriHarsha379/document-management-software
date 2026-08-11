@@ -25,6 +25,9 @@
 
 import { db } from '../lib/db.js';
 
+/** Every DocumentType that can carry a weighbridge reading. */
+const WEIGHMENT_TYPES = new Set(['WEIGHMENT', 'WEIGHMENT_PARTY', 'WEIGHMENT_SITE']);
+
 const WEIGHT_VARIANCE_WARN_PCT = 0.5; // origin vs destination net weight
 const QUANTITY_VARIANCE_WARN_PCT = 2; // declared quantity vs actual net weight
 
@@ -32,6 +35,8 @@ export interface ReconciliationResult {
   autoTollAmount: number | null;
   originNetWeightKg: number | null;
   destinationNetWeightKg: number | null;
+  /** Shortage as printed on the party's own slip, when they printed one. */
+  statedWeightDiffKg: number | null;
   weightVariancePct: number | null;
   issues: string[];
 }
@@ -99,7 +104,14 @@ export async function reconcileLr(lrId: string): Promise<ReconciliationResult> {
           select: {
             type: true,
             extractedData: {
-              select: { tollAmount: true, weightInfo: true, quantityInMt: true },
+              select: {
+                tollAmount: true,
+                weightInfo: true,
+                quantityInMt: true,
+                netWeightKg: true,
+                weighmentPoint: true,
+                statedWeightDiffKg: true,
+              },
             },
           },
         },
@@ -111,6 +123,7 @@ export async function reconcileLr(lrId: string): Promise<ReconciliationResult> {
     autoTollAmount: null,
     originNetWeightKg: null,
     destinationNetWeightKg: null,
+    statedWeightDiffKg: null,
     weightVariancePct: null,
     issues: [],
   };
@@ -136,14 +149,41 @@ export async function reconcileLr(lrId: string): Promise<ReconciliationResult> {
       }
     }
 
-    if (doc.type === 'WEIGHMENT_PARTY' || doc.type === 'WEIGHMENT') {
-      const kg = parseNetWeightKg(extracted.weightInfo);
-      if (kg !== null) result.originNetWeightKg = kg;
-    }
+    // Origin vs destination is decided by `weighmentPoint` (set by
+    // weighmentClassifier from the gross/tare timestamp ordering), NOT by
+    // DocumentType. DocumentType conflates custody point with bridge
+    // ownership, so a party-owned bridge at the loading depot — or our own
+    // bridge used at delivery — used to land the reading on the wrong side and
+    // silently invert the shortage figure.
+    //
+    // DocumentType remains the fallback for rows predating the classifier.
+    if (WEIGHMENT_TYPES.has(doc.type)) {
+      const kg = extracted.netWeightKg ?? parseNetWeightKg(extracted.weightInfo);
+      if (kg !== null) {
+        const point =
+          extracted.weighmentPoint ??
+          (doc.type === 'WEIGHMENT_SITE' ? 'DESTINATION' : 'ORIGIN');
 
-    if (doc.type === 'WEIGHMENT_SITE') {
-      const kg = parseNetWeightKg(extracted.weightInfo);
-      if (kg !== null) result.destinationNetWeightKg = kg;
+        if (point === 'DESTINATION') {
+          result.destinationNetWeightKg = kg;
+        } else if (point === 'ORIGIN') {
+          result.originNetWeightKg = kg;
+        } else {
+          // Genuinely unclassifiable — don't guess a side, since guessing
+          // inverts the variance. Surface it for review instead.
+          result.issues.push(
+            `A weighment slip (${kg} kg) could not be classified as origin or ` +
+              `destination — its shortage contribution is not counted. ` +
+              `Confirm which end of the trip it was weighed at.`,
+          );
+        }
+
+        // Prefer the shortage figure the party printed on their own slip over
+        // one we derive: that stated number is what appears on a debit note.
+        if (extracted.statedWeightDiffKg != null) {
+          result.statedWeightDiffKg = extracted.statedWeightDiffKg;
+        }
+      }
     }
 
     if (doc.type === 'INVOICE' && extracted.quantityInMt != null) {
