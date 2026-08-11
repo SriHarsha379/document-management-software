@@ -326,10 +326,47 @@ router.get('/groups', async (req: Request, res: Response): Promise<void> => {
     const page  = parsePositiveInt(req.query['page'],  1);
     const limit = parsePositiveInt(req.query['limit'], 25, 100);
     const skip  = (page - 1) * limit;
+    const q = typeof req.query['q'] === 'string' ? req.query['q'].trim() : '';
+
+    // Search matches: the group's own vehicle number, any document's raw
+    // extracted LR/invoice number (covers unlinked/pending documents), or
+    // the LR number of a CONFIRMED link (document_link_records -> Lr) —
+    // this is the authoritative source once a document is actually linked,
+    // consistent with how the Documents table and Bundle auto-selection
+    // treat confirmed links as ground truth elsewhere in the app.
+    const where = q
+      ? {
+          OR: [
+            { vehicleNo: { contains: q, mode: 'insensitive' as const } },
+            {
+              documents: {
+                some: {
+                  extractedData: {
+                    OR: [
+                      { lrNo: { contains: q, mode: 'insensitive' as const } },
+                      { invoiceNo: { contains: q, mode: 'insensitive' as const } },
+                    ],
+                  },
+                },
+              },
+            },
+            {
+              documents: {
+                some: {
+                  documentLinks: {
+                    some: { lr: { lrNo: { contains: q, mode: 'insensitive' as const } } },
+                  },
+                },
+              },
+            },
+          ],
+        }
+      : {};
 
     const [total, groups] = await Promise.all([
-      prisma.documentGroup.count(),
+      prisma.documentGroup.count({ where }),
       prisma.documentGroup.findMany({
+        where,
         include: {
           documents: {
             select: {

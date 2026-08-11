@@ -66,7 +66,7 @@ export function LrTable({ lrs, onLrUpdated }: LrTableProps) {
 
   return (
     <>
-      <div style={{ overflowX: 'auto' }}>
+      <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '70vh' }}>
         <div style={{ minWidth: 'max-content' }}>
           <div style={{ ...gridRow, ...headRow, gridTemplateColumns: gridTemplate }}>
             {visibleCols.map((col) => (
@@ -130,6 +130,7 @@ export function LrTable({ lrs, onLrUpdated }: LrTableProps) {
 const gridRow: React.CSSProperties = { display: 'grid', gap: 0 };
 const headRow: React.CSSProperties = {
   background: '#f5f6ff', borderRadius: '6px 6px 0 0', border: '1px solid #e0e0f0',
+  position: 'sticky', top: 0, zIndex: 2,
 };
 const dataRow: React.CSSProperties = {
   borderLeft: '1px solid #e0e0f0', borderRight: '1px solid #e0e0f0',
