@@ -501,6 +501,8 @@ export function DocumentBundler({ onBundleSaved }: Props) {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalGroups, setTotalGroups] = useState(0);
+  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
 
   // The group for which the QuickSendModal is open (null = closed)
   const [sendGroup, setSendGroup] = useState<DocumentGroup | null>(null);
@@ -513,7 +515,7 @@ export function DocumentBundler({ onBundleSaved }: Props) {
 
   const loadGroups = useCallback((pg: number) => {
     setGroupsLoading(true);
-    documentsApi.listGroups({ page: pg, limit: GROUPS_PAGE_SIZE })
+    documentsApi.listGroups({ page: pg, limit: GROUPS_PAGE_SIZE, q: search || undefined })
       .then(({ groups: g, pagination }) => {
         setGroups(g);
         setTotalPages(pagination.pages || 1);
@@ -522,17 +524,17 @@ export function DocumentBundler({ onBundleSaved }: Props) {
       })
       .catch(() => setGroups([]))
       .finally(() => setGroupsLoading(false));
-  }, []);
+  }, [search]);
 
   const refreshGroups = useCallback(() => {
-    documentsApi.listGroups({ page, limit: GROUPS_PAGE_SIZE })
+    documentsApi.listGroups({ page, limit: GROUPS_PAGE_SIZE, q: search || undefined })
       .then(({ groups: g, pagination }) => {
         setGroups(g);
         setTotalPages(pagination.pages || 1);
         setTotalGroups(pagination.total);
       })
       .catch(() => {/* ignore */});
-  }, [page]);
+  }, [page, search]);
 
   useEffect(() => { loadGroups(1); }, [loadGroups]);
 
@@ -600,12 +602,30 @@ export function DocumentBundler({ onBundleSaved }: Props) {
 
   return (
     <div style={styles.container}>
-      <h2 style={styles.title}>📦 Document Bundles</h2>
-      <p style={styles.subtitle}>
-        Each row is a vehicle trip. Click{' '}
-        <strong>📤 Send</strong> to bundle and dispatch documents via Email or WhatsApp.
-        {' '}Use Additional Document 1/2 for client-requested attachments.
-      </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+        <div>
+          <h2 style={styles.title}>📦 Document Bundles</h2>
+          <p style={styles.subtitle}>
+            Each row is a vehicle trip. Click{' '}
+            <strong>📤 Send</strong> to bundle and dispatch documents via Email or WhatsApp.
+            {' '}Use Additional Document 1/2 for client-requested attachments.
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') setSearch(searchInput.trim());
+            }}
+            placeholder="Search LR No, invoice, vehicle..."
+            style={styles.searchInput}
+          />
+          <button style={styles.searchBtn} onClick={() => setSearch(searchInput.trim())}>
+            Search
+          </button>
+        </div>
+      </div>
 
       {operationError && (
         <p style={styles.error}>Action failed: {operationError}</p>
@@ -814,6 +834,23 @@ const styles: Record<string, React.CSSProperties> = {
   error: { color: '#e53e3e', fontSize: 13, marginBottom: 8, padding: '8px 12px', background: '#fff5f5', borderRadius: 6 },
   loading: { color: '#888', fontStyle: 'italic', fontSize: 14 },
   empty: { color: '#888', fontSize: 14 },
+  searchInput: {
+    border: '1px solid #d1d5db',
+    borderRadius: 8,
+    padding: '10px 12px',
+    fontSize: 13,
+    minWidth: 260,
+  },
+  searchBtn: {
+    border: 'none',
+    borderRadius: 8,
+    background: '#4361ee',
+    color: '#fff',
+    padding: '9px 14px',
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
 
   tableWrapper: {
     overflowX: 'auto',

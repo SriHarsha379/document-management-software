@@ -117,7 +117,7 @@ export const documentsApi = {
     return res.data.group;
   },
 
-  listGroups: async (params?: { page?: number; limit?: number }): Promise<{ groups: DocumentGroup[]; pagination: { total: number; page: number; limit: number; pages: number } }> => {
+  listGroups: async (params?: { page?: number; limit?: number; q?: string }): Promise<{ groups: DocumentGroup[]; pagination: { total: number; page: number; limit: number; pages: number } }> => {
     const res = await api.get<{ groups: DocumentGroup[]; pagination: { total: number; page: number; limit: number; pages: number } }>('/documents/groups', { params });
     return res.data;
   },
