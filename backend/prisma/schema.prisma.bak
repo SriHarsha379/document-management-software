@@ -303,8 +303,6 @@ model ExtractedData {
   grossWeightAtMs     BigInt?
   /// Tare reading timestamp (ms epoch), when the slip prints one.
   tareWeightAtMs      BigInt?
-  firstWeightAtMs     BigInt?
-  secondWeightAtMs    BigInt?
   /// Gross / tare / net in kg, parsed out individually.
   grossWeightKg       Float?
   tareWeightKg        Float?
