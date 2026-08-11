@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { Document } from '../types';
 import { DOCUMENT_TYPE_LABELS } from '../constants/documentTypeLabels';
+import { useAuthedFileUrl, openAuthedFile } from '../hooks/useAuthedFile';
 
 interface ImagePreviewModalProps {
   docs: Document[];
@@ -17,7 +18,9 @@ export function ImagePreviewModal({ docs, header, onClose, initialIndex = 0 }: I
 
   if (!doc) return null;
 
-  const url = `/uploads/${doc.filePath}`;
+  // /uploads now requires a bearer token, so the file is fetched with auth and
+  // served to <img>/<iframe> as a blob URL. See hooks/useAuthedFile.
+  const { url, loading, error } = useAuthedFileUrl(doc.filePath);
   const isPdf = doc.mimeType === 'application/pdf';
 
   return (
@@ -26,23 +29,25 @@ export function ImagePreviewModal({ docs, header, onClose, initialIndex = 0 }: I
         <div style={iv.header}>
           <span style={iv.title}>🔍 {header}</span>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={() => void openAuthedFile(doc.filePath)}
               style={iv.openBtn}
               title="Open in new tab"
             >
               ↗ Open
-            </a>
+            </button>
             <button style={iv.closeBtn} onClick={onClose}>✕</button>
           </div>
         </div>
         <div style={iv.body}>
-          {isPdf ? (
-            <iframe src={url} style={iv.iframe} title={doc.originalFilename} />
-          ) : (
-            <img src={url} alt={doc.originalFilename} style={iv.img} />
+          {loading && <div style={{ padding: 40, color: '#666' }}>Loading…</div>}
+          {error && <div style={{ padding: 40, color: '#c00' }}>{error}</div>}
+          {!loading && !error && url && (
+            isPdf ? (
+              <iframe src={url} style={iv.iframe} title={doc.originalFilename} />
+            ) : (
+              <img src={url} alt={doc.originalFilename} style={iv.img} />
+            )
           )}
         </div>
         {docs.length > 1 && (

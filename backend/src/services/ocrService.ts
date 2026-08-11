@@ -29,6 +29,23 @@ type ImageQuality = 'HIGH' | 'MEDIUM' | 'LOW';
 const CLASSIFICATION_WEIGHT = 0.4;
 const OCR_WEIGHT = 0.6;
 
+/**
+ * Coerce a model-supplied numeric field.
+ *
+ * Vision models return weights as numbers, as quoted strings ("34690"), and
+ * occasionally with units or separators ("34,690.00 Kgs"). Accepting only
+ * `typeof === 'number'` silently drops most real readings, so parse loosely
+ * and reject only what genuinely isn't a number.
+ */
+function numOrUndef(v: unknown): number | undefined {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : undefined;
+  if (typeof v === 'string') {
+    const n = parseFloat(v.replace(/[^0-9.\-]/g, ''));
+    return Number.isFinite(n) ? n : undefined;
+  }
+  return undefined;
+}
+
 /** For weighment slips only vehicleNo, date, weightInfo, sealNo, and documentTime should be retained; strip everything else. */
 function restrictToWeighmentFields(fields: ExtractedFields): ExtractedFields {
   return {
@@ -37,6 +54,21 @@ function restrictToWeighmentFields(fields: ExtractedFields): ExtractedFields {
     weightInfo: fields.weightInfo,
     sealNo: fields.sealNo,
     documentTime: fields.documentTime,
+    // Weighbridge specifics: these are the whole point of a weighment slip, so
+    // stripping them here would defeat the challanNo / netWeight tiers and the
+    // origin-vs-destination classifier.
+    challanNo: fields.challanNo,
+    bridgeName: fields.bridgeName,
+    grossWeightKg: fields.grossWeightKg,
+    tareWeightKg: fields.tareWeightKg,
+    firstWeightKg: fields.firstWeightKg,
+    secondWeightKg: fields.secondWeightKg,
+    netWeightKg: fields.netWeightKg,
+    grossWeightAt: fields.grossWeightAt,
+    tareWeightAt: fields.tareWeightAt,
+    firstWeightAt: fields.firstWeightAt,
+    secondWeightAt: fields.secondWeightAt,
+    statedWeightDiffKg: fields.statedWeightDiffKg,
     documentType: fields.documentType,
     confidence: fields.confidence,
     classificationConfidence: fields.classificationConfidence,
@@ -121,6 +153,23 @@ function parseExtractedFields(parsed: Record<string, unknown>, documentType: Doc
     source: typeof parsed.source === 'string' ? parsed.source : undefined,
     sealNo: typeof parsed.sealNo === 'string' ? parsed.sealNo : undefined,
     documentTime: typeof parsed.documentTime === 'string' ? parsed.documentTime : undefined,
+
+    // Weighbridge fields. The prompt asks for these; without parsing them here
+    // they never reach extracted_data and the challanNo / netWeight link tiers
+    // can never fire.
+    challanNo: typeof parsed.challanNo === 'string' ? parsed.challanNo : undefined,
+    bridgeName: typeof parsed.bridgeName === 'string' ? parsed.bridgeName : undefined,
+    grossWeightKg: numOrUndef(parsed.grossWeightKg),
+    tareWeightKg: numOrUndef(parsed.tareWeightKg),
+    firstWeightKg: numOrUndef(parsed.firstWeightKg),
+    secondWeightKg: numOrUndef(parsed.secondWeightKg),
+    netWeightKg: numOrUndef(parsed.netWeightKg),
+    grossWeightAt: typeof parsed.grossWeightAt === 'string' ? parsed.grossWeightAt : undefined,
+    tareWeightAt: typeof parsed.tareWeightAt === 'string' ? parsed.tareWeightAt : undefined,
+    firstWeightAt: typeof parsed.firstWeightAt === 'string' ? parsed.firstWeightAt : undefined,
+    secondWeightAt: typeof parsed.secondWeightAt === 'string' ? parsed.secondWeightAt : undefined,
+    statedWeightDiffKg: numOrUndef(parsed.statedWeightDiffKg),
+
     documentType,
     confidence: typeof parsed.ocrConfidence === 'number'
       ? parsed.ocrConfidence

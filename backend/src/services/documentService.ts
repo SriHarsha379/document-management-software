@@ -1,8 +1,75 @@
 import { PrismaClient } from '@prisma/client';
-import type { DocumentType, ReviewPayload } from '../types/index.js';
+import type { DocumentType, ReviewPayload, ExtractedFields } from '../types/index.js';
 import { autoLinkDocument, relinkPendingDocuments, normalizeVehicleNo, normalizeRefNo, backfillLrFromLinkedInvoice, daysBetween } from './autoLinkService.js';
 import { canonicalVehicleNo } from './vehicleNormalization.js';
 import { mergeGroupsForLr } from './groupMergeService.js';
+import { classifyWeighment } from './weighmentClassifier.js';
+import { reconcileSlipArithmetic } from './weighmentClassifier.js';
+import { parseNetWeightKg } from './reconciliationService.js';
+
+/**
+ * Map the weighbridge fields from OCR onto the extracted_data columns, and
+ * classify the slip while we have everything in one place.
+ *
+ * Kept as a helper because the same block is needed by both the create and the
+ * update half of the upsert, and drift between the two is exactly how these
+ * fields went missing in the first place.
+ */
+function weighmentColumns(fields: ExtractedFields, documentType: DocumentType) {
+  const toMs = (iso?: string): bigint | null => {
+    if (!iso) return null;
+    const ms = Date.parse(iso);
+    return Number.isFinite(ms) ? BigInt(ms) : null;
+  };
+
+  const grossAtMs = toMs(fields.grossWeightAt);
+  const tareAtMs = toMs(fields.tareWeightAt);
+  const firstAtMs = toMs(fields.firstWeightAt);
+  const secondAtMs = toMs(fields.secondWeightAt);
+
+  // Prefer the arithmetic when the printed net disagrees with gross - tare.
+  const arithmetic = reconcileSlipArithmetic(
+    fields.grossWeightKg ?? fields.firstWeightKg,
+    fields.tareWeightKg ?? fields.secondWeightKg,
+    fields.netWeightKg,
+  );
+  const netKg = arithmetic.netKg ?? parseNetWeightKg(fields.weightInfo);
+
+  const isWeighment =
+    documentType === 'WEIGHMENT' ||
+    documentType === 'WEIGHMENT_PARTY' ||
+    documentType === 'WEIGHMENT_SITE';
+
+  const classified = isWeighment
+    ? classifyWeighment({
+        bridgeName: fields.bridgeName,
+        grossAtMs: grossAtMs === null ? null : Number(grossAtMs),
+        tareAtMs: tareAtMs === null ? null : Number(tareAtMs),
+        firstWeightKg: fields.firstWeightKg,
+        secondWeightKg: fields.secondWeightKg,
+        documentType,
+      })
+    : null;
+
+  return {
+    challanNo: fields.challanNo ?? null,
+    bridgeName: fields.bridgeName ?? null,
+    grossWeightKg: fields.grossWeightKg ?? null,
+    tareWeightKg: fields.tareWeightKg ?? null,
+    firstWeightKg: fields.firstWeightKg ?? null,
+    secondWeightKg: fields.secondWeightKg ?? null,
+    netWeightKg: netKg,
+    grossWeightAtMs: grossAtMs,
+    tareWeightAtMs: tareAtMs,
+    firstWeightAtMs: firstAtMs,
+    secondWeightAtMs: secondAtMs,
+    statedWeightDiffKg: fields.statedWeightDiffKg ?? null,
+    weighmentPoint: classified?.point ?? null,
+    weighmentOwner: classified?.owner ?? null,
+    weighmentPointConfidence: classified?.pointConfidence ?? null,
+  };
+}
+
 import { getTrackedReviewFields, getOcrQualityMetrics, learnFromDocumentReview, shouldAutoAccept } from './ocrLearningService.js';
 
 const prisma = new PrismaClient();
@@ -684,6 +751,7 @@ export async function saveOcrResults(
         source: fields.source ?? null,
         sealNo: fields.sealNo ?? null,
         documentTime: fields.documentTime ?? null,
+        ...weighmentColumns(fields, documentType),
       },
       update: {
         lrNo: fields.lrNo ?? null,
@@ -721,6 +789,7 @@ export async function saveOcrResults(
         source: fields.source ?? null,
         sealNo: fields.sealNo ?? null,
         documentTime: fields.documentTime ?? null,
+        ...weighmentColumns(fields, documentType),
       },
     });
 

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { openAuthedFile } from '../hooks/useAuthedFile';
 import type { Document, DocumentType, Lr, LrDocumentCategory } from '../types';
 import { documentsApi, lrApi, masterApi } from '../services/api';
 import { useCurrentUser, PERM } from '../contexts/UserContext';
@@ -350,9 +351,9 @@ function DocumentsModal({
                   <td style={td}>{new Date(document.uploadedAt).toLocaleString()}</td>
                   <td style={td}>{document.uploadedBy?.name ?? '—'}</td>
                   <td style={td}>
-                    <a href={`/uploads/${document.filePath}`} target="_blank" rel="noreferrer" style={linkBtn}>
+                    <button onClick={() => void openAuthedFile(document.filePath)} style={linkBtn}>
                       View
-                    </a>
+                    </button>
                   </td>
                   {canDelete && (
                     <td style={td}>

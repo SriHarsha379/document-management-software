@@ -44,6 +44,32 @@ export interface ExtractedFields {
   // in/out time, or the toll "Debited at" time. Format "HH:MM" or "HH:MM:SS",
   // 24-hour where possible. Used to disambiguate same-vehicle, same-day trips.
   documentTime?: string;
+
+  // ── Weighbridge slip fields ───────────────────────────────────────────────
+  // These drive the challanNo / netWeight auto-link tiers and the origin vs
+  // destination classification. Without them the matcher falls back to the
+  // weak vehicle+date heuristic, so every one of these must survive the trip
+  // from the OCR JSON into extracted_data.
+  /** "Challan No" / "GRN No" on a weighbridge slip. Sometimes equals the invoice number verbatim. */
+  challanNo?: string;
+  /** Weighbridge or company name from the slip letterhead. */
+  bridgeName?: string;
+  /** Gross / tare in kg, when the slip uses those labels. */
+  grossWeightKg?: number;
+  tareWeightKg?: number;
+  /** First / second reading in kg, when the slip labels them that way instead. */
+  firstWeightKg?: number;
+  secondWeightKg?: number;
+  /** Net weight in kg, parsed rather than left inside the weightInfo blob. */
+  netWeightKg?: number;
+  /** Per-reading timestamps, ISO 8601. Readings routinely straddle midnight. */
+  grossWeightAt?: string;
+  tareWeightAt?: string;
+  firstWeightAt?: string;
+  secondWeightAt?: string;
+  /** Shortage as PRINTED on the slip (e.g. "Weight Diff. Qty"). */
+  statedWeightDiffKg?: number;
+
   documentType?: DocumentType;
   confidence?: number;
   classificationConfidence?: number;

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useAuthedFileUrl, AuthedImage } from '../hooks/useAuthedFile';
 import type { Document, DocumentType, ReviewPayload } from '../types';
 import { documentsApi } from '../services/api';
 import { ImagePreviewModal } from './ImagePreviewModal';
@@ -83,7 +84,10 @@ export function OCRReview({ document, allDocs, onSaved, onSelectDocument, onCanc
 
   const clampedIdx = previewDocs.length > 0 ? Math.max(0, Math.min(previewIdx, previewDocs.length - 1)) : 0;
   const previewDoc = previewDocs[clampedIdx] ?? document;
-  const previewUrl = previewDoc.mimeType.startsWith('image/') ? `/uploads/${previewDoc.filePath}` : null;
+  // Fetched with auth and exposed as a blob URL; /uploads is no longer public.
+  const { url: previewUrl } = useAuthedFileUrl(
+    previewDoc.mimeType.startsWith('image/') ? previewDoc.filePath : null,
+  );
   const previewIsPdf = previewDoc.mimeType === 'application/pdf';
 
   const selectPreviewDocument = (index: number) => {
@@ -209,7 +213,7 @@ export function OCRReview({ document, allDocs, onSaved, onSelectDocument, onCanc
           {previewDocs.length > 1 && previewDocs.length <= 8 && (
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'center', marginTop: 2 }}>
               {previewDocs.map((d, idx) => {
-                const thumbUrl = d.mimeType.startsWith('image/') ? `/uploads/${d.filePath}` : null;
+                const isImage = d.mimeType.startsWith('image/');
                 const isActive = idx === clampedIdx;
                 return (
                   <div
@@ -224,8 +228,8 @@ export function OCRReview({ document, allDocs, onSaved, onSelectDocument, onCanc
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }}
                   >
-                    {thumbUrl ? (
-                      <img src={thumbUrl} alt={d.originalFilename} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    {isImage ? (
+                      <AuthedImage filePath={d.filePath} alt={d.originalFilename} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     ) : (
                       <span style={{ fontSize: 16 }}>📄</span>
                     )}
