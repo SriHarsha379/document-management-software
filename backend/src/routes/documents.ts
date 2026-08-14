@@ -3,11 +3,13 @@ import { requireAuth } from '../modules/auth/auth.routes.js';
 import { requirePermission } from '../modules/rbac/rbac.middleware.js';
 import { PERMISSIONS } from '../modules/rbac/permissions.js';
 import * as path from 'path';
+import * as fs from 'fs';
+import * as crypto from 'crypto';
 import { upload } from '../middleware/upload.js';
 import { processDocumentOcr } from '../services/ocrService.js';
 import { getOcrMetrics, prisma, saveOcrResults, saveReviewedData, createSiblingDocumentsForAdditionalEntries } from '../services/documentService.js';
 import type { DocumentType, ReviewPayload } from '../types/index.js';
-import { LrDocumentCategory } from '@prisma/client';
+import { LrDocumentCategory, Prisma } from '@prisma/client';
 import { getPdfPageCount, splitPdfToPageImages, MAX_PDF_PAGES } from '../services/pdfSplitService.js';
 
 const VALID_DOCUMENT_TYPES: DocumentType[] = [
@@ -23,6 +25,17 @@ const VALID_LR_DOCUMENT_CATEGORIES = new Set<LrDocumentCategory>([
 const UPLOAD_DIR = process.env.UPLOAD_DIR ?? './uploads';
 
 const router = Router();
+
+/** SHA-256 hash of a file's contents, used to detect duplicate uploads. */
+function hashFile(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('error', reject);
+  });
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // POST /api/documents/upload
@@ -44,6 +57,23 @@ router.post('/upload', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_UPLOA
   try {
     if (!req.file) {
       res.status(400).json({ error: 'No file uploaded' });
+      return;
+    }
+
+    // ── Duplicate detection ──────────────────────────────────────────────────
+    // Reject the upload if a document with byte-identical contents already
+    // exists, instead of silently creating a second copy in the DMS.
+    const fileHash = await hashFile(req.file.path);
+    const existingDocument = await prisma.document.findUnique({ where: { fileHash } });
+    if (existingDocument) {
+      await fs.promises.unlink(req.file.path).catch(() => {
+        // Best-effort cleanup of the just-uploaded temp file; a stray file
+        // on disk is harmless and shouldn't block the error response.
+      });
+      res.status(409).json({
+        error: `This file has already been uploaded as "${existingDocument.originalFilename}".`,
+        existingDocumentId: existingDocument.id,
+      });
       return;
     }
 
@@ -100,6 +130,7 @@ router.post('/upload', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_UPLOA
             originalFilename: req.file.originalname,
             rawFilePath: req.file.path,
             mimeType: req.file.mimetype,
+            fileHash,
             ...(groupId ? { groupId } : {}),
           },
         });
@@ -156,6 +187,7 @@ router.post('/upload', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_UPLOA
         originalFilename: req.file.originalname,
         rawFilePath: req.file.path,
         mimeType: req.file.mimetype,
+        fileHash,
         ...(groupId ? { groupId } : {}),
         ...(lrDocumentCategory ? { lrDocumentCategory } : {}),
       },
@@ -171,6 +203,13 @@ router.post('/upload', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_UPLOA
       isPdfMultiPage: false,
     });
   } catch (err) {
+    // Two identical files uploaded at nearly the same instant can both pass
+    // the findUnique duplicate check before either has written its row; the
+    // fileHash unique constraint is the final backstop against that race.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      res.status(409).json({ error: 'This file has already been uploaded.' });
+      return;
+    }
     const message = err instanceof Error ? err.message : 'Upload failed';
     res.status(500).json({ error: message });
   }
@@ -705,3 +744,4 @@ function formatDocument(doc: PrismaDocumentWithRelations | null) {
 }
 
 export default router;
+
