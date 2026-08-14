@@ -1,0 +1,82 @@
+name: Apply Point 1
+
+on:
+  push:
+    branches:
+      - feature/dashboard-acknowledgement-stamp-signature
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Apply dashboard acknowledgement changes
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"Expected text not found in {path}: {old[:120]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace("backend/prisma/schema.prisma", '  documentTime        String?\n  rawOcrResponse      String', '  documentTime        String?\n  hasStamp            Boolean?\n  hasSignature        Boolean?\n  rawOcrResponse      String')
+          replace("backend/src/services/ocrService.ts", "    documentTime: typeof parsed.documentTime === 'string' ? parsed.documentTime : undefined,\n    documentType:", "    documentTime: typeof parsed.documentTime === 'string' ? parsed.documentTime : undefined,\n    hasStamp: typeof parsed.hasStamp === 'boolean' ? parsed.hasStamp : undefined,\n    hasSignature: typeof parsed.hasSignature === 'boolean' ? parsed.hasSignature : undefined,\n    documentType:")
+          replace("backend/src/services/ocrService.ts", 'STEP 2 — Extract fields according to the identified document type using the rules below.\n', '''STEP 2 — Extract fields according to the identified document type using the rules below.\n\n=== STAMP / SIGNATURE DETECTION (ALL DOCUMENT TYPES) ===\n- hasStamp: true ONLY when a physical/ink stamp, seal, rubber stamp, round/rectangular office stamp, or clearly stamped acknowledgement mark is visibly present on the page. A printed company logo, printed word such as "STAMP", a watermark, or ordinary printed text is NOT a stamp.\n- hasSignature: true ONLY when a handwritten/ink signature or clearly handwritten sign-off is visibly present on the page. A printed person's name, typed name, digital text, or printed signature image that is clearly part of the document template is NOT a signature.\n- If the page is unclear or the evidence is ambiguous, return false rather than guessing.\n- These two fields are visual checks; do not infer them merely because the document type normally requires a stamp/signature.\n''')
+          replace("backend/src/services/ocrService.ts", '  "documentTime": "<time-of-day this document records (LR Out Time, weighment in/out time, or toll debited time) in HH:MM or HH:MM:SS 24-hour format, or null>",\n  "rawText":', '  "documentTime": "<time-of-day this document records (LR Out Time, weighment in/out time, or toll debited time) in HH:MM or HH:MM:SS 24-hour format, or null>",\n  "hasStamp": <true if a physical/ink stamp is visibly present, otherwise false>,\n  "hasSignature": <true if a handwritten/ink signature is visibly present, otherwise false>,\n  "rawText":')
+          replace("backend/src/services/documentService.ts", '    documentTime?: string;\n  },\n  documentType: DocumentType,', '    documentTime?: string;\n    hasStamp?: boolean;\n    hasSignature?: boolean;\n  },\n  documentType: DocumentType,')
+          replace("backend/src/services/documentService.ts", '        documentTime: fields.documentTime ?? null,\n      },\n      update: {', '        documentTime: fields.documentTime ?? null,\n        hasStamp: fields.hasStamp ?? null,\n        hasSignature: fields.hasSignature ?? null,\n      },\n      update: {')
+          replace("backend/src/services/documentService.ts", '        documentTime: fields.documentTime ?? null,\n      },\n    });', '        documentTime: fields.documentTime ?? null,\n        hasStamp: fields.hasStamp ?? null,\n        hasSignature: fields.hasSignature ?? null,\n      },\n    });')
+          replace("backend/src/modules/lr/lr.repo.ts", "      db.document.count({ where: { lr: { companyId }, lrDocumentCategory: 'ACKNOWLEDGED_LR_COPY' } }),\n      db.document.count({ where: { lr: { companyId }, lrDocumentCategory: 'ACKNOWLEDGED_INVOICE' } }),\n      db.document.count({ where: { lr: { companyId }, lrDocumentCategory: { not: null } } }),", '''      db.document.count({\n        where: {\n          lr: { companyId },\n          lrDocumentCategory: 'ACKNOWLEDGED_LR_COPY',\n          extractedData: { is: { hasStamp: true, hasSignature: true } },\n        },\n      }),\n      db.document.count({\n        where: {\n          lr: { companyId },\n          lrDocumentCategory: 'ACKNOWLEDGED_INVOICE',\n          extractedData: { is: { hasStamp: true, hasSignature: true } },\n        },\n      }),\n      db.document.count(),''')
+          replace("backend/src/routes/documents.ts", '    source: string | null;\n    createdAt: Date;', '    source: string | null;\n    hasStamp: boolean | null;\n    hasSignature: boolean | null;\n    createdAt: Date;')
+          replace("backend/src/routes/documents.ts", '      userEdits: ed.userEdits ? (JSON.parse(ed.userEdits) as Record<string, unknown>) : null,\n      billToParty:', '      userEdits: ed.userEdits ? (JSON.parse(ed.userEdits) as Record<string, unknown>) : null,\n      hasStamp: ed.hasStamp,\n      hasSignature: ed.hasSignature,\n      billToParty:')
+          replace("backend/src/types/index.ts", '  documentTime?: string;\n  documentType?: DocumentType;', '  documentTime?: string;\n  hasStamp?: boolean;\n  hasSignature?: boolean;\n  documentType?: DocumentType;')
+          replace("backend/src/types/index.ts", '    userEdits: Record<string, unknown> | null;\n  };', '    userEdits: Record<string, unknown> | null;\n    hasStamp: boolean | null;\n    hasSignature: boolean | null;\n  };')
+          replace("backend/src/types/index.ts", '  documentTime?: string;\n  documentType?: DocumentType;\n}', '  documentTime?: string;\n  hasStamp?: boolean;\n  hasSignature?: boolean;\n  documentType?: DocumentType;\n}')
+          replace("frontend/src/types.ts", '  source?: string | null;\n}', '  source?: string | null;\n  hasStamp?: boolean | null;\n  hasSignature?: boolean | null;\n}')
+          replace("frontend/src/components/LrDashboard.tsx", 'subtitle="LR documents uploaded to DMS"', 'subtitle="LR documents with stamp + signature"')
+          replace("frontend/src/components/LrDashboard.tsx", 'subtitle="Invoice documents uploaded to DMS"', 'subtitle="Invoice documents with stamp + signature"')
+          replace("frontend/src/components/LrDashboard.tsx", 'subtitle="All uploaded LR-related documents"', 'subtitle="All uploaded documents"')
+
+          p = Path("backend/prisma/migrations/20260814190000_add_stamp_signature_detection/migration.sql")
+          p.parent.mkdir(parents=True, exist_ok=True)
+          p.write_text('''-- Store OCR/vision detection results used to determine whether an uploaded\n-- LR/invoice acknowledgement contains both a physical stamp and signature.\nALTER TABLE "extracted_data"\n  ADD COLUMN "hasStamp" BOOLEAN,\n  ADD COLUMN "hasSignature" BOOLEAN;\n''')
+
+          p = Path("backend/src/scripts/backfillAcknowledgementDetection.ts")
+          p.parent.mkdir(parents=True, exist_ok=True)
+          p.write_text('''import { prisma } from '../services/documentService.js';\nimport { processDocumentOcr } from '../services/ocrService.js';\n\nasync function main(): Promise<void> {\n  const documents = await prisma.document.findMany({\n    where: {\n      lrDocumentCategory: { in: ['ACKNOWLEDGED_LR_COPY', 'ACKNOWLEDGED_INVOICE'] },\n      extractedData: { is: { OR: [{ hasStamp: null }, { hasSignature: null }] } },\n    },\n    select: { id: true, originalFilename: true, rawFilePath: true, mimeType: true },\n    orderBy: { uploadedAt: 'asc' },\n  });\n  console.log(`[ack-backfill] ${documents.length} document(s) need detection.`);\n  let processed = 0;\n  let failed = 0;\n  for (const document of documents) {\n    try {\n      const result = await processDocumentOcr(document.rawFilePath, document.mimeType);\n      await prisma.extractedData.update({\n        where: { documentId: document.id },\n        data: { hasStamp: result.fields.hasStamp ?? false, hasSignature: result.fields.hasSignature ?? false },\n      });\n      processed += 1;\n      console.log(`[ack-backfill] ${processed}/${documents.length} ${document.originalFilename}: stamp=${result.fields.hasStamp ?? false}, signature=${result.fields.hasSignature ?? false}`);\n    } catch (error) {\n      failed += 1;\n      console.error(`[ack-backfill] Failed for ${document.originalFilename}:`, error);\n    }\n  }\n  console.log(`[ack-backfill] Complete. Processed=${processed}, Failed=${failed}`);\n}\nmain().catch((error) => { console.error('[ack-backfill] Fatal error:', error); process.exitCode = 1; }).finally(async () => { await prisma.$disconnect(); });\n''')
+
+          import json
+          package_path = Path("backend/package.json")
+          pkg = json.loads(package_path.read_text())
+          pkg["scripts"]["db:backfill-acknowledgement-detection"] = "tsx src/scripts/backfillAcknowledgementDetection.ts"
+          package_path.write_text(json.dumps(pkg, indent=2) + "\n")
+          PY
+
+      - name: Validate
+        working-directory: backend
+        run: |
+          npm ci
+          npx prisma generate
+          npm run build
+
+      - name: Commit changes and remove helper workflow
+        shell: bash
+        run: |
+          rm -f .github/workflows/apply-point1.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend frontend .github/workflows/apply-point1.yml
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Implement dashboard acknowledgement detection [point1-applied]"
+          git push origin HEAD:${GITHUB_REF_NAME}
