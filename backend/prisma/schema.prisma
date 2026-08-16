@@ -290,6 +290,8 @@ model ExtractedData {
   source              String?
   sealNo              String?
   documentTime        String?
+  hasStamp             Boolean?
+  hasSignature         Boolean?
   /// Challan / GRN number printed on weighbridge slips. Sometimes equals the
   /// invoice number verbatim, which makes the slip an exact-match link.
   challanNo           String?

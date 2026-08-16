@@ -270,13 +270,38 @@ export const lrRepo = {
     acknowledgedLrCount: number;
     acknowledgedInvoiceCount: number;
     totalUploadedDocuments: number;
+    /** Uploaded-document count per LrDocumentCategory, company-scoped. Used
+     *  to show "N uploaded" per document type at the top of the Documents tab. */
+    documentCountsByCategory: Record<string, number>;
+    /** Same idea, grouped by DocumentType instead — the Bundle page's columns
+     *  key off DocumentType (checkType) rather than LrDocumentCategory for
+     *  everything except the two free-form "Additional Document" slots. */
+    documentCountsByType: Record<string, number>;
   }> {
+    // A document reaches a company through THREE possible paths, and a real
+    // document only ever uses one of them at a time — but all three must be
+    // checked, or documents connected only via the auto-link join table
+    // silently vanish from every count below:
+    //   1. Document.lrId set directly    (the LR-scoped manual per-slot upload)
+    //   2. DocumentLinkRecord join table (the auto-link pipeline — this is how
+    //      MOST documents actually get connected; linkDocumentToLr() only ever
+    //      writes here, never touches Document.lrId)
+    //   3. Document.uploadedById         (fallback for a document not yet
+    //      linked to any LR at all, so it isn't invisible before linking runs)
+    const companyScope: Prisma.DocumentWhereInput['OR'] = [
+      { lr: { companyId } },
+      { documentLinks: { some: { lr: { companyId } } } },
+      { uploadedBy: { companyId } },
+    ];
+
     const [
       generatedLrCount,
       generatedInvoiceRows,
       acknowledgedLrCount,
       acknowledgedInvoiceCount,
       totalUploadedDocuments,
+      categoryCountRows,
+      typeCountRows,
     ] = await Promise.all([
       db.lr.count({ where: { companyId } }),
       db.lr.findMany({
@@ -284,10 +309,60 @@ export const lrRepo = {
         select: { companyInvoiceNo: true },
         distinct: ['companyInvoiceNo'],
       }),
-      db.document.count({ where: { lr: { companyId }, lrDocumentCategory: 'ACKNOWLEDGED_LR_COPY' } }),
-      db.document.count({ where: { lr: { companyId }, lrDocumentCategory: 'ACKNOWLEDGED_INVOICE' } }),
-      db.document.count({ where: { lr: { companyId }, lrDocumentCategory: { not: null } } }),
+      // "Acknowledged LR" = any uploaded LR-side document (either the
+      // generated LR itself, or the RECEIVING copy that comes back from the
+      // customer) that has BOTH a stamp and a signature. Previously this only
+      // looked at ACKNOWLEDGED_LR_COPY (RECEIVING), so a stamped/signed copy
+      // uploaded under LR_GENERATED never reflected here.
+      db.document.count({
+        where: {
+          OR: companyScope,
+          lrDocumentCategory: { in: ['LR_GENERATED', 'ACKNOWLEDGED_LR_COPY'] },
+          extractedData: {
+            is: {
+              hasStamp: true,
+              hasSignature: true,
+            },
+          },
+        },
+      }),
+      db.document.count({
+        where: {
+          OR: companyScope,
+          lrDocumentCategory: 'ACKNOWLEDGED_INVOICE',
+          extractedData: {
+            is: {
+              hasStamp: true,
+              hasSignature: true,
+            },
+          },
+        },
+      }),
+      db.document.count({
+        where: { OR: companyScope },
+      }),
+      db.document.groupBy({
+        by: ['lrDocumentCategory'],
+        where: {
+          lrDocumentCategory: { not: null },
+          OR: companyScope,
+        },
+        _count: { _all: true },
+      }),
+      db.document.groupBy({
+        by: ['type'],
+        where: { OR: companyScope },
+        _count: { _all: true },
+      }),
     ]);
+    const documentCountsByCategory: Record<string, number> = {};
+    for (const row of categoryCountRows) {
+      if (row.lrDocumentCategory) documentCountsByCategory[row.lrDocumentCategory] = row._count._all;
+    }
+    const documentCountsByType: Record<string, number> = {};
+    for (const row of typeCountRows) {
+      documentCountsByType[row.type] = row._count._all;
+    }
     return {
       generatedLrCount,
       generatedInvoiceCount: generatedInvoiceRows
@@ -296,6 +371,8 @@ export const lrRepo = {
       acknowledgedLrCount,
       acknowledgedInvoiceCount,
       totalUploadedDocuments,
+      documentCountsByCategory,
+      documentCountsByType,
     };
   },
 

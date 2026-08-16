@@ -100,7 +100,7 @@ export function LrDashboard() {
           icon="📋"
           color="#4361ee"
           bgColor="#eef0ff"
-          subtitle="LR documents uploaded to DMS"
+          subtitle="LR documents with stamp + signature"
         />
         <SummaryCard
           title="Acknowledged Invoices"
@@ -108,7 +108,7 @@ export function LrDashboard() {
           icon="🧾"
           color="#059669"
           bgColor="#d1fae5"
-          subtitle="Invoice documents uploaded to DMS"
+          subtitle="Invoice documents with stamp + signature"
         />
         <SummaryCard
           title="Total Uploaded Documents"
@@ -116,7 +116,7 @@ export function LrDashboard() {
           icon="📂"
           color="#7c3aed"
           bgColor="#ede9fe"
-          subtitle="All uploaded LR-related documents"
+          subtitle="All uploaded documents"
         />
       </div>
 

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { openAuthedFile } from '../hooks/useAuthedFile';
-import type { Document, DocumentType, Lr, LrDocumentCategory } from '../types';
+import type { Document, DocumentType, Lr, LrDocumentCategory, LrSummary } from '../types';
 import { documentsApi, lrApi, masterApi } from '../services/api';
 import { useCurrentUser, PERM } from '../contexts/UserContext';
 import { DocumentExtractionSummary } from './DocumentExtractionSummary';
+import { OCRReview } from './OCRReview';
 import { formatOfficerLabel } from '../utils/masterData';
 
 const PAGE_SIZE = 10;
@@ -29,6 +30,7 @@ export function UploadDocumentsPage() {
   const { hasPermission } = useCurrentUser();
   const canUpload = hasPermission(PERM.DOCUMENT_UPLOAD);
   const canDelete = hasPermission(PERM.DOCUMENT_DELETE);
+  const canDeleteLr = hasPermission(PERM.LR_DELETE);
 
   const [rows, setRows] = useState<Lr[]>([]);
   const [total, setTotal] = useState(0);
@@ -40,7 +42,63 @@ export function UploadDocumentsPage() {
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [modal, setModal] = useState<ModalState>(null);
+  const [docCounts, setDocCounts] = useState<Record<string, number> | null>(null);
+  const [viewingRowId, setViewingRowId] = useState<string | null>(null);
+  const [deletingRowId, setDeletingRowId] = useState<string | null>(null);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  const triggerRefresh = () => setRefreshKey((value) => value + 1);
+
+  const handleViewCombinedPdf = async (lr: Lr) => {
+    // Open the tab synchronously, before the await — browsers block
+    // window.open() called after an async gap because it's no longer
+    // attributable to the user's click. Same pattern as openAuthedFile.
+    const tab = window.open('', '_blank');
+    setViewingRowId(lr.id);
+    try {
+      const blob = await lrApi.combinedPdf(lr.id);
+      const objectUrl = URL.createObjectURL(blob);
+      if (tab) {
+        tab.location.href = objectUrl;
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      } else {
+        const a = document.createElement('a');
+        a.href = objectUrl;
+        a.download = `LR-${lr.lrNo}-combined.pdf`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      }
+    } catch (err) {
+      tab?.close();
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Could not open combined PDF.' });
+    } finally {
+      setViewingRowId(null);
+    }
+  };
+
+  const handleDeleteRow = async (lr: Lr) => {
+    if (!window.confirm(`Delete LR ${lr.lrNo} and all its uploaded documents? This cannot be undone.`)) return;
+    setDeletingRowId(lr.id);
+    try {
+      await lrApi.delete(lr.id);
+      setMessage({ type: 'success', text: `LR ${lr.lrNo} deleted.` });
+      triggerRefresh();
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to delete LR.' });
+    } finally {
+      setDeletingRowId(null);
+    }
+  };
+
+  // At-a-glance count of how many documents have been uploaded for each
+  // document type, shown as a strip above the table.
+  useEffect(() => {
+    let ignore = false;
+    lrApi.summary()
+      .then((s: LrSummary) => { if (!ignore) setDocCounts(s.documentCountsByCategory); })
+      .catch(() => {});
+    return () => { ignore = true; };
+  }, [refreshKey]);
 
   useEffect(() => {
     let ignore = false;
@@ -69,8 +127,6 @@ export function UploadDocumentsPage() {
   }, [page, search, refreshKey]);
 
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
-  const triggerRefresh = () => setRefreshKey((value) => value + 1);
 
   const handleUpload = async (
     lrId: string,
@@ -135,6 +191,24 @@ export function UploadDocumentsPage() {
           </div>
         )}
 
+        {/* ── At-a-glance counts per document type ──────────────────────── */}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '4px 0 16px' }}>
+          {SLOT_CONFIG.map((slot) => (
+            <div
+              key={slot.type}
+              style={{
+                background: '#f8faff', border: '1px solid #dbe4ff', borderRadius: 8,
+                padding: '8px 14px', fontSize: 12, color: '#334155', minWidth: 130,
+              }}
+            >
+              <div style={{ fontWeight: 700, color: '#1a1a2e' }}>
+                {docCounts ? (docCounts[slot.category] ?? 0) : '…'}
+              </div>
+              <div style={{ color: '#6b7280' }}>{slot.label} uploaded</div>
+            </div>
+          ))}
+        </div>
+
         <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '70vh' }}>
           <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: 1400 }}>
             <thead>
@@ -144,24 +218,33 @@ export function UploadDocumentsPage() {
                 {SLOT_CONFIG.map((slot) => (
                   <th key={slot.type} style={th}>{slot.label}</th>
                 ))}
+                <th style={th}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading && rows.length === 0 ? (
                 <tr>
-                  <td colSpan={SLOT_CONFIG.length + 2} style={{ ...td, textAlign: 'center', padding: 28, color: '#6b7280' }}>
+                  <td colSpan={SLOT_CONFIG.length + 3} style={{ ...td, textAlign: 'center', padding: 28, color: '#6b7280' }}>
                     Loading records...
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={SLOT_CONFIG.length + 2} style={{ ...td, textAlign: 'center', padding: 28, color: '#6b7280' }}>
+                  <td colSpan={SLOT_CONFIG.length + 3} style={{ ...td, textAlign: 'center', padding: 28, color: '#6b7280' }}>
                     No LR records found.
                   </td>
                 </tr>
               ) : rows.map((lr) => (
                 <tr key={lr.id} style={{ borderBottom: '1px solid #eef0ff' }}>
-                  <td style={{ ...td, fontWeight: 700 }}>{lr.lrNo}</td>
+                  <td style={td}>
+                    <button
+                      onClick={() => setModal({ type: 'documents', lr })}
+                      style={{ ...linkBtn, fontWeight: 700, padding: 0, textDecoration: 'underline' }}
+                      title="View extracted details, edit, or delete each document for this LR"
+                    >
+                      {lr.lrNo}
+                    </button>
+                  </td>
                   <td style={td}>{lr.lrDate ?? lr.date ?? '—'}</td>
                   {SLOT_CONFIG.map((slot) => {
                     // Prefer confirmed auto-link matches (documentLinks) — this
@@ -217,6 +300,26 @@ export function UploadDocumentsPage() {
                       </td>
                     );
                   })}
+                  <td style={{ ...td, minWidth: 160 }}>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        style={linkBtn}
+                        disabled={viewingRowId === lr.id}
+                        onClick={() => { void handleViewCombinedPdf(lr); }}
+                      >
+                        {viewingRowId === lr.id ? 'Opening…' : 'View'}
+                      </button>
+                      {canDeleteLr && (
+                        <button
+                          style={dangerBtn}
+                          disabled={deletingRowId === lr.id}
+                          onClick={() => { void handleDeleteRow(lr); }}
+                        >
+                          {deletingRowId === lr.id ? 'Deleting…' : 'Delete'}
+                        </button>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -236,6 +339,7 @@ export function UploadDocumentsPage() {
         <DocumentsModal
           lr={modal.lr}
           canDelete={canDelete}
+          canEdit={canUpload}
           onClose={() => setModal(null)}
           onDeleteSuccess={() => {
             triggerRefresh();
@@ -262,12 +366,14 @@ export function UploadDocumentsPage() {
 function DocumentsModal({
   lr,
   canDelete,
+  canEdit,
   onClose,
   onDeleteSuccess,
   onError,
 }: {
   lr: Lr;
   canDelete: boolean;
+  canEdit: boolean;
   onClose: () => void;
   onDeleteSuccess: () => void;
   onError: (text: string) => void;
@@ -275,6 +381,7 @@ function DocumentsModal({
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingDoc, setEditingDoc] = useState<Document | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -321,7 +428,13 @@ function DocumentsModal({
 
   return (
     <ModalShell title={`Documents for LR ${lr.lrNo}`} onClose={onClose}>
-      {loading ? (
+      {editingDoc ? (
+        <OCRReview
+          document={editingDoc}
+          onCancel={() => setEditingDoc(null)}
+          onSaved={() => { setEditingDoc(null); void load(); }}
+        />
+      ) : loading ? (
         <p style={modalHint}>Loading documents...</p>
       ) : groupedDocuments.length === 0 ? (
         <p style={modalHint}>No uploaded documents found for this LR.</p>
@@ -335,6 +448,7 @@ function DocumentsModal({
                 <th style={th}>Uploaded Date</th>
                 <th style={th}>Uploaded By</th>
                 <th style={th}>View</th>
+                {canEdit && <th style={th}>Edit</th>}
                 {canDelete && <th style={th}>Delete</th>}
               </tr>
             </thead>
@@ -355,6 +469,13 @@ function DocumentsModal({
                       View
                     </button>
                   </td>
+                  {canEdit && (
+                    <td style={td}>
+                      <button style={linkBtn} onClick={() => setEditingDoc(document)}>
+                        Edit
+                      </button>
+                    </td>
+                  )}
                   {canDelete && (
                     <td style={td}>
                       <button style={dangerBtn} disabled={deletingId === document.id} onClick={() => { void handleDelete(document); }}>

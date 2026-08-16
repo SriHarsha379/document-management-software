@@ -45,6 +45,10 @@ export interface ExtractedFields {
   // 24-hour where possible. Used to disambiguate same-vehicle, same-day trips.
   documentTime?: string;
 
+  // Visual acknowledgement checks from the OCR vision model.
+  hasStamp?: boolean;
+  hasSignature?: boolean;
+
   // ── Weighbridge slip fields ───────────────────────────────────────────────
   // These drive the challanNo / netWeight auto-link tiers and the origin vs
   // destination classification. Without them the matcher falls back to the

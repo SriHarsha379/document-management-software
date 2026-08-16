@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { upload } from '../middleware/upload.js';
 import { processDocumentOcr } from '../services/ocrService.js';
-import { getOcrMetrics, prisma, saveOcrResults, saveReviewedData, createSiblingDocumentsForAdditionalEntries } from '../services/documentService.js';
+import { getOcrMetrics, prisma, saveOcrResults, saveReviewedData, createSiblingDocumentsForAdditionalEntries, findDuplicateDocuments, buildCombinedPdf, type DuplicateMatch } from '../services/documentService.js';
 import type { DocumentType, ReviewPayload } from '../types/index.js';
 import { LrDocumentCategory, Prisma } from '@prisma/client';
 import { getPdfPageCount, splitPdfToPageImages, MAX_PDF_PAGES } from '../services/pdfSplitService.js';
@@ -131,6 +131,7 @@ router.post('/upload', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_UPLOA
             rawFilePath: req.file.path,
             mimeType: req.file.mimetype,
             fileHash,
+            uploadedById: req.user!.id,
             ...(groupId ? { groupId } : {}),
           },
         });
@@ -158,6 +159,7 @@ router.post('/upload', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_UPLOA
                 mimeType: pf.mimeType,
                 sourceDocumentId: sourceDoc.id,
                 pageNumber: pf.pageNumber,
+                uploadedById: req.user!.id,
                 ...(groupId ? { groupId } : {}),
                 ...(lrDocumentCategory ? { lrDocumentCategory } : {}),
               },
@@ -188,6 +190,7 @@ router.post('/upload', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_UPLOA
         rawFilePath: req.file.path,
         mimeType: req.file.mimetype,
         fileHash,
+        uploadedById: req.user!.id,
         ...(groupId ? { groupId } : {}),
         ...(lrDocumentCategory ? { lrDocumentCategory } : {}),
       },
@@ -229,6 +232,25 @@ router.post('/:id/ocr', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_UPLO
       return;
     }
 
+    // ── Toll receipts: OCR temporarily disabled ────────────────────────────
+    // Toll extraction is turned off for now — the file is kept and viewable
+    // as-is, but no vision-model call is made and no ExtractedData is
+    // created. Remove this block to re-enable.
+    if (document.type === 'TOLL' || document.lrDocumentCategory === 'TOLL_RECEIPT') {
+      const skipped = await prisma.document.update({
+        where: { id },
+        data: { status: 'SAVED' },
+        include: { extractedData: true, group: true },
+      });
+      res.json({
+        message: 'OCR is currently disabled for toll receipts — file saved without extraction.',
+        document: formatDocument(skipped),
+        additionalDocumentIds: [],
+        duplicates: [],
+      });
+      return;
+    }
+
     const ocrResult = await processDocumentOcr(document.rawFilePath, document.mimeType);
 
     const rawOcrResponse = JSON.stringify({
@@ -256,12 +278,22 @@ router.post('/:id/ocr', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_UPLO
       include: { extractedData: true, group: true },
     });
 
+    // Flag it right away if this document's Invoice No + LR No (both) match
+    // another already-uploaded document, so the reviewer sees it before saving.
+    const duplicates = await findDuplicateDocuments(
+      req.user!.companyId,
+      ocrResult.fields.invoiceNo,
+      ocrResult.fields.lrNo,
+      id,
+    );
+
     res.json({
       message: siblingIds.length > 0
         ? `OCR processing complete. Detected ${siblingIds.length} additional entry(ies) on this page — created as separate documents for review.`
         : 'OCR processing complete',
       document: formatDocument(updated),
       additionalDocumentIds: siblingIds,
+      duplicates,
     });
   } catch (err) {
   console.error('OCR ERROR:', err);
@@ -296,9 +328,17 @@ router.put('/:id/review', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_UP
       include: { extractedData: true, group: true },
     });
 
+    const duplicates = await findDuplicateDocuments(
+      req.user!.companyId,
+      payload.invoiceNo,
+      payload.lrNo,
+      id,
+    );
+
     res.json({
       message: 'Document reviewed and saved',
       document: formatDocument(updated),
+      duplicates,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Review save failed';
@@ -341,8 +381,35 @@ router.get('/', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_READ), async
       prisma.document.count({ where }),
     ]);
 
+    // Flag rows whose Invoice No + LR No BOTH match another document, one
+    // query per distinct (invoiceNo, lrNo) pair on this page rather than one
+    // per row.
+    const pairs = new Map<string, { invoiceNo: string; lrNo: string }>();
+    for (const doc of documents) {
+      const invoiceNo = doc.extractedData?.invoiceNo?.trim();
+      const lrNo = doc.extractedData?.lrNo?.trim();
+      if (invoiceNo && lrNo) pairs.set(`${invoiceNo}\u0000${lrNo}`, { invoiceNo, lrNo });
+    }
+    const duplicatesByDocId = new Map<string, DuplicateMatch[]>();
+    await Promise.all(
+      [...pairs.entries()].map(async ([key, { invoiceNo, lrNo }]) => {
+        const matches = await findDuplicateDocuments(req.user!.companyId, invoiceNo, lrNo);
+        for (const doc of documents) {
+          const docKey = doc.extractedData?.invoiceNo?.trim() && doc.extractedData?.lrNo?.trim()
+            ? `${doc.extractedData.invoiceNo!.trim()}\u0000${doc.extractedData.lrNo!.trim()}`
+            : null;
+          if (docKey === key) {
+            duplicatesByDocId.set(doc.id, matches.filter((m) => m.documentId !== doc.id));
+          }
+        }
+      }),
+    );
+
     res.json({
-      documents: documents.map(formatDocument),
+      documents: documents.map((doc) => ({
+        ...formatDocument(doc),
+        duplicates: duplicatesByDocId.get(doc.id) ?? [],
+      })),
       pagination: { total, page: parseInt(page, 10), limit: take, pages: Math.ceil(total / take) },
     });
   } catch (err) {
@@ -494,6 +561,94 @@ router.get('/groups/:groupId', requireAuth, requirePermission(PERMISSIONS.DOCUME
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch group';
+    res.status(500).json({ error: message });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// GET /api/documents/groups/:groupId/combined-pdf
+// Merges every document in the group into a single PDF, ordered to match the
+// Bundle page's column order (TABLE_COLUMNS in DocumentBundler.tsx), for the
+// "View" button at the end of each Bundle row.
+// ──────────────────────────────────────────────────────────────────────────────
+const GROUP_DOCUMENT_TYPE_ORDER: string[] = [
+  'INVOICE', 'LR', 'WEIGHMENT_PARTY', 'WEIGHMENT', 'WEIGHMENT_SITE', 'TOLL', 'EWAYBILL', 'RECEIVING', 'UNKNOWN',
+];
+
+router.get('/groups/:groupId/combined-pdf', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_READ), async (req: Request, res: Response): Promise<void> => {
+  try {
+    const groupId = req.params['groupId'] as string;
+
+    const group = await prisma.documentGroup.findUnique({
+      where: { id: groupId },
+      include: { documents: true },
+    });
+
+    if (!group) {
+      res.status(404).json({ error: 'Document group not found' });
+      return;
+    }
+    if (group.documents.length === 0) {
+      res.status(404).json({ error: 'No documents found for this group' });
+      return;
+    }
+
+    const ordered = group.documents.slice().sort((a, b) => {
+      // Additional attachments (no fixed DocumentType) sort by their
+      // lrDocumentCategory suffix (_1 before _2), after everything else.
+      const orderA = a.lrDocumentCategory?.startsWith('ADDITIONAL_ATTACHMENT')
+        ? 100 + Number(a.lrDocumentCategory.slice(-1))
+        : GROUP_DOCUMENT_TYPE_ORDER.indexOf(a.type);
+      const orderB = b.lrDocumentCategory?.startsWith('ADDITIONAL_ATTACHMENT')
+        ? 100 + Number(b.lrDocumentCategory.slice(-1))
+        : GROUP_DOCUMENT_TYPE_ORDER.indexOf(b.type);
+      return orderA - orderB;
+    });
+
+    const pdfBytes = await buildCombinedPdf(
+      ordered.map((d) => ({ rawFilePath: d.rawFilePath, mimeType: d.mimeType })),
+    );
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="group-${group.vehicleNo}-${group.date}-combined.pdf"`);
+    res.send(pdfBytes);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to build combined PDF';
+    res.status(500).json({ error: message });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// DELETE /api/documents/groups/:groupId
+// Deletes the group's documents (and their extracted data / links / bundle
+// membership) and then the group row itself — the "delete button: deletes
+// the complete row" requirement for the Bundle page.
+// ──────────────────────────────────────────────────────────────────────────────
+router.delete('/groups/:groupId', requireAuth, requirePermission(PERMISSIONS.DOCUMENT_DELETE), async (req: Request, res: Response): Promise<void> => {
+  try {
+    const groupId = req.params['groupId'] as string;
+
+    const group = await prisma.documentGroup.findUnique({
+      where: { id: groupId },
+      include: { documents: { select: { id: true } } },
+    });
+    if (!group) {
+      res.status(404).json({ error: 'Document group not found' });
+      return;
+    }
+
+    const documentIds = group.documents.map((d) => d.id);
+    if (documentIds.length > 0) {
+      // BundleItem has no onDelete cascade, so remove bundle membership first
+      // — same ordering as the single-document DELETE /:id route above.
+      await prisma.bundleItem.deleteMany({ where: { documentId: { in: documentIds } } });
+      await prisma.document.deleteMany({ where: { id: { in: documentIds } } });
+    }
+    await prisma.documentGroup.delete({ where: { id: groupId } });
+
+    res.status(204).send();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to delete group';
     res.status(500).json({ error: message });
   }
 });
@@ -710,6 +865,8 @@ function formatDocument(doc: PrismaDocumentWithRelations | null) {
       userReviewed: ed.userReviewed,
       reviewedAt: ed.reviewedAt,
       userEdits: ed.userEdits ? (JSON.parse(ed.userEdits) as Record<string, unknown>) : null,
+      hasStamp: ed.hasStamp,
+      hasSignature: ed.hasSignature,
       billToParty: ed.billToParty,
       shipToParty: ed.shipToParty,
       principalCompany: ed.principalCompany,
@@ -744,4 +901,3 @@ function formatDocument(doc: PrismaDocumentWithRelations | null) {
 }
 
 export default router;
-
