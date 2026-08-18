@@ -224,6 +224,10 @@ model Document {
   originalFilename   String
   rawFilePath        String
   mimeType           String
+  /// SHA-256 hash of the uploaded file's contents, used to detect and reject
+  /// duplicate uploads of the exact same file. Null for split PDF pages
+  /// (those are derived JPEGs, not the originally uploaded file).
+  fileHash           String?              @unique
   uploadedAt         DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
   groupId            String?
@@ -286,6 +290,8 @@ model ExtractedData {
   source              String?
   sealNo              String?
   documentTime        String?
+  hasStamp             Boolean?
+  hasSignature         Boolean?
   /// Challan / GRN number printed on weighbridge slips. Sometimes equals the
   /// invoice number verbatim, which makes the slip an exact-match link.
   challanNo           String?

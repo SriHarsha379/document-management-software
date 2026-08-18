@@ -12,6 +12,9 @@
  *       - INVOICE, WEIGHMENT_SITE (buyer weighment) → 0-5 days AFTER the LR date
  *         (invoices are raised at the head office and can lag by up to 5 days;
  *          the buyer-side weighment happens after the trip, similarly delayed)
+ *       - TOLL                                     → 0-2 days AFTER the LR date
+ *         (a late-departing LR routinely has its toll debits land in the early
+ *          hours of the following calendar day — same trip, next date)
  *       - everything else                          → same calendar day only
  *     Documents never match a date *before* the LR date — the LR is always
  *     created first.
@@ -204,8 +207,18 @@ function getForwardToleranceDays(documentType?: string | null): number {
       // matches. WEIGHMENT_PARTY (explicitly classified) stays strict below
       // — that one is confirmed same-day.
       return 5;
+    case 'TOLL':
+      // A FASTag swipe is a trip-in-progress event, not a headoffice
+      // document, so it doesn't need the 5-day invoice-lag window — but it
+      // does need to survive crossing midnight. Real bundles show several
+      // LRs with a late outTime (19:45, 21:30, 22:54, 23:00, 00:04) whose
+      // toll debits land in the early hours of the FOLLOWING calendar day
+      // (e.g. LR dated 28/03 with tolls debited 29/03; a 12/05 LR with tolls
+      // debited ~05:00 AM, i.e. the morning after departure). A same-day-only
+      // window would silently fail to link exactly these overnight trips.
+      return 2;
     default:
-      // LR, WEIGHMENT_PARTY, EWAYBILL, RECEIVING, TOLL, UNKNOWN
+      // LR, WEIGHMENT_PARTY, EWAYBILL, RECEIVING, UNKNOWN
       return 0;
   }
 }

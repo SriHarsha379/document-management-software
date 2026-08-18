@@ -306,7 +306,7 @@ function UploadScreen({
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr>
-                    {['Doc Type', 'Filename', 'Vehicle No', 'Date', 'Status', 'Uploaded At'].map((h) => (
+                    {['Doc Type', 'Filename', 'Vehicle No', 'Date', 'Status', 'Uploaded At', 'View'].map((h) => (
                       <th key={h} style={s.dTh}>{h}</th>
                     ))}
                   </tr>
@@ -333,10 +333,20 @@ function UploadScreen({
                           ...s.statusBadge,
                           ...(u.status === 'PROCESSED' ? s.statusGreen : u.status === 'UNLINKED' ? s.statusOrange : s.statusGray),
                         }}>
-                          {u.status === 'PROCESSED' ? 'Linked' : u.status === 'UNLINKED' ? 'Unlinked' : 'Processing'}
+                          {u.docType === 'TOLL'
+                            ? 'Saved'
+                            : u.status === 'PROCESSED' ? 'Linked' : u.status === 'UNLINKED' ? 'Unlinked' : 'Processing'}
                         </span>
                       </td>
                       <td style={s.dTd}>{new Date(u.uploadedAt).toLocaleString()}</td>
+                      <td style={s.dTd}>
+                        <button
+                          onClick={() => { if (token) void driverPortalApi.viewUpload(token, u.id); }}
+                          style={s.viewLinkBtn}
+                        >
+                          View
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -563,6 +573,17 @@ const s: Record<string, React.CSSProperties> = {
   statusGreen: { background: '#c6f6d5', color: '#276749' },
   statusOrange: { background: '#feebc8', color: '#744210' },
   statusGray: { background: '#e2e8f0', color: '#4a5568' },
+  viewLinkBtn: {
+    padding: '4px 10px',
+    background: '#fff',
+    color: '#4361ee',
+    border: '1.5px solid #4361ee',
+    borderRadius: 6,
+    cursor: 'pointer',
+    fontWeight: 600,
+    fontSize: 12,
+    whiteSpace: 'nowrap',
+  },
   dTh: {
     padding: '9px 10px', background: '#f5f6ff', color: '#555',
     fontWeight: 700, fontSize: 11, textAlign: 'left', borderBottom: '1px solid #e0e0f0',

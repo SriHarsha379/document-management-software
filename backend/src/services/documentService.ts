@@ -1,4 +1,7 @@
 import { PrismaClient } from '@prisma/client';
+import * as fs from 'fs/promises';
+import { PDFDocument } from 'pdf-lib';
+import sharp from 'sharp';
 import type { DocumentType, ReviewPayload, ExtractedFields } from '../types/index.js';
 import { autoLinkDocument, relinkPendingDocuments, normalizeVehicleNo, normalizeRefNo, backfillLrFromLinkedInvoice, daysBetween } from './autoLinkService.js';
 import { canonicalVehicleNo } from './vehicleNormalization.js';
@@ -12,9 +15,10 @@ type AcknowledgedLrDocumentCategory = 'ACKNOWLEDGED_INVOICE' | 'ACKNOWLEDGED_LR_
 /** Routes documents to acknowledgement counters only when OCR sees both proof marks. */
 export function getAcknowledgedLrDocumentCategory(
   documentType: DocumentType,
-  hasAcknowledgementStampAndSignature?: boolean,
+  hasStamp?: boolean,
+  hasSignature?: boolean,
 ): AcknowledgedLrDocumentCategory | undefined {
-  if (!hasAcknowledgementStampAndSignature) return undefined;
+  if (!hasStamp || !hasSignature) return undefined;
   if (documentType === 'INVOICE') return 'ACKNOWLEDGED_INVOICE';
   if (documentType === 'LR' || documentType === 'RECEIVING') return 'ACKNOWLEDGED_LR_COPY';
   return undefined;
@@ -446,8 +450,33 @@ async function autoCreateLrRecord(
 
   const source = fields.source?.trim() || undefined;
 
-  // Idempotent: skip if an LR with the same lrNo already exists for this company
-  const existing = await prisma.lr.findFirst({ where: { lrNo, companyId } });
+  // Idempotent: skip if an LR with the same lrNo already exists for this company.
+  //
+  // lrNo alone is NOT reliable enough on its own, though: OCR readings of the
+  // same physical LR can differ by a dropped/inserted character in the prefix
+  // (e.g. "MHD/DR/LR/26-27/0643" vs "MH/DR/LR/26-27/0643" for the same LR),
+  // which is a genuine substring difference — not something the vehicle-plate
+  // style character-folding in vehicleNormalization.ts can safely paper over
+  // (folding O/0, I/1 etc. never adds or removes a character). Those two
+  // readings then sail past an exact-string lrNo check and each get their own
+  // Lr row, which is exactly the "duplicate LR rows with the same Invoice
+  // Number" symptom reported on the Documents tab.
+  //
+  // companyInvoiceNo is a much more reliable second signal: it's the
+  // company's own sequentially issued invoice number, effectively unique per
+  // physical LR, and far less prone to this kind of prefix misread. So treat
+  // a same-company match on EITHER lrNo OR a non-blank companyInvoiceNo as
+  // "this LR record already exists" — never create a second row for it.
+  const companyInvoiceNo = fields.companyInvoiceNo?.trim();
+  const existing = await prisma.lr.findFirst({
+    where: {
+      companyId,
+      OR: [
+        { lrNo },
+        ...(companyInvoiceNo ? [{ companyInvoiceNo }] : []),
+      ],
+    },
+  });
   if (existing) return false;
 
   // Parse party names (OCR returns ["consignor", "consignee"]).
@@ -709,7 +738,8 @@ export async function saveOcrResults(
     source?: string;
     sealNo?: string;
     documentTime?: string;
-    hasAcknowledgementStampAndSignature?: boolean;
+    hasStamp?: boolean;
+    hasSignature?: boolean;
   },
   documentType: DocumentType,
   rawOcrResponse: string,
@@ -765,6 +795,8 @@ export async function saveOcrResults(
         source: fields.source ?? null,
         sealNo: fields.sealNo ?? null,
         documentTime: fields.documentTime ?? null,
+        hasStamp: fields.hasStamp ?? null,
+        hasSignature: fields.hasSignature ?? null,
         ...weighmentColumns(fields, documentType),
       },
       update: {
@@ -803,6 +835,8 @@ export async function saveOcrResults(
         source: fields.source ?? null,
         sealNo: fields.sealNo ?? null,
         documentTime: fields.documentTime ?? null,
+        hasStamp: fields.hasStamp ?? null,
+        hasSignature: fields.hasSignature ?? null,
         ...weighmentColumns(fields, documentType),
       },
     });
@@ -810,7 +844,8 @@ export async function saveOcrResults(
     const autoAccepted = shouldAutoAccept(fields, documentType);
     const acknowledgedCategory = getAcknowledgedLrDocumentCategory(
       documentType,
-      fields.hasAcknowledgementStampAndSignature,
+      fields.hasStamp,
+      fields.hasSignature,
     );
 
     await tx.document.update({
@@ -1205,4 +1240,121 @@ export async function saveReviewedData(
 
 export async function getOcrMetrics() {
   return getOcrQualityMetrics();
+}
+
+// ── Combined PDF (Documents tab "View" button) ─────────────────────────────
+// Merges every document belonging to an LR into a single PDF, in whatever
+// order the caller passes them (callers order by LrDocumentCategory to match
+// the table's column order). Existing PDFs have their pages copied in as-is;
+// images are placed one per page, scaled to fit A4 without cropping.
+
+const A4_WIDTH = 595.28;
+const A4_HEIGHT = 841.89;
+
+export async function buildCombinedPdf(
+  files: Array<{ rawFilePath: string; mimeType: string }>,
+): Promise<Buffer> {
+  const out = await PDFDocument.create();
+
+  for (const file of files) {
+    try {
+      if (file.mimeType === 'application/pdf') {
+        const bytes = await fs.readFile(file.rawFilePath);
+        const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
+        const pages = await out.copyPages(src, src.getPageIndices());
+        for (const page of pages) out.addPage(page);
+        continue;
+      }
+
+      if (file.mimeType.startsWith('image/')) {
+        // pdf-lib only embeds JPEG/PNG directly — normalize everything else
+        // (webp, gif, ...) through sharp first.
+        let pngBytes: Buffer;
+        if (file.mimeType === 'image/png') {
+          pngBytes = await fs.readFile(file.rawFilePath);
+        } else {
+          pngBytes = await sharp(file.rawFilePath, { failOn: 'none' }).png().toBuffer();
+        }
+        const image = file.mimeType === 'image/jpeg'
+          ? await out.embedJpg(await fs.readFile(file.rawFilePath))
+          : await out.embedPng(pngBytes);
+
+        // Scale to fit inside an A4 page, preserving aspect ratio.
+        const scale = Math.min(A4_WIDTH / image.width, A4_HEIGHT / image.height, 1);
+        const w = image.width * scale;
+        const h = image.height * scale;
+        const page = out.addPage([A4_WIDTH, A4_HEIGHT]);
+        page.drawImage(image, {
+          x: (A4_WIDTH - w) / 2,
+          y: (A4_HEIGHT - h) / 2,
+          width: w,
+          height: h,
+        });
+      }
+      // Any other mime type is silently skipped — there's nothing sane to
+      // render as a PDF page for it, and one bad file shouldn't fail the
+      // whole combined view.
+    } catch (err) {
+      console.error(`[buildCombinedPdf] Skipping ${file.rawFilePath}:`, err);
+    }
+  }
+
+  return Buffer.from(await out.save());
+}
+
+// ── Duplicate detection (business-level, not file-hash) ───────────────────────
+// A document is flagged as a duplicate of another only when BOTH its Invoice
+// Number AND its LR No match another document's — a match on just one field
+// is normal (many documents legitimately share an LR No or an Invoice No
+// individually) and must not be flagged.
+
+export interface DuplicateMatch {
+  documentId: string;
+  originalFilename: string;
+  lrDocumentCategory: string | null;
+  uploadedAt: Date;
+}
+
+/**
+ * Finds other documents (scoped to the given company, same as the dashboard
+ * summary's company scoping) whose extracted invoiceNo AND lrNo BOTH equal
+ * the given values. Returns [] when either value is missing/blank — a
+ * partial value can never establish a duplicate.
+ */
+export async function findDuplicateDocuments(
+  companyId: string,
+  invoiceNo: string | null | undefined,
+  lrNo: string | null | undefined,
+  excludeDocumentId?: string,
+): Promise<DuplicateMatch[]> {
+  const normInvoiceNo = invoiceNo?.trim();
+  const normLrNo = lrNo?.trim();
+  if (!normInvoiceNo || !normLrNo) return [];
+
+  const matches = await prisma.document.findMany({
+    where: {
+      ...(excludeDocumentId ? { id: { not: excludeDocumentId } } : {}),
+      OR: [{ lr: { companyId } }, { uploadedBy: { companyId } }],
+      extractedData: {
+        is: {
+          invoiceNo: normInvoiceNo,
+          lrNo: normLrNo,
+        },
+      },
+    },
+    select: {
+      id: true,
+      originalFilename: true,
+      lrDocumentCategory: true,
+      uploadedAt: true,
+    },
+    orderBy: { uploadedAt: 'asc' },
+  });
+
+  return matches.map((m) => ({
+    documentId: m.id,
+    originalFilename: m.originalFilename,
+    lrDocumentCategory: m.lrDocumentCategory,
+    uploadedAt: m.uploadedAt,
+  }));
 }

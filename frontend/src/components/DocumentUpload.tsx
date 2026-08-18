@@ -152,9 +152,12 @@ export function DocumentUpload({ onDocumentReady }: Props) {
           const docsFromFile = uploaded.documents.length > 0 ? uploaded.documents : [uploaded.document];
           allDocs.push(...docsFromFile);
         } catch (uploadErr) {
-          throw new Error(
-            `Upload failed for "${currentFile.name}" (file ${fi + 1} of ${files.length}): ${uploadErr instanceof Error ? uploadErr.message : String(uploadErr)}`
-          );
+          // Prefer the server's error message (e.g. duplicate-file rejection)
+          // over axios's generic "Request failed with status code ###".
+          const axiosErr = uploadErr as { response?: { data?: { error?: string } } };
+          const serverMessage = axiosErr?.response?.data?.error;
+          const detail = serverMessage ?? (uploadErr instanceof Error ? uploadErr.message : String(uploadErr));
+          throw new Error(`Upload failed for "${currentFile.name}" (file ${fi + 1} of ${files.length}): ${detail}`);
         }
       }
       setFileProgress(null);
@@ -513,3 +516,4 @@ function Spinner() {
     }} />
   );
 }
+

@@ -1,7 +1,7 @@
 import axios from 'axios';
 import type {
   Document, PaginatedDocuments, ReviewPayload, DocumentType, DocumentStatus, DocumentGroup, LrDocumentCategory,
-  Bundle, PaginatedBundles, BundlePreview, RecipientType, BundleStatus,
+  Bundle, PaginatedBundles, BundlePreview, RecipientType, BundleStatus, DuplicateMatch,
 } from '../types';
 import { authService } from './authService';
 
@@ -84,7 +84,7 @@ export const documentsApi = {
     // OCR can trigger multiple sequential GPT-4o vision calls on the backend
     // (up to 4 rotation variants + a hints-guided retry), which routinely
     // exceeds the default 60s timeout. Give this call much more headroom.
-    const res = await api.post<{ document: Document; additionalDocumentIds?: string[] }>(
+    const res = await api.post<{ document: Document; additionalDocumentIds?: string[]; duplicates?: DuplicateMatch[] }>(
       `/documents/${documentId}/ocr`,
       undefined,
       { timeout: 180000 },
@@ -94,12 +94,18 @@ export const documentsApi = {
     // additionalWeighments in the OCR prompt) — each one became its own
     // sibling Document server-side. Callers that care about surfacing those
     // for review (e.g. DocumentUpload) should fetch them via getById.
-    return { document: res.data.document, additionalDocumentIds: res.data.additionalDocumentIds ?? [] };
+    // duplicates (Invoice No + LR No both matching another document) is
+    // merged onto the returned document so any consumer of `Document` can
+    // read `.duplicates` without extra plumbing.
+    return {
+      document: { ...res.data.document, duplicates: res.data.duplicates ?? [] },
+      additionalDocumentIds: res.data.additionalDocumentIds ?? [],
+    };
   },
 
   review: async (documentId: string, payload: ReviewPayload): Promise<Document> => {
-    const res = await api.put<{ document: Document }>(`/documents/${documentId}/review`, payload);
-    return res.data.document;
+    const res = await api.put<{ document: Document; duplicates?: DuplicateMatch[] }>(`/documents/${documentId}/review`, payload);
+    return { ...res.data.document, duplicates: res.data.duplicates ?? [] };
   },
 
   list: async (params?: ListDocumentsParams): Promise<PaginatedDocuments> => {
@@ -120,6 +126,18 @@ export const documentsApi = {
   listGroups: async (params?: { page?: number; limit?: number; q?: string }): Promise<{ groups: DocumentGroup[]; pagination: { total: number; page: number; limit: number; pages: number } }> => {
     const res = await api.get<{ groups: DocumentGroup[]; pagination: { total: number; page: number; limit: number; pages: number } }>('/documents/groups', { params });
     return res.data;
+  },
+
+  /** Merged PDF of every document in a group, in column order, for the
+   *  Bundle page's "View" button. */
+  groupCombinedPdf: async (groupId: string): Promise<Blob> => {
+    const res = await api.get(`/documents/groups/${groupId}/combined-pdf`, { responseType: 'blob' });
+    return res.data as Blob;
+  },
+
+  /** Deletes every document in the group, then the group row itself. */
+  deleteGroup: async (groupId: string): Promise<void> => {
+    await api.delete(`/documents/groups/${groupId}`);
   },
 
   delete: async (id: string): Promise<void> => {
@@ -230,6 +248,13 @@ export const lrApi = {
       };
     }>(`/lrs/${lrId}/documents`);
     return res.data;
+  },
+
+  /** Fetches the merged PDF (all of this LR's documents, one per page /
+   *  concatenated, in column order) as a Blob for the "View" button. */
+  combinedPdf: async (lrId: string): Promise<Blob> => {
+    const res = await api.get(`/lrs/${lrId}/combined-pdf`, { responseType: 'blob' });
+    return res.data as Blob;
   },
 
   uploadDocument: async (lrId: string, category: LrDocumentCategory, file: File): Promise<Document> => {
@@ -427,6 +452,30 @@ export const driverPortalApi = {
       headers: { Authorization: `Bearer ${token}` },
     });
     return res.data.uploads;
+  },
+
+  /** Opens a driver's own uploaded file in a new tab, with the driver token attached. */
+  viewUpload: async (token: string, uploadId: string): Promise<void> => {
+    const tab = window.open('', '_blank');
+    try {
+      const res = await driverApi.get(`/uploads/${uploadId}/file`, {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'blob',
+      });
+      const objectUrl = URL.createObjectURL(res.data as Blob);
+      if (tab) {
+        tab.location.href = objectUrl;
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      } else {
+        const a = document.createElement('a');
+        a.href = objectUrl;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      }
+    } catch (err) {
+      tab?.close();
+      throw err;
+    }
   },
 };
 

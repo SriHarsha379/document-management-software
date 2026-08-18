@@ -6,7 +6,7 @@ import { requireAuth } from '../auth/auth.routes.js';
 import { requirePermission, buildScopeWhere } from '../rbac/rbac.middleware.js';
 import { ALLOWED_SOURCES, ALLOWED_LR_STATUSES } from '../rbac/permissions.js';
 import { lrRepo, type LrCreateInput, type LrUpdateInput, type LrFilters } from './lr.repo.js';
-import { syncLrRecordsFromDocuments } from '../../services/documentService.js';
+import { syncLrRecordsFromDocuments, buildCombinedPdf } from '../../services/documentService.js';
 import { db } from '../../lib/db.js';
 import { upload } from '../../middleware/upload.js';
 
@@ -150,6 +150,44 @@ router.get(
       });
     } catch (err) {
       handleRouteError(err, res, '[lr] GET /lrs/:id/documents');
+    }
+  }
+);
+
+// ── GET /api/lrs/:id/combined-pdf ────────────────────────────────────────────
+// Merges every document belonging to this LR into a single PDF, in the same
+// order as the Documents/Bundle table columns (LR_DOCUMENT_CATEGORY_ORDER),
+// for the "View" button at the end of each row.
+
+router.get(
+  '/:id/combined-pdf',
+  requirePermission('lr.read'),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const lr = await getScopedLrWithDocuments(req, String(req.params.id));
+      if (!lr) {
+        res.status(404).json({ error: 'LR not found' });
+        return;
+      }
+
+      const documents = (await listLrRelatedDocuments(lr))
+        .slice()
+        .sort((a, b) => compareLrDocuments(a.lrDocumentCategory, b.lrDocumentCategory, a.uploadedAt, b.uploadedAt));
+
+      if (documents.length === 0) {
+        res.status(404).json({ error: 'No documents found for this LR' });
+        return;
+      }
+
+      const pdfBytes = await buildCombinedPdf(
+        documents.map((d) => ({ rawFilePath: d.rawFilePath, mimeType: d.mimeType })),
+      );
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="LR-${lr.lrNo}-combined.pdf"`);
+      res.send(pdfBytes);
+    } catch (err) {
+      handleRouteError(err, res, '[lr] GET /lrs/:id/combined-pdf');
     }
   }
 );

@@ -178,12 +178,12 @@ describe('syncLrRecordsFromDocuments', () => {
 
 describe('getAcknowledgedLrDocumentCategory', () => {
   it('routes acknowledged invoices and LRs to the correct dashboard categories', () => {
-    expect(getAcknowledgedLrDocumentCategory('INVOICE', true)).toBe('ACKNOWLEDGED_INVOICE');
-    expect(getAcknowledgedLrDocumentCategory('LR', true)).toBe('ACKNOWLEDGED_LR_COPY');
+    expect(getAcknowledgedLrDocumentCategory('INVOICE', true, true)).toBe('ACKNOWLEDGED_INVOICE');
+    expect(getAcknowledgedLrDocumentCategory('LR', true, true)).toBe('ACKNOWLEDGED_LR_COPY');
   });
 
   it('does not route documents without both recipient acknowledgement marks', () => {
-    expect(getAcknowledgedLrDocumentCategory('INVOICE', false)).toBeUndefined();
-    expect(getAcknowledgedLrDocumentCategory('TOLL', true)).toBeUndefined();
+    expect(getAcknowledgedLrDocumentCategory('INVOICE', true, false)).toBeUndefined();
+    expect(getAcknowledgedLrDocumentCategory('TOLL', true, true)).toBeUndefined();
   });
 });

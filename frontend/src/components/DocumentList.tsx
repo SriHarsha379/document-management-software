@@ -186,7 +186,20 @@ export function DocumentList({ onSelect, refreshTrigger }: Props) {
                         {doc.originalFilename.length > 26 ? doc.originalFilename.slice(0, 24) + '…' : doc.originalFilename}
                       </td>
                       <td style={td}>{ed?.lrNo ?? '—'}</td>
-                      <td style={td}>{ed?.invoiceNo ?? '—'}</td>
+                      <td style={td}>
+                        {ed?.invoiceNo ?? '—'}
+                        {(doc.duplicates?.length ?? 0) > 0 && (
+                          <span
+                            title={`Duplicate: Invoice No "${ed?.invoiceNo}" + LR No "${ed?.lrNo}" also match ${doc.duplicates!.map((d) => d.originalFilename).join(', ')}`}
+                            style={{
+                              marginLeft: 6, padding: '1px 7px', borderRadius: 8, fontSize: 10, fontWeight: 700,
+                              background: '#fee2e2', color: '#b91c1c', border: '1px solid #fca5a5',
+                            }}
+                          >
+                            🚫 DUPLICATE
+                          </span>
+                        )}
+                      </td>
                       <td style={{ ...td, fontFamily: 'monospace', color: missingVehicle ? '#e53e3e' : undefined }}>
                         {missingVehicle ? '⚠️ missing' : ed!.vehicleNo}
                       </td>

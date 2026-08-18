@@ -54,7 +54,6 @@ function restrictToWeighmentFields(fields: ExtractedFields): ExtractedFields {
     weightInfo: fields.weightInfo,
     sealNo: fields.sealNo,
     documentTime: fields.documentTime,
-    hasAcknowledgementStampAndSignature: fields.hasAcknowledgementStampAndSignature,
     // Weighbridge specifics: these are the whole point of a weighment slip, so
     // stripping them here would defeat the challanNo / netWeight tiers and the
     // origin-vs-destination classifier.
@@ -154,7 +153,8 @@ function parseExtractedFields(parsed: Record<string, unknown>, documentType: Doc
     source: typeof parsed.source === 'string' ? parsed.source : undefined,
     sealNo: typeof parsed.sealNo === 'string' ? parsed.sealNo : undefined,
     documentTime: typeof parsed.documentTime === 'string' ? parsed.documentTime : undefined,
-    hasAcknowledgementStampAndSignature: parsed.hasAcknowledgementStampAndSignature === true,
+    hasStamp: parsed.hasStamp === true,
+    hasSignature: parsed.hasSignature === true,
 
     // Weighbridge fields. The prompt asks for these; without parsing them here
     // they never reach extracted_data and the challanNo / netWeight link tiers
@@ -223,12 +223,19 @@ STEP 1 — Identify the document type from the visual layout, printed title, and
 - EWAYBILL: E-Way Bill document with EWB/EWay Bill number, GSTIN, and transporter details.
 - RECEIVING: Delivery or receiving acknowledgement, proof of delivery (POD), unloading report.
 
-STEP 1A — Check whether this is a recipient-acknowledged document:
-- Set hasAcknowledgementStampAndSignature to true ONLY when the recipient/customer acknowledgement area visibly has BOTH a recipient stamp/seal (including a "received" stamp) AND a handwritten signature.
-- A round company stamp with an ink signature across or next to it counts. A handwritten "material received" acknowledgement with a signature counts.
-- Do NOT count the issuer's pre-printed/digital "Signature valid", "Authorised Signatory", QR-code, or a blank "Receiver's Signature with Seal" box as acknowledgement. If either the recipient stamp or recipient signature is absent or unclear, return false.
-
 STEP 2 — Extract fields according to the identified document type using the rules below.
+
+=== ACKNOWLEDGEMENT VISUAL CHECKS ===
+These checks must be based on what is VISIBLY PRESENT in the document image.
+
+- hasStamp: true ONLY when the RECIPIENT/CUSTOMER acknowledgement area has a physical/ink stamp, seal, rubber stamp, company stamp, or clearly stamped "received" mark.
+- hasSignature: true ONLY when that same recipient/customer acknowledgement area has a handwritten/ink signature or clearly handwritten sign-off. A round recipient stamp with an ink signature across or next to it counts.
+- Do NOT count the issuer's pre-printed/digital "Signature valid", "Authorised Signatory", QR-code, or a blank "Receiver's Signature with Seal" box.
+- Do NOT count printed company logos, printed names, typed names, printed words such as "STAMP" or "SIGNATURE", watermarks, or ordinary document text.
+- Do NOT infer a stamp or signature merely because the document type normally requires one.
+- If you cannot clearly see the stamp or signature, return false.
+- These are visual checks and must not depend only on OCR text.
+
 
 === FOR LR (Lorry Receipt) ===
 - lrNo: LR / consignment number — look for labels "LR No", "LR No.", "L.R. No.", "LR Number", "Consignment No."
@@ -340,7 +347,8 @@ Always respond with a valid JSON object with EXACTLY these fields:
   "source": "<source location from sender/company header for LR and INVOICE (use explicit 'Source:' label when present, otherwise infer city/location from address block) or null>",
   "sealNo": "<seal number — printed 'Seal No.' on an LR, or a labelled handwritten seal number on a weighment slip — or null>",
   "documentTime": "<time-of-day this document records (LR Out Time, weighment in/out time, or toll debited time) in HH:MM or HH:MM:SS 24-hour format, or null>",
-  "hasAcknowledgementStampAndSignature": <true only when a recipient stamp/seal and handwritten signature are both visible; otherwise false>,
+  "hasStamp": <true if a physical/ink stamp is visibly present, otherwise false>,
+  "hasSignature": <true if a handwritten/ink signature is visibly present, otherwise false>,
   "additionalTollEntries": [{"tollAmount": "<amount or null>", "documentTime": "<HH:MM or null>", "vehicleNo": "<only if different from main vehicleNo, else null>", "date": "<only if different from main date, else null>"}],
   "grossWeightKg": <number or null>,
   "tareWeightKg": <number or null>,

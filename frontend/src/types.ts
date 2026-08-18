@@ -102,6 +102,10 @@ export interface LrSummary {
   acknowledgedLrCount: number;
   acknowledgedInvoiceCount: number;
   totalUploadedDocuments: number;
+  /** Uploaded-document count per LrDocumentCategory. */
+  documentCountsByCategory: Record<string, number>;
+  /** Uploaded-document count per DocumentType. */
+  documentCountsByType: Record<string, number>;
 }
 
 export interface ExtractedData {
@@ -126,6 +130,8 @@ export interface ExtractedData {
   userReviewed: boolean;
   reviewedAt: string | null;
   userEdits: Record<string, unknown> | null;
+  hasStamp?: boolean | null;
+  hasSignature?: boolean | null;
   billToParty?: string | null;
   shipToParty?: string | null;
   principalCompany?: string | null;
@@ -159,6 +165,14 @@ export interface DocumentGroup {
   documents?: Document[];
 }
 
+/** Another document whose Invoice No AND LR No both match this one's. */
+export interface DuplicateMatch {
+  documentId: string;
+  originalFilename: string;
+  lrDocumentCategory: LrDocumentCategory | null;
+  uploadedAt: string;
+}
+
 export interface Document {
   id: string;
   type: DocumentType;
@@ -179,6 +193,8 @@ export interface Document {
   pageNumber?: number | null;
   extractedData?: ExtractedData;
   group?: DocumentGroup;
+  /** Other documents sharing this one's Invoice No AND LR No. Empty when none. */
+  duplicates?: DuplicateMatch[];
 }
 
 export interface ReviewPayload {

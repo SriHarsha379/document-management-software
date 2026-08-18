@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import bcrypt from 'bcryptjs';
 import * as path from 'path';
+import * as fs from 'fs';
 import rateLimit from 'express-rate-limit';
 import { upload } from '../middleware/upload.js';
 import { requireDriverAuth, signDriverToken } from '../middleware/driverAuth.js';
@@ -187,6 +188,51 @@ router.post(
         },
       });
 
+      // ── Toll receipts: OCR temporarily disabled ────────────────────────
+      // Same as the admin-side OCR route — skip the vision-model call
+      // entirely, keep the file viewable, don't attempt auto-link (there's
+      // no extracted data to link with). Remove this block to re-enable.
+      if (selectedDocType === 'TOLL') {
+        const uploadDir = path.resolve(process.env.UPLOAD_DIR ?? './uploads');
+        const resolvedFilePath = path.resolve(req.file.path);
+
+        const adminDoc = resolvedFilePath.startsWith(uploadDir + path.sep)
+          ? await prisma.document.create({
+              data: {
+                type: 'TOLL',
+                status: 'SAVED',
+                originalFilename: req.file.originalname,
+                rawFilePath: resolvedFilePath,
+                mimeType: req.file.mimetype,
+              },
+            })
+          : null;
+
+        // 'UNLINKED' is reused here to mean "not auto-linked to a group" —
+        // there is no DriverUploadStatus value for "OCR intentionally
+        // skipped", and this is the closest honest fit without a schema change.
+        const updated = await prisma.driverUploadDocument.update({
+          where: { id: driverDoc.id },
+          data: { status: 'UNLINKED' },
+        });
+
+        res.status(201).json({
+          message: 'Toll receipt saved. OCR is currently disabled for toll receipts.',
+          document: {
+            id: updated.id,
+            docType: updated.docType,
+            status: updated.status,
+            originalFilename: updated.originalFilename,
+            uploadedAt: updated.uploadedAt,
+            vehicleNumber: updated.vehicleNumber,
+            documentDate: updated.documentDate,
+            linkedGroupId: updated.linkedGroupId,
+            adminDocumentId: adminDoc?.id ?? null,
+          },
+        });
+        return;
+      }
+
       // Run OCR asynchronously (fire and forget) but wait for result
       let ocrText: string | null = null;
       let vehicleNumber: string | null = null;
@@ -292,6 +338,51 @@ router.get('/uploads', requireDriverAuth, async (req: Request, res: Response): P
     res.json({ uploads: docs });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch uploads';
+    res.status(500).json({ error: message });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// GET /api/driver/uploads/:id/file
+// Lets a driver view a file they uploaded themselves — scoped strictly to
+// their own tempDriverAccessId, never any other driver's or any admin
+// document. This is what backs the "View" button in the driver portal's
+// upload history, so a driver can confirm what they actually sent (this
+// matters more than ever for toll receipts, since those now skip OCR
+// entirely and have no other feedback to show).
+// ──────────────────────────────────────────────────────────────────────────────
+router.get('/uploads/:id/file', requireDriverAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const driver = (req as Request & { driver: DriverTokenPayload }).driver;
+    const id = req.params['id'] as string;
+
+    const doc = await prisma.driverUploadDocument.findFirst({
+      where: { id, tempDriverAccessId: driver.driverAccessId },
+    });
+    if (!doc) {
+      res.status(404).json({ error: 'Upload not found' });
+      return;
+    }
+
+    const uploadDir = path.resolve(process.env.UPLOAD_DIR ?? './uploads');
+    const resolved = path.resolve(doc.storageKey);
+    if (resolved !== uploadDir && !resolved.startsWith(uploadDir + path.sep)) {
+      res.status(403).json({ error: 'Access denied' });
+      return;
+    }
+    if (!fs.existsSync(resolved)) {
+      res.status(404).json({ error: 'File not found on server' });
+      return;
+    }
+
+    const safeFilename = doc.originalFilename.replace(/[^\w.\- ]/g, '_').slice(0, 200) || 'document';
+    res.setHeader('Content-Disposition', `inline; filename="${safeFilename}"`);
+    res.setHeader('Content-Type', doc.mimeType);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    fs.createReadStream(resolved).pipe(res);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to load file';
     res.status(500).json({ error: message });
   }
 });

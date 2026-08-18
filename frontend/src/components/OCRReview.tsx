@@ -117,6 +117,8 @@ export function OCRReview({ document, allDocs, onSaved, onSelectDocument, onCanc
     } finally { setSaving(false); }
   };
 
+  const duplicates = document.duplicates ?? [];
+
   const confidence = ed?.confidence ?? null;
   const classificationConfidence = ed?.classificationConfidence ?? confidence;
   const ocrConfidence = ed?.ocrConfidence ?? confidence;
@@ -247,6 +249,21 @@ export function OCRReview({ document, allDocs, onSaved, onSelectDocument, onCanc
               {ed?.appliedRotation ? <div><strong>Rotation applied:</strong> {ed.appliedRotation}°</div> : null}
               {processingNotes.length > 0 ? <div><strong>OCR handling:</strong> {processingNotes.join(' • ')}</div> : null}
               {validationIssues.length > 0 ? <div><strong>Review flags:</strong> {validationIssues.join(' • ')}</div> : null}
+            </div>
+          )}
+
+          {duplicates.length > 0 && (
+            <div style={{ background: '#fef2f2', border: '1.5px solid #dc2626', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#7f1d1d', marginBottom: 16, lineHeight: 1.6 }}>
+              🚫 <strong>Possible duplicate:</strong> Invoice Number "{form.invoiceNo}" and LR No "{form.lrNo}" both
+              match {duplicates.length === 1 ? 'another document' : `${duplicates.length} other documents`} already in the system:
+              <ul style={{ margin: '6px 0 0', paddingLeft: 20 }}>
+                {duplicates.map((d) => (
+                  <li key={d.documentId}>
+                    {d.originalFilename}
+                    {d.lrDocumentCategory ? ` (${d.lrDocumentCategory})` : ''} — uploaded {new Date(d.uploadedAt).toLocaleDateString()}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import type {
   DocumentGroup, DocumentType, LrDocumentCategory, RecipientType, DispatchChannel, Bundle, DispatchResult,
 } from '../types';
-import { documentsApi, bundlesApi, dispatchApi, masterApi } from '../services/api';
+import { documentsApi, bundlesApi, dispatchApi, masterApi, lrApi } from '../services/api';
 import type { OfficerDropdownItem, PartyDropdownItem, TransporterDropdownItem } from '../services/api';
 import { ImagePreviewModal } from './ImagePreviewModal';
 
@@ -513,6 +513,25 @@ export function DocumentBundler({ onBundleSaved }: Props) {
   // The group for which all documents are being viewed (null = closed)
   const [viewAllGroup, setViewAllGroup] = useState<DocumentGroup | null>(null);
 
+  const [viewingPdfGroupId, setViewingPdfGroupId] = useState<string | null>(null);
+  const [deletingGroupId, setDeletingGroupId] = useState<string | null>(null);
+
+  // At-a-glance count of how many documents have been uploaded for each
+  // document type, shown as a strip above the table — same idea as the
+  // Documents tab.
+  const [docCounts, setDocCounts] = useState<{
+    byType: Record<string, number>;
+    byCategory: Record<string, number>;
+  } | null>(null);
+
+  const loadDocCounts = useCallback(() => {
+    lrApi.summary()
+      .then((s) => setDocCounts({ byType: s.documentCountsByType, byCategory: s.documentCountsByCategory }))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => { loadDocCounts(); }, [loadDocCounts]);
+
   const loadGroups = useCallback((pg: number) => {
     setGroupsLoading(true);
     documentsApi.listGroups({ page: pg, limit: GROUPS_PAGE_SIZE, q: search || undefined })
@@ -534,7 +553,8 @@ export function DocumentBundler({ onBundleSaved }: Props) {
         setTotalGroups(pagination.total);
       })
       .catch(() => {/* ignore */});
-  }, [page, search]);
+    loadDocCounts();
+  }, [page, search, loadDocCounts]);
 
   useEffect(() => { loadGroups(1); }, [loadGroups]);
 
@@ -600,6 +620,46 @@ export function DocumentBundler({ onBundleSaved }: Props) {
     }
   }, [getDocumentsInSlot, refreshGroups]);
 
+  const handleViewCombinedPdf = useCallback(async (group: DocumentGroup) => {
+    // Open the tab synchronously, before the await — browsers block
+    // window.open() called after an async gap.
+    const tab = window.open('', '_blank');
+    setViewingPdfGroupId(group.id);
+    try {
+      const blob = await documentsApi.groupCombinedPdf(group.id);
+      const objectUrl = URL.createObjectURL(blob);
+      if (tab) {
+        tab.location.href = objectUrl;
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      } else {
+        const a = document.createElement('a');
+        a.href = objectUrl;
+        a.download = `group-${group.vehicleNo}-${group.date}-combined.pdf`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      }
+    } catch (err) {
+      tab?.close();
+      setOperationError(err instanceof Error ? err.message : 'Could not open combined PDF.');
+    } finally {
+      setViewingPdfGroupId(null);
+    }
+  }, []);
+
+  const handleDeleteGroup = useCallback(async (group: DocumentGroup) => {
+    if (!window.confirm(`Delete this trip (${group.vehicleNo}, ${group.date}) and all its uploaded documents? This cannot be undone.`)) return;
+    setDeletingGroupId(group.id);
+    setOperationError(null);
+    try {
+      await documentsApi.deleteGroup(group.id);
+      refreshGroups();
+    } catch (err) {
+      setOperationError(err instanceof Error ? err.message : 'Failed to delete trip.');
+    } finally {
+      setDeletingGroupId(null);
+    }
+  }, [refreshGroups]);
+
   return (
     <div style={styles.container}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
@@ -631,6 +691,31 @@ export function DocumentBundler({ onBundleSaved }: Props) {
         <p style={styles.error}>Action failed: {operationError}</p>
       )}
 
+      {/* ── At-a-glance counts per document type ──────────────────────── */}
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '4px 0 4px' }}>
+        {TABLE_COLUMNS.map((col) => {
+          const count = docCounts
+            ? (col.lrDocumentCategory
+                ? docCounts.byCategory[col.lrDocumentCategory] ?? 0
+                : col.key === 'WEIGHMENT_PARTY'
+                  ? (docCounts.byType.WEIGHMENT_PARTY ?? 0) + (docCounts.byType.WEIGHMENT ?? 0)
+                  : docCounts.byType[col.checkType] ?? 0)
+            : null;
+          return (
+            <div
+              key={col.key}
+              style={{
+                background: '#f8faff', border: '1px solid #dbe4ff', borderRadius: 8,
+                padding: '8px 14px', fontSize: 12, color: '#334155', minWidth: 130,
+              }}
+            >
+              <div style={{ fontWeight: 700, color: '#1a1a2e' }}>{count ?? '…'}</div>
+              <div style={{ color: '#6b7280' }}>{col.header} uploaded</div>
+            </div>
+          );
+        })}
+      </div>
+
       {groupsLoading && <p style={styles.loading}>Loading groups…</p>}
 
       {!groupsLoading && groups.length === 0 && (
@@ -655,6 +740,8 @@ export function DocumentBundler({ onBundleSaved }: Props) {
                 ))}
                 <th style={{ ...styles.th, minWidth: 90 }}>View Documents</th>
                 <th style={{ ...styles.th, minWidth: 90 }}>Send</th>
+                <th style={{ ...styles.th, minWidth: 90 }}>PDF</th>
+                <th style={{ ...styles.th, minWidth: 90 }}>Delete</th>
               </tr>
             </thead>
             <tbody>
@@ -758,6 +845,27 @@ export function DocumentBundler({ onBundleSaved }: Props) {
                         onClick={() => setSendGroup(g)}
                       >
                         📤 Send
+                      </button>
+                    </td>
+                    {/* Combined PDF view */}
+                    <td style={{ ...styles.td, textAlign: 'center' }}>
+                      <button
+                        style={styles.viewBtn}
+                        onClick={() => { void handleViewCombinedPdf(g); }}
+                        disabled={docs.length === 0 || viewingPdfGroupId === g.id}
+                        title="View all documents merged into one PDF, in column order"
+                      >
+                        {viewingPdfGroupId === g.id ? 'Opening…' : '📄 PDF'}
+                      </button>
+                    </td>
+                    {/* Delete whole row */}
+                    <td style={{ ...styles.td, textAlign: 'center' }}>
+                      <button
+                        style={styles.deleteBtn}
+                        onClick={() => { void handleDeleteGroup(g); }}
+                        disabled={deletingGroupId === g.id}
+                      >
+                        {deletingGroupId === g.id ? 'Deleting…' : '🗑️ Delete'}
                       </button>
                     </td>
                   </tr>
@@ -945,6 +1053,17 @@ const styles: Record<string, React.CSSProperties> = {
     background: '#fff',
     color: '#4361ee',
     border: '1.5px solid #4361ee',
+    borderRadius: 6,
+    cursor: 'pointer',
+    fontWeight: 600,
+    fontSize: 13,
+    whiteSpace: 'nowrap',
+  },
+  deleteBtn: {
+    padding: '6px 12px',
+    background: '#fff',
+    color: '#dc2626',
+    border: '1.5px solid #dc2626',
     borderRadius: 6,
     cursor: 'pointer',
     fontWeight: 600,
