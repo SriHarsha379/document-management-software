@@ -44,6 +44,9 @@ export interface ExtractedFields {
   // in/out time, or the toll "Debited at" time. Format "HH:MM" or "HH:MM:SS",
   // 24-hour where possible. Used to disambiguate same-vehicle, same-day trips.
   documentTime?: string;
+  // True only when the recipient/customer acknowledgement area visibly contains
+  // both a stamp/seal and a handwritten signature.
+  hasAcknowledgementStampAndSignature?: boolean;
 
   // ── Weighbridge slip fields ───────────────────────────────────────────────
   // These drive the challanNo / netWeight auto-link tiers and the origin vs

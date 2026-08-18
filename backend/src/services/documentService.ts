@@ -7,6 +7,19 @@ import { classifyWeighment } from './weighmentClassifier.js';
 import { reconcileSlipArithmetic } from './weighmentClassifier.js';
 import { parseNetWeightKg } from './reconciliationService.js';
 
+type AcknowledgedLrDocumentCategory = 'ACKNOWLEDGED_INVOICE' | 'ACKNOWLEDGED_LR_COPY';
+
+/** Routes documents to acknowledgement counters only when OCR sees both proof marks. */
+export function getAcknowledgedLrDocumentCategory(
+  documentType: DocumentType,
+  hasAcknowledgementStampAndSignature?: boolean,
+): AcknowledgedLrDocumentCategory | undefined {
+  if (!hasAcknowledgementStampAndSignature) return undefined;
+  if (documentType === 'INVOICE') return 'ACKNOWLEDGED_INVOICE';
+  if (documentType === 'LR' || documentType === 'RECEIVING') return 'ACKNOWLEDGED_LR_COPY';
+  return undefined;
+}
+
 /**
  * Map the weighbridge fields from OCR onto the extracted_data columns, and
  * classify the slip while we have everything in one place.
@@ -696,6 +709,7 @@ export async function saveOcrResults(
     source?: string;
     sealNo?: string;
     documentTime?: string;
+    hasAcknowledgementStampAndSignature?: boolean;
   },
   documentType: DocumentType,
   rawOcrResponse: string,
@@ -794,10 +808,18 @@ export async function saveOcrResults(
     });
 
     const autoAccepted = shouldAutoAccept(fields, documentType);
+    const acknowledgedCategory = getAcknowledgedLrDocumentCategory(
+      documentType,
+      fields.hasAcknowledgementStampAndSignature,
+    );
 
     await tx.document.update({
       where: { id: documentId },
-      data: { type: documentType, status: autoAccepted ? 'SAVED' : 'PENDING_REVIEW' },
+      data: {
+        type: documentType,
+        status: autoAccepted ? 'SAVED' : 'PENDING_REVIEW',
+        ...(acknowledgedCategory ? { lrDocumentCategory: acknowledgedCategory } : {}),
+      },
     });
   });
 

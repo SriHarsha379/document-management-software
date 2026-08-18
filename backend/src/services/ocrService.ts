@@ -54,6 +54,7 @@ function restrictToWeighmentFields(fields: ExtractedFields): ExtractedFields {
     weightInfo: fields.weightInfo,
     sealNo: fields.sealNo,
     documentTime: fields.documentTime,
+    hasAcknowledgementStampAndSignature: fields.hasAcknowledgementStampAndSignature,
     // Weighbridge specifics: these are the whole point of a weighment slip, so
     // stripping them here would defeat the challanNo / netWeight tiers and the
     // origin-vs-destination classifier.
@@ -153,6 +154,7 @@ function parseExtractedFields(parsed: Record<string, unknown>, documentType: Doc
     source: typeof parsed.source === 'string' ? parsed.source : undefined,
     sealNo: typeof parsed.sealNo === 'string' ? parsed.sealNo : undefined,
     documentTime: typeof parsed.documentTime === 'string' ? parsed.documentTime : undefined,
+    hasAcknowledgementStampAndSignature: parsed.hasAcknowledgementStampAndSignature === true,
 
     // Weighbridge fields. The prompt asks for these; without parsing them here
     // they never reach extracted_data and the challanNo / netWeight link tiers
@@ -220,6 +222,11 @@ STEP 1 — Identify the document type from the visual layout, printed title, and
 - WEIGHMENT: Generic weighbridge or weighment slip when it is clearly a weighment document but origin (party) vs destination (site) cannot be determined.
 - EWAYBILL: E-Way Bill document with EWB/EWay Bill number, GSTIN, and transporter details.
 - RECEIVING: Delivery or receiving acknowledgement, proof of delivery (POD), unloading report.
+
+STEP 1A — Check whether this is a recipient-acknowledged document:
+- Set hasAcknowledgementStampAndSignature to true ONLY when the recipient/customer acknowledgement area visibly has BOTH a recipient stamp/seal (including a "received" stamp) AND a handwritten signature.
+- A round company stamp with an ink signature across or next to it counts. A handwritten "material received" acknowledgement with a signature counts.
+- Do NOT count the issuer's pre-printed/digital "Signature valid", "Authorised Signatory", QR-code, or a blank "Receiver's Signature with Seal" box as acknowledgement. If either the recipient stamp or recipient signature is absent or unclear, return false.
 
 STEP 2 — Extract fields according to the identified document type using the rules below.
 
@@ -333,6 +340,7 @@ Always respond with a valid JSON object with EXACTLY these fields:
   "source": "<source location from sender/company header for LR and INVOICE (use explicit 'Source:' label when present, otherwise infer city/location from address block) or null>",
   "sealNo": "<seal number — printed 'Seal No.' on an LR, or a labelled handwritten seal number on a weighment slip — or null>",
   "documentTime": "<time-of-day this document records (LR Out Time, weighment in/out time, or toll debited time) in HH:MM or HH:MM:SS 24-hour format, or null>",
+  "hasAcknowledgementStampAndSignature": <true only when a recipient stamp/seal and handwritten signature are both visible; otherwise false>,
   "additionalTollEntries": [{"tollAmount": "<amount or null>", "documentTime": "<HH:MM or null>", "vehicleNo": "<only if different from main vehicleNo, else null>", "date": "<only if different from main date, else null>"}],
   "grossWeightKg": <number or null>,
   "tareWeightKg": <number or null>,

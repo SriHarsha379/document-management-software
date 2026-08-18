@@ -45,7 +45,7 @@ vi.mock('../services/ocrLearningService.js', () => ({
   shouldAutoAccept: vi.fn(),
 }));
 
-import { syncLrRecordsFromDocuments } from '../services/documentService.js';
+import { getAcknowledgedLrDocumentCategory, syncLrRecordsFromDocuments } from '../services/documentService.js';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -173,5 +173,17 @@ describe('syncLrRecordsFromDocuments', () => {
     expect(mockPrisma.company.create).toHaveBeenCalledWith({
       data: { name: 'Default Company' },
     });
+  });
+});
+
+describe('getAcknowledgedLrDocumentCategory', () => {
+  it('routes acknowledged invoices and LRs to the correct dashboard categories', () => {
+    expect(getAcknowledgedLrDocumentCategory('INVOICE', true)).toBe('ACKNOWLEDGED_INVOICE');
+    expect(getAcknowledgedLrDocumentCategory('LR', true)).toBe('ACKNOWLEDGED_LR_COPY');
+  });
+
+  it('does not route documents without both recipient acknowledgement marks', () => {
+    expect(getAcknowledgedLrDocumentCategory('INVOICE', false)).toBeUndefined();
+    expect(getAcknowledgedLrDocumentCategory('TOLL', true)).toBeUndefined();
   });
 });
